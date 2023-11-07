@@ -26,6 +26,58 @@ The Python Projects Repository aims to:
 - Encourage the development of new Python projects.
 - Provide a platform for finding Python projects to use.
 
+## Project Stack 💻
+<p align="left">
+    <img src="https://img.shields.io/badge/Python-3.9.6-yellow?style=for-the-badge&logo=python" alt="Python" />
+    <img src="https://img.shields.io/badge/HTML-5-orange?style=for-the-badge&logo=html5" alt="HTML" />
+    <img src="https://img.shields.io/badge/CSS-3-blue?style=for-the-badge&logo=css3" alt="CSS" />
+    <img src="https://img.shields.io/badge/JavaScript-ES6-yellow?style=for-the-badge&logo=javascript" alt="JavaScript" />
+    <img src="https://img.shields.io/badge/Bootstrap-5.0.2-purple?style=for-the-badge&logo=bootstrap" alt="Bootstrap" />
+    <img src="https://img.shields.io/badge/Flask-2.0.1-black?style=for-the-badge&logo=flask" alt="Flask" />
+    <img src="https://img.shields.io/badge/Flask RESTful-0.3.9-red?style=for-the-badge&logo=flaskrestful" alt="Flask RESTful" />
+    <img src="https://img.shields.io/badge/Flask SQLAlchemy-2.5.1-orange?style=for-the-badge&logo=flasksqlalchemy" alt="Flask SQLAlchemy" />
+    <img src="https://img.shields.io/badge/Flask JWT Extended-4.2.3-yellow?style=for-the-badge&logo=flaskjwtextended" alt="Flask JWT Extended" />
+    <img src="https://img.shields.io/badge/Flask Bcrypt-0.7.1-blue?style=for-the-badge&logo=flaskbcrypt" alt="Flask Bcrypt" />
+    <img src="https://img.shields.io/badge/Jinja-3.0.1-green?style=for-the-badge&logo=jinja" alt="Jinja" />
+    <img src="https://img.shields.io/badge/WTForms-2.3.3-red?style=for-the-badge&logo=wtforms" alt="WTForms" />
+    <img src="https://img.shields.io/badge/QT-5.15.2-orange?style=for-the-badge&logo=qt" alt="QT" />
+    <img src="https://img.shields.io/badge/Django-3.2.5-green?style=for-the-badge&logo=django" alt="Django" />
+    <img src="https://img.shields.io/badge/React-17.0.2-blue?style=for-the-badge&logo=react" alt="React" />
+    <img src="https://img.shields.io/badge/Node.js-14.17.3-green?style=for-the-badge&logo=node.js" alt="Node.js" />
+    <img src="https://img.shields.io/badge/Express.js-4.17.1-black?style=for-the-badge&logo=express" alt="Express.js" />
+    <img src="https://img.shields.io/badge/SQLite-3.36.0-blue?style=for-the-badge&logo=sqlite" alt="SQLite" />
+    <img src="https://img.shields.io/badge/MySQL-8.0.26-orange?style=for-the-badge&logo=mysql" alt="MySQL" />
+    <img src="https://img.shields.io/badge/PostgreSQL-13.3-blue?style=for-the-badge&logo=postgresql" alt="PostgreSQL" />
+    <img src="https://img.shields.io/badge/PyMongo-3.12.0-green?style=for-the-badge&logo=pymongo" alt="PyMongo" />
+    <img src="https://img.shields.io/badge/Redis-3.5.3-red?style=for-the-badge&logo=redis" alt="Redis" />
+    <img src="https://img.shields.io/badge/Machine Learning-1.0.1-yellow?style=for-the-badge&logo=machinelearning" alt="Machine Learning" />
+    <img src="https://img.shields.io/badge/Data Science-1.0.1-blue?style=for-the-badge&logo=datascience" alt="Data Science" />
+    <img src="https://img.shields.io/badge/Computer Vision-1.0.1-green?style=for-the-badge&logo=computervision" alt="Computer Vision" />
+    <img src="https://img.shields.io/badge/Deep Learning-1.0.1-red?style=for-the-badge&logo=deeplearning" alt="Deep Learning" />
+    <img src="https://img.shields.io/badge/Artificial Intelligence-1.0.1-orange?style=for-the-badge&logo=artificialintelligence" alt="Artificial Intelligence" />
+    <img src="https://img.shields.io/badge/Internet of Things-1.0.1-yellow?style=for-the-badge&logo=internetofthings" alt="Internet of Things" />
+    <img src="https://img.shields.io/badge/Blockchain-1.0.1-blue?style=for-the-badge&logo=blockchain" alt="Blockchain" />
+    <img src="https://img.shields.io/badge/Cloud Computing-1.0.1-green?style=for-the-badge&logo=cloudcomputing" alt="Cloud Computing" />
+    <img src="https://img.shields.io/badge/DevOps-1.0.1-red?style=for-the-badge&logo=devops" alt="DevOps" />
+    <img src="https://img.shields.io/badge/Software Testing-1.0.1-orange?style=for-the-badge&logo=softwaretesting" alt="Software Testing" />
+    <img src="https://img.shields.io/badge/Security-1.0.1-yellow?style=for-the-badge&logo=security" alt="Security" />
+    <img src="https://img.shields.io/badge/Utilities-1.0.1-blue?style=for-the-badge&logo=utilities" alt="Utilities" />
+    <img src="https://img.shields.io/badge/Games-1.0.1-green?style=for-the-badge&logo=games" alt="Games" />
+    <img src="https://img.shields.io/badge/TensorFlow-2.5.0-red?style=for-the-badge&logo=tensorflow" alt="TensorFlow" />
+    <img src="https://img.shields.io/badge/PyTorch-1.9.0-orange?style=for-the-badge&logo=pytorch" alt="PyTorch" />
+    <img src="https://img.shields.io/badge/Keras-2.4.3-yellow?style=for-the-badge&logo=keras" alt="Keras" />
+    <img src="https://img.shields.io/badge/Scikit Learn-0.24.2-blue?style=for-the-badge&logo=scikitlearn" alt="Scikit Learn" />
+    <img src="https://img.shields.io/badge/NumPy-1.21.1-green?style=for-the-badge&logo=numpy" alt="NumPy" />
+    <img src="https://img.shields.io/badge/Pandas-1.3.1-red?style=for-the-badge&logo=pandas" alt="Pandas" />
+    <img src="https://img.shields.io/badge/SciPy-1.7.1-orange?style=for-the-badge&logo=scipy" alt="SciPy" />
+    <img src="https://img.shields.io/badge/Matplotlib-3.4.2-yellow?style=for-the-badge&logo=matplotlib" alt="Matplotlib" />
+    <img src="https://img.shields.io/badge/Seaborn-0.11.1-blue?style=for-the-badge&logo=seaborn" alt="Seaborn" />
+    <img src="https://img.shields.io/badge/Plotly-5.1.0-green?style=for-the-badge&logo=plotly" alt="Plotly" />
+    <img src="https://img.shields.io/badge/Other-1.0.1-red?style=for-the-badge&logo=other" alt="Other" />
+
+    
+</p>
+
 ## Project Categories 🌟
 
 The Python Projects Repository includes projects in various categories, including but not limited to:
