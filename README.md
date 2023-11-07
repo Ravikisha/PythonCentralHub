@@ -1,3 +1,5 @@
+<img src="./docs/docs1.png" alt="Python Projects Repository" width="100%"/>
+
 # Python Projects 🐍
 
 ## Project Name: Python Projects Repository
