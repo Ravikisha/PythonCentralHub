@@ -94,6 +94,7 @@ The Python Projects Repository includes projects in various categories, includin
 - [Automate the Boring Stuff with Python](./books/Automate%20the%20Boring%20Stuff%20with%20Python.pdf)
 - [Fluent Python](./books/Fluent%20Python.pdf)
 - [Learn Python 3 the Hard Way](./books/Learn%20Python%203%20the%20Hard%20Way_%20A%20Very%20Simple%20Introduction%20to%20the%20Terrifyingly%20Beautiful%20World%20of%20Computers%20and%20Code%20(%20PDFDrive.com%20).pdf)
+- [Head First Python](./books/Head%20First%20Python%20%20A%20Brain-Friendly%20Guide%20(%20PDFDrive.com%20).pdf)
 
 ## How to Use 🛠️
 
