@@ -76,8 +76,6 @@ The Python Projects Repository aims to:
     <img src="https://img.shields.io/badge/Seaborn-0.11.1-blue?style=for-the-badge&logo=seaborn" alt="Seaborn" />
     <img src="https://img.shields.io/badge/Plotly-5.1.0-green?style=for-the-badge&logo=plotly" alt="Plotly" />
     <img src="https://img.shields.io/badge/Other-1.0.1-red?style=for-the-badge&logo=other" alt="Other" />
-
-    
 </p>
 
 ## Project Categories 🌟
@@ -90,6 +88,12 @@ The Python Projects Repository includes projects in various categories, includin
 - **Utilities**: Handy Python utilities and libraries.
 - **Games**: Fun and educational Python games and simulations.
 - **Security**: Security-related Python projects and tools.
+
+## Python Books 📚
+- [Python Crash Course](./books/Python%20Crash%20Course.pdf%20(%20PDFDrive.com%20).pdf)
+- [Automate the Boring Stuff with Python](./books/Automate%20the%20Boring%20Stuff%20with%20Python.pdf)
+- [Fluent Python](./books/Fluent%20Python.pdf)
+- [Learn Python 3 the Hard Way](./books/Learn%20Python%203%20the%20Hard%20Way_%20A%20Very%20Simple%20Introduction%20to%20the%20Terrifyingly%20Beautiful%20World%20of%20Computers%20and%20Code%20(%20PDFDrive.com%20).pdf)
 
 ## How to Use 🛠️
 
