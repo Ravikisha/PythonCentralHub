@@ -6,7 +6,7 @@
 
 ### A central repository for open-source Python projects covering diverse aspects of development.
 
-[![GitHub](https://img.shields.io/badge/GitHub-Repository-green)](https://github.com/your-username/python-projects)
+[![GitHub](https://img.shields.io/badge/GitHub-Repository-green)](https://github.com/Ravikisha/PythonCentralHub)
 [![Contributions welcome](https://img.shields.io/badge/Contributions-Welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 Welcome to the Python Central Hub Repository, a hub for open-source Python projects. This repository brings together diverse Python projects that cover various aspects of development. Whether you're a beginner or an experienced developer, there's something here for you.
