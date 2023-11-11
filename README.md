@@ -102,7 +102,7 @@ The Python Central Hub Repository includes projects in various categories, inclu
 
 1. **Explore the Repository:**
 
-   Visit the [Python Central Hub Repository](https://github.com/Ravikisha/Python-Central-Hub) on GitHub to explore the collection of projects.
+   Visit the [Python Central Hub Repository](https://github.com/Ravikisha/PythonCentralHub) on GitHub to explore the collection of projects.
 
 2. **Contribute or Use Projects:**
 
@@ -116,7 +116,7 @@ To contribute to or use projects in this repository, follow these general steps:
 1. **Clone the Repository:**
 
    ```bash
-   git clone https://github.com/Ravikisha/Python-Central-Hub.git
+   git clone https://github.com/Ravikisha/PythonCentralHub.git
    cd Python-Projects
    ```
 
