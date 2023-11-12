@@ -1,7 +1,7 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import rehypePrettyCode from "rehype-pretty-code";
-import { getHighlighter, BUNDLED_LANGUAGES } from 'shiki';
+import { getHighlighter, BUNDLED_LANGUAGES } from "shiki";
 import sitemap from "@astrojs/sitemap";
 
 /** @type {import('rehype-pretty-code').Options} */
@@ -13,18 +13,18 @@ const options = {
   keepBackground: true,
   grid: true,
   filterMetaString: (string) => string.replace(/filename="[^"]*"/, ""),
-//   getHighlighter: (options) =>
-//     getHighlighter({
-//       ...options,
-//       langs: [
-//         ...BUNDLED_LANGUAGES,
-//         {
-//           id: "groq",
-//           scopeName: "source.groq",
-//           path: "./langs/vscode-sanity/grammars/groq.json",
-//         },
-//       ],
-//     }),
+  //   getHighlighter: (options) =>
+  //     getHighlighter({
+  //       ...options,
+  //       langs: [
+  //         ...BUNDLED_LANGUAGES,
+  //         {
+  //           id: "groq",
+  //           scopeName: "source.groq",
+  //           path: "./langs/vscode-sanity/grammars/groq.json",
+  //         },
+  //       ],
+  //     }),
   onVisitLine: (line) => {
     if (line.number === 2) {
       return {
@@ -52,6 +52,11 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "Python Central Hub",
+      logo: "./src/assets/pythonlogo.png",
+      editLink: {
+        baseUrl: "https://github.com/Ravikisha/PythonCentralHub/edit/main/",
+      },
+      favicon: "./src/assets/favicon.ico",
       social: {
         github: "https://github.com/Ravikisha/PythonCentralHub.git",
         instagram: "https://www.instagram.com/ravikishan.69",
@@ -85,6 +90,19 @@ export default defineConfig({
         },
       ],
       customCss: ["./src/styles/global.css"],
+      head: [
+        {
+          tag: "link",
+          attrs: {
+            rel: "stylesheet",
+            href: "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css",
+            integrity:
+              "sha512-z3gLpd7yknf1YoNbCzqRKc4qyor8gaKU1qmn+CShxbuBusANI9QpRohGBreCFkKxLhei6S9CQXFEbbKuqLg0DA==",
+            crossorigin: "anonymous",
+            referrerpolicy: "no-referrer",
+          },
+        },
+      ],
     }),
   ],
 });

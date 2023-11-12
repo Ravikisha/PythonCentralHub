@@ -9,7 +9,8 @@ Writing a good guide requires thinking about what your users are trying to do.
 ## Further reading
 
 - Read [about how-to guides](https://diataxis.fr/how-to-guides/) in the Diátaxis framework
-```python title="somethingComponent.ts" showLineNumbers{1}
+
+```python title="main.py" showLineNumbers{1}
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 
@@ -30,7 +31,7 @@ const CodeBlock = ({ codestring }) => {
 };
 ```
 
-```js showLineNumbers{1} 
+```js title="react.jsx" showLineNumbers{1} 
 const [age, setAge] = useState(50);
 const [name, setName] = useState('Taylor');
 ```
