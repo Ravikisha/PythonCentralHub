@@ -30,7 +30,7 @@ const CodeBlock = ({ codestring }) => {
 };
 ```
 
-```js showLineNumbers{1} /age/#v /name/#v /setAge/#s /setName/#s /50/#i /'Taylor'/#i 
+```js showLineNumbers{1} 
 const [age, setAge] = useState(50);
 const [name, setName] = useState('Taylor');
 ```
