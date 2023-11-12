@@ -1,4 +1,4 @@
-<img src="./docs/docs1.png" alt="Python Projects Repository" width="100%"/>
+<img src="./poster/docs1.png" alt="Python Projects Repository" width="100%"/>
 
 # Python Central Hub  🐍
 
