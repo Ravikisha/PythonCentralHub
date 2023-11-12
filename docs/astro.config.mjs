@@ -7,7 +7,11 @@ export default defineConfig({
 		starlight({
 			title: 'Python Central Hub',
 			social: {
-				github: 'https://github.com/withastro/starlight',
+				github: 'https://github.com/Ravikisha/PythonCentralHub.git',
+				instagram: 'https://www.instagram.com/ravikishan.69',
+				"x.com": 'https://twitter.com/@Ravikishan_',
+				email: 'mailto:ravikishan63392@gmail.com',
+				linkedin: 'https://www.linkedin.com/in/ravi-kishan-62ab51221/'
 			},
 			sidebar: [
 				// {
@@ -34,6 +38,9 @@ export default defineConfig({
 					autogenerate: { directory: 'reference' },
 				},
 			],
+			customCss: [
+				'./src/styles/global.css',
+			]
 		}),
 	],
 });
