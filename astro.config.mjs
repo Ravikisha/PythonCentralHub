@@ -43,8 +43,6 @@ const options = {
 
 // https://astro.build/config
 export default defineConfig({
-  site: 'https://ravikisha.github.io/PythonCentralHub',
-  base: '/',
   markdown: {
     syntaxHighlight: false, // Disable syntax built-in syntax hightlighting from astro
     rehypePlugins: [[rehypePrettyCode, options]],
