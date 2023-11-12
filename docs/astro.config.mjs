@@ -52,7 +52,9 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "Python Central Hub",
-      logo: "./src/assets/pythonlogo.png",
+      logo: {
+        src: "./src/assets/pythonlogo.png",
+      },
       editLink: {
         baseUrl: "https://github.com/Ravikisha/PythonCentralHub/edit/main/",
       },
@@ -102,6 +104,12 @@ export default defineConfig({
             referrerpolicy: "no-referrer",
           },
         },
+        {
+          tag: "script",
+          attrs: {
+            src: "/src/scripts/main.js"
+          }
+        }
       ],
     }),
   ],
