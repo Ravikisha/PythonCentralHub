@@ -1,8 +1,6 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import rehypePrettyCode from "rehype-pretty-code";
-import { getHighlighter, BUNDLED_LANGUAGES } from "shiki";
-import sitemap from "@astrojs/sitemap";
 
 /** @type {import('rehype-pretty-code').Options} */
 const options = {
@@ -45,8 +43,8 @@ const options = {
 
 // https://astro.build/config
 export default defineConfig({
-  site: 'https://ravikisha.github.io',
-  base: '/pythoncentralhub',
+  site: 'https://ravikisha.github.io/PythonCentralHub',
+  base: '/',
   markdown: {
     syntaxHighlight: false, // Disable syntax built-in syntax hightlighting from astro
     rehypePlugins: [[rehypePrettyCode, options]],
@@ -109,7 +107,7 @@ export default defineConfig({
         {
           tag: "script",
           attrs: {
-            src: "/src/scripts/main.js"
+            src: "/scripts/main.js"
           }
         }
       ],
