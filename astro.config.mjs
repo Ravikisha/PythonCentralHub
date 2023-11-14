@@ -111,6 +111,13 @@ export default defineConfig({
             src: "/scripts/main.js",
           },
         },
+        {
+          tag: "meta",
+          attrs: {
+            name: "google-adsense-account",
+            content: "ca-pub-4763909241118146",
+          },
+        }
       ],
     }),
     tailwind({
