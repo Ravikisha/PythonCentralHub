@@ -100,7 +100,12 @@ The Python Central Hub Repository includes projects in various categories, inclu
 
 ## Application Screenshots 📷
 ![Screenshot 1](./poster/mainPage.png)
-![Screenshot 2](./poster/pageDemo.png)
+![Screenshot 2](./poster/lightMode1.png)
+![Screenshot 3](./poster/pageDemo.png)
+![Screenshot 4](./poster/lightMode2.png)
+![Screenshot 5](./poster/someFeature.png)
+![Screenshot 6](./poster/search.png)
+
 
 ## How to Use 🛠️
 
