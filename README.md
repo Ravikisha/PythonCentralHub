@@ -98,6 +98,10 @@ The Python Central Hub Repository includes projects in various categories, inclu
 - [Big Book of Small Python Projects](./books/BigBookSmallPythonProjects.pdf)
 - [Python Cookbook](./books/Python_Cookbook_3rd_Edition.pdf)
 
+## Application Screenshots 📷
+![Screenshot 1](./poster/mainPage.png)
+![Screenshot 2](./poster/pageDemo.png)
+
 ## How to Use 🛠️
 
 1. **Explore the Repository:**
