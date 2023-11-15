@@ -2,6 +2,8 @@ import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import rehypePrettyCode from "rehype-pretty-code";
 
+const site = "https://python-central-hub.vercel.app/";
+
 /** @type {import('rehype-pretty-code').Options} */
 import tailwind from "@astrojs/tailwind";
 const options = {
@@ -95,6 +97,14 @@ export default defineConfig({
       customCss: ["./src/styles/global.css"],
       head: [
         {
+          tag: "meta",
+          attrs: { property: "og:image", content: site + "og.jpg?v=1" },
+        },
+        {
+          tag: "meta",
+          attrs: { property: "twitter:image", content: site + "og.jpg?v=1" },
+        },
+        {
           tag: "link",
           attrs: {
             rel: "stylesheet",
@@ -117,6 +127,102 @@ export default defineConfig({
             name: "google-adsense-account",
             content: "ca-pub-4763909241118146",
           },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            name: "og:description",
+            property: "og:description",
+            content:
+              "The Python Projects Repository is designed to provide a comprehensive collection of open-source Python projects that span different domains. These projects aim to serve as educational resources, examples, and starting points for your Python journey.",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            name: "og:url",
+            property: "og:url",
+            content: "https://python-central-hub.vercel.app/",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            name: "twitter:card",
+            content: "summary_large_image",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            name: "twitter:title",
+            content: "Python Central Hub",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            name: "twitter:description",
+            content:
+              "The Python Projects Repository is designed to provide a comprehensive collection of open-source Python projects that span different domains. These projects aim to serve as educational resources, examples, and starting points for your Python journey.",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            name: "twitter:image:alt",
+            content: "Python Central Hub",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            name: "twitter:site",
+            content: "@Ravikishan_",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            name: "twitter:creator",
+            content: "@Ravikishan_",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            name: "twitter:domain",
+            content: "https://python-central-hub.vercel.app/",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            name: "keywords",
+            content:
+              "Python, Python Projects, Python Central Hub, Python Central Hub Projects, Python Central Hub Tutorials, Python Central Hub Guides, Python Central Hub Reference, Python Tutorial, Python tutorials, Python programming, Learn Python, Python for beginners, Python code examples, Python development, Python projects,Python programming language, Python tips and tricks,Python resources,Python learning platform,Python coding lessons,Python programming for beginners,Python programming exercises,Python coding practice,Python syntax,Python libraries,Python community,Python best practices,Python coding challenges",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            name: "author",
+            content: "Ravi Kishan",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            name: "robots",
+            content: "index, follow",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            name: "google-site-verification",
+            content: "APcUc_Z3jsswucDreyJEXK3kcIpbw1wqRx0lO9VHjOA",
+          }
         }
       ],
     }),
