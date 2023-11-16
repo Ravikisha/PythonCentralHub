@@ -97,6 +97,10 @@ The Python Central Hub Repository includes projects in various categories, inclu
 - [Head First Python](./books/Head%20First%20Python%20%20A%20Brain-Friendly%20Guide%20(%20PDFDrive.com%20).pdf)
 - [Big Book of Small Python Projects](./books/BigBookSmallPythonProjects.pdf)
 - [Python Cookbook](./books/Python_Cookbook_3rd_Edition.pdf)
+- [Dive into Python 3](./books/diveintopython3.pdf)
+- [Effective Python](./books/Effective-Python.pdf)
+- [Think Python](./books/think-python-2nd.pdf)
+- [Learning Python](./books/learning-python.pdf)
 
 ## Application Screenshots 📷
 ![Screenshot 1](./poster/mainPage.png)
