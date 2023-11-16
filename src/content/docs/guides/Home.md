@@ -1,6 +1,8 @@
 ---
 title: Home
-description: What is this tutorial about?
+description: Python Central Hub is your go-to resource for mastering the Python programming language. Whether you're a beginner taking your first steps into the world of programming or an experienced developer looking to enhance your Python skills, you've come to the right place.
+sidebar:
+    order: 1
 ---
 
 # Welcome to Python Central Hub!

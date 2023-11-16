@@ -98,11 +98,11 @@ export default defineConfig({
       head: [
         {
           tag: "meta",
-          attrs: { property: "og:image", content: site + "og.jpg?v=1" },
+          attrs: { property: "og:image", content: site + "og.png?v=1" },
         },
         {
           tag: "meta",
-          attrs: { property: "twitter:image", content: site + "og.jpg?v=1" },
+          attrs: { property: "twitter:image", content: site + "og.png?v=1" },
         },
         {
           tag: "link",
@@ -142,7 +142,7 @@ export default defineConfig({
           attrs: {
             name: "og:url",
             property: "og:url",
-            content: "https://python-central-hub.vercel.app/",
+            content: site,
           },
         },
         {
@@ -192,7 +192,7 @@ export default defineConfig({
           tag: "meta",
           attrs: {
             name: "twitter:domain",
-            content: "https://python-central-hub.vercel.app/",
+            content: site,
           },
         },
         {
