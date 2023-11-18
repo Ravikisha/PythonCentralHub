@@ -206,8 +206,16 @@ export default defineConfig({
         name: "google-site-verification",
         content: "APcUc_Z3jsswucDreyJEXK3kcIpbw1wqRx0lO9VHjOA"
       }
-    }]
+    },
+    {
+      tag: "link",
+      attrs:{
+        rel: "manifest",
+        href: "/manifest.json"
+      }
+    }
+  ]
   }), tailwind({
     applyBaseStyles: false
-  }), sitemap(), robotsTxt(), AstroPWA()]
+  }), sitemap(), robotsTxt()]
 });
