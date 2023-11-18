@@ -2,6 +2,7 @@ import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import rehypePrettyCode from "rehype-pretty-code";
 import robotsTxt from 'astro-robots-txt';
+import AstroPWA from '@vite-pwa/astro'
 
 const site = "https://python-central-hub.vercel.app";
 
@@ -208,5 +209,5 @@ export default defineConfig({
     }]
   }), tailwind({
     applyBaseStyles: false
-  }), sitemap(), robotsTxt()]
+  }), sitemap(), robotsTxt(), AstroPWA()]
 });
