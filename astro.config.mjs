@@ -1,7 +1,9 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import rehypePrettyCode from "rehype-pretty-code";
-const site = "https://python-central-hub.vercel.app/";
+import robotsTxt from 'astro-robots-txt';
+
+const site = "https://python-central-hub.vercel.app";
 
 /** @type {import('rehype-pretty-code').Options} */
 import tailwind from "@astrojs/tailwind";
@@ -47,7 +49,7 @@ const options = {
 
 // https://astro.build/config
 export default defineConfig({
-  site: "https://python-central-hub.vercel.app",
+  site,
   markdown: {
     syntaxHighlight: false,
     // Disable syntax built-in syntax hightlighting from astro
@@ -206,5 +208,5 @@ export default defineConfig({
     }]
   }), tailwind({
     applyBaseStyles: false
-  }), sitemap()]
+  }), sitemap(), robotsTxt()]
 });
