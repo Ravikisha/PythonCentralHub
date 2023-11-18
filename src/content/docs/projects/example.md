@@ -1,11 +1,9 @@
 ---
 title: Example Project
-description: A guide in my new Starlight docs site.
+description: This is an example project.
 ---
 
-Guides lead a user through a specific task they want to accomplish, often with a sequence of steps.
-Writing a good guide requires thinking about what your users are trying to do.
+# Example Project
+We are working on the project part. 
 
-## Further reading
-
-- Read [about how-to guides](https://diataxis.fr/how-to-guides/) in the Diátaxis framework
+## Coming Soon 😎
