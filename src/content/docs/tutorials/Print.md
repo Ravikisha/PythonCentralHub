@@ -98,6 +98,10 @@ One-Two-Three
 
 The `end` parameter defines the character at the end of the `print()` function:
 
+:::note
+By default, the `end` parameter is set to `\n`, which adds a newline character at the end of the output.
+:::
+
 ```python title="print.py" showLineNumbers{1}
 print("This is a line", end=".\n")
 ```
@@ -108,6 +112,23 @@ Output:
 C:\Users\Your Name> python print.py
 This is a line.
 ```
+
+#### Another Example
+
+```python title="print.py" showLineNumbers{1}
+print("This is a line", end="")
+print("This is another line")
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python print.py
+This is a lineThis is another line
+```
+
+In this example, we've used the `end` parameter to remove the newline character from the first `print()` function. This allows us to print the second line on the same line as the first.
+
 
 ## Printing Variables and Expressions
 
