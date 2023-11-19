@@ -1,6 +1,6 @@
 ---
 title: Python Syntax
-description: An introduction to Python syntax.
+description: An introduction to Python syntax. Learn about Python's unique syntax and best practices for writing clean and readable code. This tutorial covers indentation, comments, and naming conventions.
 sidebar: 
     order: 4
 ---

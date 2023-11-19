@@ -1,11 +1,11 @@
 ---
-title: Books
-description: Python Central Hub is your go-to resource for mastering the Python programming language. Whether you're a beginner taking your first steps into the world of programming or an experienced developer looking to enhance your Python skills, you've come to the right place. There are topics for all levels of experience, from beginner-friendly introductions to advanced techniques. Explore our curated collection of books and discover the richness of Python programming! These are top 10 books for python programming.
+title: The Python Library
+description: A curated list of Python books for beginners and experienced developers. Python Central Hub has compiled a list of the best 10 Python books to help you learn Python programming.
 sidebar:
     order: 2
 ---
 
-# Python Learning Resources: Unlock the World of Programming
+## Python Learning Resources: Unlock the World of Programming
 
 Welcome to our specially curated page dedicated to Python learning resources! Whether you are a beginner looking to take your first steps into programming or an experienced developer aiming to enhance your Python skills, this collection of books will guide you on your journey to mastery.
 

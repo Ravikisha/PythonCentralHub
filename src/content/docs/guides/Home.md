@@ -1,11 +1,9 @@
 ---
-title: Home
-description: Python Central Hub is your go-to resource for mastering the Python programming language. Whether you're a beginner taking your first steps into the world of programming or an experienced developer looking to enhance your Python skills, you've come to the right place.
+title: Welcome to Python Central Hub!
+description: Python Central Hub is your go-to resource for mastering the Python programming language. We offer comprehensive tutorials, hands-on projects, and the latest updates and news in the Python ecosystem.
 sidebar:
     order: 1
 ---
-
-# Welcome to Python Central Hub!
 
 ## Your Gateway to Python Mastery
 
@@ -31,11 +29,11 @@ Connect with a vibrant community of Python enthusiasts. Whether you have questio
 
 Ready to dive in? Here are a few recommended starting points:
 
-- [**Introduction to Python:**](/tutorials/introduction-to-python) Familiarize yourself with the basics of Python and get your development environment set up.
+- [**Introduction to Python:**](/tutorials/introduction/) Familiarize yourself with the basics of Python and get your development environment set up.
 
-- [**Python Fundamentals:**](/tutorials/python-fundamentals) Explore the core concepts of Python, including variables, data types, and control structures.
+- [**Python Fundamentals:**](/tutorials/getstarted/) Explore the core concepts of Python, including variables, data types, and control structures.
 
-- [**Hands-On Projects:**](/projects) Apply your knowledge with our collection of hands-on projects designed for various skill levels.
+- [**Hands-On Projects:**](/projects/example/) Apply your knowledge with our collection of hands-on projects designed for various skill levels.
 
 ## Join the Python Central Hub Community
 
@@ -43,6 +41,6 @@ Don't miss out on the latest updates, tutorials, and community discussions. Foll
 
 - [Twitter](https://twitter.com/pythoncentralhub)
 - [Facebook](https://www.facebook.com/pythoncentralhub)
-- [Community Forums](/forums)
+- [Community Forums](/)
 
 Start your Python journey with Python Central Hub today and unlock the full potential of this powerful programming language!

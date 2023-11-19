@@ -1,6 +1,6 @@
 ---
-title: Getting Started with Python
-description: How to run Python code on your machine.
+title: Getting Started
+description: How to run Python code on your machine. This tutorial covers running Python code using the command line or terminal, creating Python files, and using essential Python commands.
 sidebar: 
     order: 3
 ---

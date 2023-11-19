@@ -5,7 +5,7 @@ sidebar:
     order: 12
 ---
 
-# Mastering User Input in Python
+## Mastering User Input in Python
 
 User input is a crucial component of many Python programs, enabling interaction and customization. In this comprehensive guide, we'll explore the various aspects of handling user input in Python, covering the basics, type conversion, input validation, and practical examples.
 

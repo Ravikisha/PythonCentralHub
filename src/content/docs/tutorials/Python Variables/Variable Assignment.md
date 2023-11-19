@@ -1,6 +1,6 @@
 ---
 title: Variable Assignment
-description: An introduction to variables in Python.
+description: An introduction to variables in Python. Learn about variable assignment, data types, and best practices for naming variables.
 sidebar: 
     order: 6
 ---

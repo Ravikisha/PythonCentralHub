@@ -1,10 +1,9 @@
 ---
 title: Python Comments
-description: An introduction to comments in Python.
+description: An introduction to comments in Python. Learn about single-line and multi-line comments and best practices for using comments in your Python code.
 sidebar: 
     order: 5
 ---
-# Comments in Python
 
 Comments are used in Python to add explanations or notes to the code. They are not executed and do not affect the program's functionality. Comments are crucial for enhancing code readability and for providing context to readers.
 

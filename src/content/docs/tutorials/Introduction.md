@@ -1,6 +1,6 @@
 ---
 title: Introduction to Python
-description: An introduction to the Python programming language.
+description: An introduction to the Python programming language. Learn about Python's history, usage, advantages, and applications.
 sidebar: 
     order: 1
 ---

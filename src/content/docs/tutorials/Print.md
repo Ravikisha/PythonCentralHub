@@ -5,7 +5,7 @@ sidebar:
     order: 11
 ---
 
-# Mastering the Art of Printing in Python
+## Mastering the Art of Printing in Python
 
 Printing in Python is more than just putting words on the screen; it's a fundamental aspect of communicating with your program's users and developers alike. In this comprehensive guide, we'll explore the various ways you can use the `print()` function to display information, format output, and enhance the user experience.
 

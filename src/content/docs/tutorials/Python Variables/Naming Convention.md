@@ -1,6 +1,6 @@
 ---
 title: Naming Convention
-description: An introduction to naming conventions in Python.
+description: An introduction to naming conventions in Python. Learn about variable, constant, function, and class naming conventions and best practices for naming identifiers in Python.
 sidebar: 
     order: 7
 ---

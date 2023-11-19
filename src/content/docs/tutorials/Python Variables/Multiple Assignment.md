@@ -1,6 +1,6 @@
 ---
 title: Multiple Assignment
-description: How to assign multiple values to multiple variables in Python.
+description: How to assign multiple values to multiple variables in Python. Learn about multiple assignment, one value to multiple variables, multiple values to one variable, and unpacking a tuple or list.
 sidebar: 
     order: 8
 ---

@@ -5,7 +5,7 @@ sidebar:
     order: 10
 ---
 
-# Understanding Data Types in Python
+## Understanding Data Types in Python
 
 Data types in Python are a fundamental concept that plays a crucial role in defining the nature of variables and how they behave during operations. Python is a dynamically-typed language, which means that the interpreter can determine the type of a variable at runtime. This flexibility allows for more concise and expressive code. Let's delve into the essential data types in Python.
 

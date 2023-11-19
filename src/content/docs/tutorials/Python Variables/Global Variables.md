@@ -1,6 +1,6 @@
 ---
 title: Global Variables
-description: An introduction to global variables in Python.
+description: An introduction to global variables in Python. Learn about global variables, local variables, and the global keyword. This tutorial is part of the Python Variables Course.
 sidebar: 
     order: 9
 ---

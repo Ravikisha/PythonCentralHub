@@ -1,6 +1,6 @@
 ---
 title: Installation Guide
-description: How to install Python and set up your development environment.
+description: How to install Python and set up your development environment. This guide covers the installation process for Windows, macOS, and Linux.
 sidebar: 
     order: 2
 ---
@@ -56,7 +56,7 @@ Activate the virtual environment:
 
 ## Step 5: Ready to Code!
 
-With Python installed and your development environment set up, you're now ready to explore the tutorials and projects on Python Central Hub. Start with our [Introduction to Python](/tutorials/introduction-to-python) tutorial to kick off your Python journey!
+With Python installed and your development environment set up, you're now ready to explore the tutorials and projects on Python Central Hub. Start with our [Introduction to Python](/tutorials/introduction/) tutorial to kick off your Python journey!
 
 If you encounter any issues during the installation process or have questions, feel free to reach out to our community forums for assistance.
 
