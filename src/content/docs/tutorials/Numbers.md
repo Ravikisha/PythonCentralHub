@@ -2,7 +2,7 @@
 title: Python Numbers
 description: Learn about Python numbers - integers, floating-point numbers, and complex numbers.
 sidebar: 
-    order: 11
+    order: 13
 ---
 ## Understanding Python Numbers
 

@@ -2,7 +2,7 @@
 title: Python Input Statement
 description: How to get input from the user in Python.
 sidebar: 
-    order: 11
+    order: 12
 ---
 
 # Mastering User Input in Python
