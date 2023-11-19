@@ -205,7 +205,7 @@ print(bool(["apple", "banana", "cherry"]))  # True
 ```
 Output:
 
-```cmd title="command" showLineNumbers{1} {2-4}
+```cmd title="command" showLineNumbers{1}
 C:\Users\Your Name> python booleans.py
 True
 True
@@ -214,17 +214,17 @@ True
 ---
 
 ```python title="booleans.py" showLineNumbers{1}
-bool(False)
-bool(None)
-bool(0)
-bool("")
-bool(())
-bool([])
-bool({})
+print(bool(False))
+print(bool(None))
+print(bool(0))
+print(bool(""))
+print(bool(()))
+print(bool([]))
+print(bool({}))
 ```
 Output:
 
-```cmd title="command" showLineNumbers{1} {2-4}
+```cmd title="command" showLineNumbers{1}
 C:\Users\Your Name> python booleans.py
 False
 False
