@@ -21,7 +21,7 @@ Let's look at some examples of indexing strings in Python.
 
 #### Example 1: Indexing a String
 
-```python title="strings.py" showLineNumbers{1}
+```python title="strings.py" showLineNumbers{1} {3-4}
 # define a string
 string = "Hello World"
 print(string[0])
@@ -30,7 +30,7 @@ print(string[1])
 
 Output:
 
-```cmd title="command" showLineNumbers{1}
+```cmd title="command" showLineNumbers{1} {2-3}
 C:\Users\Your Name> python strings.py
 H
 e
@@ -51,7 +51,7 @@ Let's look at some examples of slicing strings in Python.
 
 #### Example 1: Slicing a String
 
-```python title="strings.py" showLineNumbers{1}
+```python title="strings.py" showLineNumbers{1} {3}
 # define a string
 string = "Hello World"
 print(string[0:5])
@@ -59,7 +59,7 @@ print(string[0:5])
 
 Output:
 
-```cmd title="command" showLineNumbers{1}
+```cmd title="command" showLineNumbers{1} {2}
 C:\Users\Your Name> python strings.py
 Hello
 ```
@@ -68,7 +68,7 @@ In the above example, we have sliced the string from index 0 to index 5. Since t
 
 ## Slicing a String with a Step Size
 
-```python title="strings.py" showLineNumbers{1}
+```python title="strings.py" showLineNumbers{1} {3}
 # define a string
 string = "Hello World"
 print(string[0:5:2])
@@ -76,7 +76,7 @@ print(string[0:5:2])
 
 Output:
 
-```cmd title="command" showLineNumbers{1}
+```cmd title="command" showLineNumbers{1} {2}
 C:\Users\Your Name> python strings.py
 Hlo
 ```
@@ -95,7 +95,7 @@ Let's look at some examples of accessing characters of a string using negative i
 
 #### Example 1: Accessing a Character using a Negative Index
 
-```python title="strings.py" showLineNumbers{1}
+```python title="strings.py" showLineNumbers{1} {3-4}
 # define a string
 string = "Hello World"
 print(string[-1])
@@ -104,7 +104,7 @@ print(string[-2])
 
 Output:
 
-```cmd title="command" showLineNumbers{1}
+```cmd title="command" showLineNumbers{1} {2-3}
 C:\Users\Your Name> python strings.py
 d
 l
@@ -113,7 +113,7 @@ l
 
 ## Slicing a String with Negative Indices
 
-```python title="strings.py" showLineNumbers{1}
+```python title="strings.py" showLineNumbers{1} {3}
 # define a string
 string = "Hello World"
 print(string[-5:-2])
@@ -121,7 +121,7 @@ print(string[-5:-2])
 
 Output:
 
-```cmd title="command" showLineNumbers{1}
+```cmd title="command" showLineNumbers{1} {2}
 C:\Users\Your Name> python strings.py
 Wor
 ```
@@ -130,7 +130,7 @@ In the above example, we have sliced the string from index -5 to index -2. Since
 
 ## Slice from the Start
 
-```python title="strings.py" showLineNumbers{1}
+```python title="strings.py" showLineNumbers{1} {3}
 # define a string
 string = "Hello World"
 print(string[:5])
@@ -138,7 +138,7 @@ print(string[:5])
 
 Output:
 
-```cmd title="command" showLineNumbers{1}
+```cmd title="command" showLineNumbers{1} {2}
 C:\Users\Your Name> python strings.py
 Hello
 ```
@@ -147,7 +147,7 @@ In the above example, we have sliced the string from the start to index 5. Since
 
 ## Slice to the End
 
-```python title="strings.py" showLineNumbers{1}
+```python title="strings.py" showLineNumbers{1} {3}
 # define a string
 string = "Hello World"
 print(string[6:])
@@ -155,7 +155,7 @@ print(string[6:])
 
 Output:
 
-```cmd title="command" showLineNumbers{1}
+```cmd title="command" showLineNumbers{1} {2}
 C:\Users\Your Name> python strings.py
 World
 ```
@@ -164,7 +164,7 @@ In the above example, we have sliced the string from index 6 to the end. Since t
 
 ## Reverse a String using Slicing
 
-```python title="strings.py" showLineNumbers{1}
+```python title="strings.py" showLineNumbers{1} {3}
 # define a string
 string = "Hello World"
 print(string[::-1])
@@ -172,7 +172,7 @@ print(string[::-1])
 
 Output:
 
-```cmd title="command" showLineNumbers{1}
+```cmd title="command" showLineNumbers{1} {2}
 C:\Users\Your Name> python strings.py
 dlroW olleH
 ```
