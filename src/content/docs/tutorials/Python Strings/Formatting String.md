@@ -1,6 +1,6 @@
 ---
 title: Python String Formatting
-description: Learn how to format strings in Python.
+description: Learn how to format strings in Python. Learn how to use the `%` operator, the `format()` method, and f-strings.
 sidebar: 
     order: 18
 ---
