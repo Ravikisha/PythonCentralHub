@@ -517,3 +517,310 @@ Output:
 C:\Users\Your Name> python strings.py
 Ravi Kishan is 23 years old.
 ```
+
+## F-Strings
+
+F-strings provide a concise and convenient way to embed python expressions inside string literals for formatting. F-strings are prefixed with `f` or `F`. The string literals can contain replacement fields surrounded by curly braces `{}`. Anything inside the curly braces is considered as an expression that will be evaluated at runtime. The result of the evaluated expression will be converted into a string and inserted into the string literal. Let's look at an example.
+
+```python title="strings.py" showLineNumbers{1} {5}
+# define variables
+name = "Ravi"
+age = 23
+# print string
+print(f"{name} is {age} years old.")
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python strings.py
+Ravi is 23 years old.
+```
+
+In the above example, we have used `{}` placeholders to insert the values of the variables into the string.
+
+Here is a list of placeholders that can be used in the string −
+| Sequence | Placeholder | Meaning|
+| :------- | :---------- | :-----|
+| 1        | `{}`        | Insert the value in the placeholder|
+| 2        | `{var}`     | Insert the value of the mapping variable (dictionary arguments) in the placeholder|
+| 3        | `{var:n}`   | Insert the value of the mapping variable (dictionary arguments) in the placeholder with the minimum total width of n digits after the decimal point (if appl.)|
+| 4        | `{var:n.m}` | Insert the value of the mapping variable (dictionary arguments) in the placeholder with the minimum total width of m and n digits after the decimal point (if appl.)|
+| 5        | `{var:n.mf}`| Insert the value of the mapping variable (dictionary arguments) in the placeholder with the minimum total width of m and n digits after the decimal point (if appl.) and the sign|
+| 6        | `{var:n.m%}`| Insert the value of the mapping variable (dictionary arguments) in the placeholder with the minimum total width of m and n digits after the decimal point (if appl.) and the sign|
+| 7        | `{var:n.mg}`| Insert the value of the mapping variable (dictionary arguments) in the placeholder with the minimum total width of m and n digits after the decimal point (if appl.) and the sign|
+
+Examples of using the f-strings −
+
+```python title="strings.py" showLineNumbers{1} {5}
+# define variables
+a = 5
+b = 3.14
+# print string
+print(f"a is {a} and b is {b}")
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python strings.py
+a is 5 and b is 3.14
+```
+
+Another example:
+> `{a}` and `{b}` placeholders to insert the values of the variables into the string.
+
+```python title="strings.py" showLineNumbers{1} {5}
+# define variables
+name = "Ravi"
+age = 23
+# print string
+print(f"{age} is {name} years old.")
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python strings.py
+23 is Ravi years old.
+```
+
+In the above example, we have used `{age}` and `{name}` placeholders to insert the values of the variables into the string. The `age` and `name` are the mapping variables (dictionary arguments) in the placeholder. `age` and `name` are the keys of the dictionary. `age=age` and `name=name` are the values of the dictionary. Hence, the value of `age` is inserted in the first placeholder and the value of `name` is inserted in the second placeholder.
+
+Another example:
+> `{a:5d}` is used to specify the minimum total width of the field. The number `5` is used to specify the minimum total width of the field. The field will be filled with spaces if the value doesn't use up the entire width.
+
+```python title="strings.py" showLineNumbers{1} {5}
+# define variables
+a = 5
+b = "Ravi"
+# print string
+print(f"a is {a:5d} and b is {b:5s}")
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python strings.py
+a is     5 and b is Ravi
+```
+
+In the above example, we have used `{a:5d}` and `{b:5s}` placeholders to insert the values of the variables into the string. The number `5` is used to specify the minimum total width of the field. The field will be filled with spaces if the value doesn't use up the entire width.
+
+Another example:
+> `{a:05d}` is used to specify the minimum total width of the field. The number `5` is used to specify the minimum total width of the field. The field will be filled with `0` if the value doesn't use up the entire width.
+
+```python title="strings.py" showLineNumbers{1} {5}
+
+# define variables
+a = 5
+b = "Ravi"
+# print string
+print(f"a is {a:05d} and b is {b:5s}")
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python strings.py
+a is 00005 and b is Ravi
+```
+
+In the above example, we have used `{a:05d}` and `{b:5s}` placeholders to insert the values of the variables into the string. The number `5` is used to specify the minimum total width of the field. The field will be filled with `0` if the value doesn't use up the entire width.
+
+Another example:
+> `{a:1.2f}` is used to specify the minimum total width of the field. The number `1` is used to specify the minimum total width of the field. The number `2` is used to specify the number of digits to display after the decimal point.
+
+```python title="strings.py" showLineNumbers{1} {4}
+# define variables
+pi = 3.141592653589793
+# print string
+print(f"The value of pi is {pi:1.2f}")
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python strings.py
+The value of pi is 3.14
+```
+
+In this example, we have used `{pi:1.2f}` placeholder to insert the value of the variable into the string. The number `1` is used to specify the minimum total width of the field. The number `2` is used to specify the number of digits to display after the decimal point.
+
+Another example:
+> `{a:20s}` is used to specify the minimum total width of the field. The number `20` is used to specify the minimum total width of the field. The field will be filled with spaces if the value doesn't use up the entire width.
+
+```python title="strings.py" showLineNumbers{1} {3-4}
+# define variables
+name = "Ravi Kishan"
+print(f"Hello, {name:20s}.")
+print(f"Hello, {name:<20s}.")
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {3}
+C:\Users\Your Name> python strings.py
+Hello, Ravi Kishan       .
+Hello, Ravi Kishan       .
+```
+
+In this example, we have used `{name:20s}` and `{name:<20s}` placeholders to insert the values of the variables into the string. The number `20` is used to specify the minimum total width of the field. The field will be filled with spaces if the value doesn't use up the entire width. The `<` sign is used to left-justify the value.
+
+Another example:
+> `{a:5.7s}` is used to specify the minimum total width of the field. The number `5` is used to specify the minimum total width of the field. The number `7` is used to specify the maximum total width of the field. The field will be filled with spaces if the value doesn't use up the entire width.
+
+```python title="strings.py" showLineNumbers{1} {4-5}
+# define variables
+name = "Ravi Kishan"
+print(f"Welcome, {name:.5s}.")
+print(f"Welcome, {name:5.7s}.")
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {3}
+C:\Users\Your Name> python strings.py
+Welcome, Ravi.
+Welcome, Ravi Ki.
+```
+
+In this example, we have used `{name:.5s}` and `{name:5.7s}` placeholders to insert the values of the variables into the string. The number `5` is used to specify the minimum total width of the field. The number `7` is used to specify the maximum total width of the field. The field will be filled with spaces if the value doesn't use up the entire width.
+
+Another example:
+`x`, `o`, `X`, `b`, `n`, `e`, `E`, `f`, `F`, `g`, `G`, `%` can be used to format the numbers.
+
+```python title="strings.py" showLineNumbers{1} {4-5}
+# define variables
+a = 5
+b = 3.14
+print(f"a is {a:x} and b is {b:o}")
+print(f"a is {a:X} and b is {b:b}")
+print(f"a is {a:n} and b is {b:e}")
+print(f"a is {a:N} and b is {b:E}")
+print(f"a is {a:f} and b is {b:F}")
+print(f"a is {a:g} and b is {b:G}")
+print(f"a is {a:%} and b is {b:%}")
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {3}
+C:\Users\Your Name> python strings.py
+a is 5 and b is 5
+a is 5 and b is 11
+a is 5 and b is 3.140000e+00
+a is 5 and b is 3.140000E+00
+a is 5.000000 and b is 3.140000
+a is 5 and b is 3.14
+a is 500.000000% and b is 314.000000%
+```
+
+In this example, we have used `{a:x}`, `{b:o}`, `{a:X}`, `{b:b}`, `{a:n}`, `{b:e}`, `{a:N}`, `{b:E}`, `{a:f}`, `{b:F}`, `{a:g}`, `{b:G}`, `{a:%}`, and `{b:%}` placeholders to insert the values of the variables into the string. `x`, `o`, `X`, `b`, `n`, `e`, `E`, `f`, `F`, `g`, `G`, `%` are used to format the numbers.
+
+This table is the representation of the above example −
+| Sequence | Placeholder | Meaning|
+| :------- | :---------- | :-----|
+| 1        | `{a:x}`     | Convert the value of `a` to hexadecimal format|
+| 2        | `{b:o}`     | Convert the value of `b` to octal format|
+| 3        | `{a:X}`     | Convert the value of `a` to hexadecimal format|
+| 4        | `{b:b}`     | Convert the value of `b` to binary format|
+| 5        | `{a:n}`     | Convert the value of `a` to number format|
+| 6        | `{b:e}`     | Convert the value of `b` to exponential format|
+| 7        | `{a:N}`     | Convert the value of `a` to number format|
+| 8        | `{b:E}`     | Convert the value of `b` to exponential format|
+| 9        | `{a:f}`     | Convert the value of `a` to float format|
+| 10       | `{b:F}`     | Convert the value of `b` to float format|
+| 11       | `{a:g}`     | Convert the value of `a` to general format|
+| 12       | `{b:G}`     | Convert the value of `b` to general format|
+| 13       | `{a:%}`    | Convert the value of `a` to percentage format|
+| 14       | `{b:%}`    | Convert the value of `b` to percentage format|
+| 15       | `{a:,.2f}`  | Convert the value of `a` to float format with comma as a thousand separator and 2 digits after the decimal point|
+| 16      | `{a:,.2%}`  | Convert the value of `a` to percentage format with comma as a thousand separator and 2 digits after the decimal point|
+| 17       | `{a:,.2e}`  | Convert the value of `a` to exponential format with comma as a thousand separator and 2 digits after the decimal point|
+
+Another example:
+> You can use the expression as a placeholder.
+
+```python title="strings.py" showLineNumbers{1} {4-5}
+# define variables
+a = 9
+b = 3
+print(f"{a} + {b} = {a+b}")
+print(f"{a} - {b} = {a-b}")
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {3}
+C:\Users\Your Name> python strings.py
+9 + 3 = 12
+9 - 3 = 6
+```
+
+In this example, we have used `{a} + {b} = {a+b}` and `{a} - {b} = {a-b}` placeholders to insert the values of the variables into the string. The expression `{a+b}` is used as a placeholder. The expression `{a-b}` is used as a placeholder.
+
+Another example:
+> You can use `f-strings` to do formatting of a string to store it in a variable.
+
+```python title="strings.py" showLineNumbers{1} {4}
+# define variables
+name = "Ravi Kishan"
+age = 23
+intro = f"{name} is {age} years old."
+print(intro)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python strings.py
+Ravi Kishan is 23 years old.
+```
+
+## Template Strings
+
+Template strings provide a simpler way to do string formatting. Template strings are prefixed with `$` or `${}`. The string literals can contain replacement fields surrounded by curly braces `{}`. Anything inside the curly braces is considered as an expression that will be evaluated at runtime. The result of the evaluated expression will be converted into a string and inserted into the string literal. Let's look at an example.
+
+```python title="strings.py" showLineNumbers{1} {5}
+from string import Template
+# define variables
+name = "Ravi"
+age = 23
+# print string
+print(Template("$name is $age years old.").substitute(name=name, age=age))
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python strings.py
+Ravi is 23 years old.
+```
+
+In the above example, we have used `${}` placeholders to insert the values of the variables into the string.
+
+Here is a list of placeholders that can be used in the string −
+| Sequence | Placeholder | Meaning|
+| :------- | :---------- | :-----|
+| 1        | `${}`       | Insert the value in the placeholder|
+| 2        | `${var}`    | Insert the value of the mapping variable (dictionary arguments) in the placeholder|
+| 3        | `${var:n}`  | Insert the value of the mapping variable (dictionary arguments) in the placeholder with the minimum total width of n digits after the decimal point (if appl.)|
+| 4        | `${var:n.m}`| Insert the value of the mapping variable (dictionary arguments) in the placeholder with the minimum total width of m and n digits after the decimal point (if appl.)|
+| 5        | `${var:n.mf}`| Insert the value of the mapping variable (dictionary arguments) in the placeholder with the minimum total width of m and n digits after the decimal point (if appl.) and the sign|
+| 6        | `${var:n.m%}`| Insert the value of the mapping variable (dictionary arguments) in the placeholder with the minimum total width of m and n digits after the decimal point (if appl.) and the sign|
+| 7        | `${var:n.mg}`| Insert the value of the mapping variable (dictionary arguments) in the placeholder with the minimum total width of m and n digits after the decimal point (if appl.) and the sign|
+| 8        | `${var:5s}` | Insert the value of the mapping variable (dictionary arguments) in the placeholder with the minimum total width of the field. The number `5` is used to specify the minimum total width of the field. The field will be filled with spaces if the value doesn't use up the entire width.|
+| 9        | `${var:5.7s}`| Insert the value of the mapping variable (dictionary arguments) in the placeholder with the minimum total width of the field. The number `5` is used to specify the minimum total width of the field. The number `7` is used to specify the maximum total width of the field. The field will be filled with spaces if the value doesn't use up the entire width.|
+
+:::tip
+The `Template` class is used to create a template string. The `substitute()` method is used to substitute the values of the variables into the string. you can apply all the formatting techniques that we have learned in the previous sections.
+:::
+
+:::caution
+The `Template` class is not safe for untrusted input. It may lead to security issues. Hence, it is recommended to use the `format()` method or f-strings.
+:::
+
+## Conclusion
+
+In this tutorial, we have learned about the string formatting techniques in Python. We have learned about the `%` operator, `format()` method, f-strings, and template strings. We have also learned about the placeholders that can be used in the string. We have also learned about the formatting of numbers. Now you can use any of these techniques to format the strings in Python.
