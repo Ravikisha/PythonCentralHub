@@ -824,3 +824,7 @@ The `Template` class is not safe for untrusted input. It may lead to security is
 ## Conclusion
 
 In this tutorial, we have learned about the string formatting techniques in Python. We have learned about the `%` operator, `format()` method, f-strings, and template strings. We have also learned about the placeholders that can be used in the string. We have also learned about the formatting of numbers. Now you can use any of these techniques to format the strings in Python.
+
+:::tip
+For more information about strings formatting, see [Python String Formatting](https://docs.python.org/3/library/string.html#formatstrings).
+:::
