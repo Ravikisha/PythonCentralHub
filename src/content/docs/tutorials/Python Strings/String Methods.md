@@ -465,3 +465,278 @@ False
 :::caution
 The `isdigit()` method will return `False` if the string contains any other character than digits, such as `a`, `b`, `c`, `!`, `@`, `#`, `$`, etc. It also returns `False` if the string contains any whitespace characters.
 :::
+
+## 16. isidentifier()
+The `isidentifier()` method returns `True` if the string is a valid identifier, otherwise `False`.
+
+**Syntax**:
+#### `string.isidentifier()`
+- **Returns** - `True` if the string is a valid identifier, otherwise `False`
+
+**Example**:
+```python title="strings.py" showLineNumbers{1} {3-6}
+# isidentifier() method
+string = 'PythonStrings'
+print(string.isidentifier())
+print('Python Strings'.isidentifier())
+print('Python-Strings'.isidentifier())
+print('Python_Strings'.isidentifier())
+```
+
+Output
+
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\Your Name> python strings.py
+True
+False
+False
+True
+```
+
+## 17. islower()
+The `islower()` method returns `True` if all the characters are in lower case, otherwise `False`.
+
+**Syntax**:
+#### `string.islower()`
+- **Returns** - `True` if all characters in the string are lower case
+
+**Example**:
+```python title="strings.py" showLineNumbers{1} {3-4}
+# islower() method
+string = 'python strings'
+print(string.islower())
+print('Python Strings'.islower())
+```
+
+Output
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\Your Name> python strings.py
+True
+False
+```
+:::caution
+The `islower()` method will return `False` if the string contains any uppercase characters. It also returns `False` if the string contains any special characters, like `!`, `@`, `#`, `$`, etc. It also returns `False` if the string contains any whitespace characters.
+:::
+
+## 18. isnumeric()
+The `isnumeric()` method returns `True` if all the characters are numeric (0-9), otherwise `False`.
+
+**Syntax**:
+#### `string.isnumeric()`
+- **Returns** - `True` if all characters in the string are numeric
+
+**Example**:
+```python title="strings.py" showLineNumbers{1} {3-4}
+# isnumeric() method
+string = '123456'
+print(string.isnumeric())
+print('123 456'.isnumeric())
+```
+
+Output
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\Your Name> python strings.py
+True
+False
+```
+
+:::caution
+The `isnumeric()` method will return `False` if the string contains any other character than numeric characters, such as `a`, `b`, `c`, `!`, `@`, `#`, `$`, etc. It also returns `False` if the string contains any whitespace characters.
+:::
+
+## 19. isprintable()
+The `isprintable()` method returns `True` if all the characters are printable, otherwise `False`.
+
+**Syntax**:
+#### `string.isprintable()`
+- **Returns** - `True` if all characters in the string are printable
+
+**Example**:
+```python title="strings.py" showLineNumbers{1} {3-4}
+# isprintable() method
+string = 'Python Strings'
+print(string.isprintable())
+print('Python\nStrings'.isprintable())
+```
+
+Output
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\Your Name> python strings.py
+True
+False
+```
+
+## 20. isspace()
+The `isspace()` method returns `True` if all the characters in a string are whitespaces, otherwise `False`.
+
+**Syntax**:
+#### `string.isspace()`
+- **Returns** - `True` if all characters in the string are whitespaces
+
+**Example**:
+```python title="strings.py" showLineNumbers{1} {3-4}
+# isspace() method
+string = '   '
+print(string.isspace())
+print('Python Strings'.isspace())
+```
+
+Output
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\Your Name> python strings.py
+True
+False
+```
+
+## 21. istitle()
+The `istitle()` method returns `True` if all words in a text start with a upper case letter, AND the rest of the word are lower case letters, otherwise `False`.
+
+**Syntax**:
+#### `string.istitle()`
+- **Returns** - `True` if all words in a text start with a upper case letter, AND the rest of the word are lower case letters
+
+**Example**:
+```python title="strings.py" showLineNumbers{1} {3-4}
+# istitle() method
+string = 'Python Strings'
+print(string.istitle())
+print('Python strings'.istitle())
+```
+
+Output
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\Your Name> python strings.py
+True
+False
+```
+
+## 22. isupper()
+The `isupper()` method returns `True` if all the characters are in upper case, otherwise `False`.
+
+**Syntax**:
+#### `string.isupper()`
+- **Returns** - `True` if all characters in the string are upper case
+
+**Example**:
+```python title="strings.py" showLineNumbers{1} {3-4}
+# isupper() method
+string = 'PYTHON STRINGS'
+print(string.isupper())
+print('Python Strings'.isupper())
+```
+
+Output
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\Your Name> python strings.py
+True
+False
+```
+
+:::caution
+The `isupper()` method will return `False` if the string contains any lowercase characters. It also returns `False` if the string contains any special characters, like `!`, `@`, `#`, `$`, etc. It also returns `False` if the string contains any whitespace characters.
+:::
+
+## 23. join()
+The `join()` method takes all items in an iterable and joins them into one string.
+
+**Syntax**:
+#### `string.join(iterable)`
+- **iterable** - Required. Any iterable object where all the returned values are strings
+
+**Example**:
+```python title="strings.py" showLineNumbers{1} {3-4}
+# join() method
+string = 'Python Strings'
+print(' '.join(string))
+print(''.join(string))
+```
+
+Output
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\Your Name> python strings.py
+P y t h o n   S t r i n g s
+Python Strings
+```
+
+## 24. ljust()
+The `ljust()` method will left align the string, using a specified character (space is default) as the fill character.
+
+**Syntax**:
+#### `string.ljust(length, character)`
+- **length** - The length of the returned string
+- **character** (optional) - The character to fill the missing space on the right side. Default is `" "`
+- **Returns** - A left aligned string
+
+**Example**:
+```python title="strings.py" showLineNumbers{1} {3-4}
+# ljust() method
+string = 'Python Strings'
+print(string.ljust(20))
+print(string.ljust(20, '*'))
+```
+
+Output
+
+```cmd title="command" showLineNumbers{1} {3-4}
+C:\Users\Your Name> python strings.py
+Python Strings
+Python Strings*******
+```
+
+## 25. lower()
+The `lower()` method returns a string where all characters are lower case.
+
+**Syntax**:
+#### `string.lower()`
+- **Returns** - A lower case string
+
+**Example**:
+```python title="strings.py" showLineNumbers{1} {3}
+# lower() method
+string = 'Python Strings'
+print(string.lower())
+```
+
+Output
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python strings.py
+python strings
+```
+
+## 26. lstrip()
+The `lstrip()` method removes any leading characters (space is the default leading character to remove)
+
+**Syntax**:
+#### `string.lstrip(characters)`
+- **characters** (optional) - A set of characters to remove as leading characters
+- **Returns** - A left trim version of the string
+
+**Example**:
+```python title="strings.py" showLineNumbers{1} {3-4}
+# lstrip() method
+string = '   Python Strings'
+print(string.lstrip())
+print(string.lstrip('   '))
+```
+
+Output
+
+```cmd title="command" showLineNumbers{1} {3-4}
+C:\Users\Your Name> python strings.py
+Python Strings
+Python Strings
+```
+
+## 27. maketrans()
+The `maketrans()` method returns a mapping table that can be used with the `translate()` method to replace specified characters.
+
+**Syntax**:
+#### `string.maketrans(x, y, z)`
