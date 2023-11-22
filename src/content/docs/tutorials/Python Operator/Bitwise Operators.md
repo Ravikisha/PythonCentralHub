@@ -1,6 +1,6 @@
 ---
 title: Python Bitwise Operators
-description: Learn how to use Python bitwise operators. 
+description: Learn how to use Python bitwise operators. Bitwise operators in Python offer a low-level, efficient means of manipulating individual bits within integers. We use & (Bitwise AND), | (Bitwise OR), ^ (Bitwise XOR), ~ (Bitwise NOT), << (Bitwise Left Shift), >> (Bitwise Right Shift) operators in Python.
 sidebar: 
     order: 25
 ---
@@ -23,30 +23,6 @@ The following table lists the bitwise operators in Python:
 | `<<` | Performs bitwise left shift on operands | `x << y` |
 | `>>` | Performs bitwise right shift on operands | `x >> y` |
 
-<!-- ## Equality
-#### `==` (Equality) Operator
-The equality operator (`==`) compares the values of two operands. If the values of both operands are equal, then the condition becomes `True`. Otherwise, the condition becomes `False`. The following example demonstrates how to use the equality operator in Python:
-
-```python title="operators.py" showLineNumbers{1} {4-5}
-# Equality operator
-x = 10
-y = 5
-z = x == y
-t = x == 10
-print(z)
-print(t)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2-3}
-C:\Users\Your Name> python operators.py
-False
-True
-```
-
-In the above example, we have used the equality operator to compare the values of two operands `x` and `y`. Since the value of `x` is not equal to the value of `y`, the condition becomes `False`. The result of the equality operator is then assigned to the variable `z`. The value of `z` is then printed to the console.
- -->
 
 ## Bitwise AND
 #### `&` (Bitwise AND) Operator

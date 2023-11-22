@@ -1,6 +1,6 @@
 ---
 title: Python Assignment Operators
-description: Learn about Python Assignment Operators with examples. In this tutorial, we'll explore the assignment operators in Python, their syntax, and how they empower efficient Python programming. 
+description: Learn about Python Assignment Operators with examples. In this tutorial, we'll explore the assignment operators in Python, their syntax, and how they empower efficient Python programming. how to use =, +=, -=, *=, /=, %=, **=, //=, &=, |=, ^=, >>=, <<= operators in Python.
 sidebar: 
     order: 26
 ---
