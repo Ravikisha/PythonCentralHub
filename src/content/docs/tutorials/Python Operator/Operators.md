@@ -70,7 +70,30 @@ Comparison operators are used to compare two values. They either return `True` o
 | `<=` | If the value of the left operand is less than or equal to the value of the right operand, then the condition becomes true | `x <= y` |
 
 
-## 3. Assignment Operators
+## 3. Logical Operators
+Logical operators are used to combine conditional statements. They either return `True` or `False` according to the condition. The following table lists the logical operators in Python:
+
+| Operator | Description | Example |
+| :--- | :--- | :--- |
+| `and` | Returns `True` if both statements are true | `x < 5 and  x < 10` |
+| `or` | Returns `True` if one of the statements is true | `x < 5 or x < 4` |
+| `not` | Reverse the result, returns `False` if the result is true | `not(x < 5 and x < 10)` |
+
+
+## 4. Bitwise Operators
+Bitwise operators are used to perform bitwise calculations on integers. The following table lists the bitwise operators in Python:
+
+| Operator | Description | Example |
+| :--- | :--- | :--- |
+| `&` | Performs bitwise AND on operands | `x & y` |
+| `\|` | Performs bitwise OR on operands | `x \| y` |
+| `^` | Performs bitwise XOR on operands | `x ^ y` |
+| `~` | Performs bitwise NOT on operands | `~x` |
+| `<<` | Performs bitwise left shift on operands | `x << y` |
+| `>>` | Performs bitwise right shift on operands | `x >> y` |
+
+
+## 5. Assignment Operators
 Assignment operators are used to assign values to variables. The following table lists the assignment operators in Python:
 
 | Operator | Description | Example |
@@ -88,29 +111,6 @@ Assignment operators are used to assign values to variables. The following table
 | `^=` | Performs bitwise XOR on operators and assigns the result to the left operand | `x ^= y` is equivalent to `x = x ^ y` |
 | `>>=` | Performs bitwise right shift on operators and assigns the result to the left operand | `x >>= y` is equivalent to `x = x >> y` |
 | `<<=` | Performs bitwise left shift on operators and assigns the result to the left operand | `x <<= y` is equivalent to `x = x << y` |
-
-
-## 4. Logical Operators
-Logical operators are used to combine conditional statements. They either return `True` or `False` according to the condition. The following table lists the logical operators in Python:
-
-| Operator | Description | Example |
-| :--- | :--- | :--- |
-| `and` | Returns `True` if both statements are true | `x < 5 and  x < 10` |
-| `or` | Returns `True` if one of the statements is true | `x < 5 or x < 4` |
-| `not` | Reverse the result, returns `False` if the result is true | `not(x < 5 and x < 10)` |
-
-
-## 5. Bitwise Operators
-Bitwise operators are used to perform bitwise calculations on integers. The following table lists the bitwise operators in Python:
-
-| Operator | Description | Example |
-| :--- | :--- | :--- |
-| `&` | Performs bitwise AND on operands | `x & y` |
-| `\|` | Performs bitwise OR on operands | `x \| y` |
-| `^` | Performs bitwise XOR on operands | `x ^ y` |
-| `~` | Performs bitwise NOT on operands | `~x` |
-| `<<` | Performs bitwise left shift on operands | `x << y` |
-| `>>` | Performs bitwise right shift on operands | `x >> y` |
 
 
 ## 6. Membership Operators
