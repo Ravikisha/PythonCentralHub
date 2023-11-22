@@ -282,7 +282,7 @@ Similarly, we can overload other operators as well. The following table lists th
 ## 11. Operator Functions
 Python provides built-in functions for performing various operations. These functions are called operator functions. 
 For example, `operator.add(x, y)` is equivalent to `x + y`.
-```python title="operator_functions.py" showLineNumbers{1}
+```python title="operator_functions.py" showLineNumbers{1} {1-2}
 import operator
 print(operator.add(10, 20))
 ```
