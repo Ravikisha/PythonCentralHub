@@ -1,6 +1,6 @@
 ---
 title: Python Escape String
-description: How to escape a string in Python. Learn how to use escape characters in Python to manipulate text, control formatting, and handle special characters. 
+description: How to escape a string in Python. Learn how to use escape characters in Python to manipulate text, control formatting, and handle special characters.
 sidebar: 
     order: 19
 ---

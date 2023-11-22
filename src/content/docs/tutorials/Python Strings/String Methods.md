@@ -1,6 +1,6 @@
 ---
 title: Python String Methods
-description: Learn about the various methods available for Python strings.
+description: Learn about the various methods available for Python strings. Learn about more than 70 methods available for Python strings.
 sidebar: 
     order: 20
 ---

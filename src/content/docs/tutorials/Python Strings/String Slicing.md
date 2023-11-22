@@ -1,6 +1,6 @@
 ---
 title: Python String Slicing
-description: Learn to slice strings in Python using a step-by-step tutorial.
+description: Learn to slice strings in Python using a step-by-step tutorial. Learn to reverse a string using slicing, and how to use negative indices to slice a string.
 sidebar: 
     order: 16
 ---
