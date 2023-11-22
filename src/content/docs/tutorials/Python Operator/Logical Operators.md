@@ -1,6 +1,6 @@
 ---
 title: Python Logical Operators
-description: Learn how to use Python logical operators. 
+description: Learn how to use Python logical operators. Here we will explore the realm of logical operators, their syntax, and how they empower expressive Python programming. See how to use the and, or, and not operators in Python.
 sidebar: 
     order: 24
 ---
