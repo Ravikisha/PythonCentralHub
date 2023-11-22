@@ -1,8 +1,8 @@
 ---
 title: Python Assignment Operators
-description: Learn about Python Assignment Operators with examples. 
+description: Learn about Python Assignment Operators with examples. In this tutorial, we'll explore the assignment operators in Python, their syntax, and how they empower efficient Python programming. 
 sidebar: 
-    order: 24
+    order: 26
 ---
 
 ## Assignment Operators in Python: Bridging Values and Variables
