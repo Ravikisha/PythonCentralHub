@@ -1,6 +1,6 @@
 ---
-title: Python Identity Operators
-description: Learn about Python Identity Operators. Python Identity Operators are used to compare the memory locations of two objects. Python Identity Operators are is and is not. 
+title: Python Operator Precedence
+description: Learn about Python operator precedence and how to use it.  
 sidebar: 
     order: 29
 ---
