@@ -18,30 +18,6 @@ The following table lists the identity operators in Python:
 | `is` | Returns `True` if both variables are the same object | `x is y` |
 | `is not` | Returns `True` if both variables are not the same object | `x is not y` |
 
-<!-- ## in Operator
-#### `in` Operator
-The `in` operator returns `True` if a sequence with the specified value is present in the object. The following example demonstrates how to use the `in` operator in Python:
-
-```python title="operators.py" showLineNumbers{1} {4-5}
-# in operator
-x = 10
-y = 5
-z = x in y
-t = x in 10
-print(z)
-print(t)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2-3}
-C:\Users\Your Name> python operators.py
-False
-True
-```
-
-In the above example, we have used the `in` operator to check if the value of `x` is present in the object `y`. Since the value of `x` is not present in the object `y`, the condition becomes `False`. The result of the `in` operator is then assigned to the variable `z`. The value of `z` is then printed to the console. -->
-
 ## is Operator
 #### `is` Operator
 The `is` operator returns `True` if both variables are the same object. It returns `True` if both variables point to the same memory location otherwise `False`. The following example demonstrates how to use the `is` operator in Python:
