@@ -1,6 +1,6 @@
 ---
 title: Python Tenary Operator
-description: Learn how to use the Python ternary operator. The ternary operator is a conditional operator that returns a value based on the result of a condition.  
+description: Learn how to use the Python ternary operator. The ternary operator is a conditional operator that returns a value based on the result of a condition. 
 sidebar: 
     order: 30
 ---
