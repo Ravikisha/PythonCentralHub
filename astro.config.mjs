@@ -250,6 +250,20 @@ export default defineConfig({
             content: "#e7c384",
           },
         },
+       {
+        tag: "script",
+        attrs: {
+          async: true,
+          src: "https://www.googletagmanager.com/gtag/js?id=G-5N40B35Q47",
+        },
+       },
+        {
+          tag: "script",
+          attrs: {
+            async: true,
+            src: "/scripts/gtag.js",
+          },
+        },
       ],
     }),
     tailwind({
