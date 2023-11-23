@@ -1,6 +1,6 @@
 ---
 title: Python Operator Precedence
-description: Learn about Python operator precedence and how to use it.  
+description: Learn about Python operator precedence and how to use it. How to use parentheses to override the default operator precedence. What is the order of operations in Python? Which operators have the highest precedence? Which operators have the lowest precedence?
 sidebar: 
     order: 29
 ---
@@ -31,29 +31,6 @@ Python's operator precedence rules are summarized in the table below. Operators 
 | `not` | Logical NOT |
 | `and` | Logical AND |
 | `or` | Logical OR |
-
-<!-- 
-## Addition
-#### `+` (Addition) Operator
-The addition operator (`+`) adds two operands. It can also be used as a unary operator to represent a positive value. The following example demonstrates how to use the addition operator in Python:
-
-```python title="operators.py" showLineNumbers{1} {4} 
-# Addition operator
-x = 10
-y = 5
-z = x + y
-print(z)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2}
-C:\Users\Your Name> python operators.py
-15
-```
-
-In the above example, we have used the addition operator to add two operands `x` and `y` and assign the result to the variable `z`. The value of `z` is then printed to the console. -->
-
 
 ## Operator Precedence Examples
 Let's look at some examples of operator precedence in Python.
@@ -188,7 +165,7 @@ In the above example, we have used the floor division operator to divide the ope
 The floor division operator (`//`) is also known as the integer division operator.
 :::
 
-## Comparison Operators
+### Comparison Operators
 #### `==`, `!=`, `>`, `>=`, `<`, `<=` (Comparison) Operators
 Comparison operators are used to compare two values. They return a boolean value (`True` or `False`) depending on whether the comparison is true or false. The following example demonstrates how to use comparison operators in Python:
 
@@ -209,7 +186,7 @@ False
 
 In the above example, we have used the greater than operator (`>`) to compare the operands `x-5` and `y`. The result of the comparison is then assigned to the variable `z`.
 
-## Logical Operators
+### Logical Operators
 #### `not`, `and`, `or` (Logical) Operators
 Logical operators are used to combine two or more boolean expressions. They return a boolean value (`True` or `False`) depending on the result of the logical operation. The following example demonstrates how to use logical operators in Python:
 
