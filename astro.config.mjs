@@ -2,14 +2,17 @@ import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import rehypePrettyCode from "rehype-pretty-code";
 import robotsTxt from "astro-robots-txt";
-import AstroPWA from "@vite-pwa/astro";
-import remarkMermaid from 'astro-diagram/remark-mermaid';
+import { getHighlighter, BUNDLED_LANGUAGES } from "shiki";
+import remarkMermaid from "astro-diagram/remark-mermaid";
+// import remarkMermaid from "astro-mermaidjs/remark-mermaid";
+// import remarkMermaid from "remark-mermaid";
 
 const site = "https://python-central-hub.vercel.app";
 
 /** @type {import('rehype-pretty-code').Options} */
 import tailwind from "@astrojs/tailwind";
 import sitemap from "@astrojs/sitemap";
+
 const options = {
   theme: {
     dark: "github-dark-dimmed",
@@ -18,18 +21,11 @@ const options = {
   keepBackground: true,
   grid: true,
   filterMetaString: (string) => string.replace(/filename="[^"]*"/, ""),
-  //   getHighlighter: (options) =>
-  //     getHighlighter({
-  //       ...options,
-  //       langs: [
-  //         ...BUNDLED_LANGUAGES,
-  //         {
-  //           id: "groq",
-  //           scopeName: "source.groq",
-  //           path: "./langs/vscode-sanity/grammars/groq.json",
-  //         },
-  //       ],
-  //     }),
+  // getHighlighter: (options) =>
+  //   getHighlighter({
+  //     ...options,
+  //     langs: [...BUNDLED_LANGUAGES],
+  //   }),
   onVisitLine: (line) => {
     if (line.number === 2) {
       return {
@@ -54,7 +50,13 @@ export default defineConfig({
   markdown: {
     syntaxHighlight: false,
     // Disable syntax built-in syntax hightlighting from astro
-    rehypePlugins: [[rehypePrettyCode, options], remarkMermaid],
+    rehypePlugins: [
+      [rehypePrettyCode, options],
+      // remarkMermaid
+    ],
+    remarkPlugins: [
+      remarkMermaid,
+    ],
   },
   integrations: [
     starlight({
@@ -251,13 +253,13 @@ export default defineConfig({
             content: "#e7c384",
           },
         },
-       {
-        tag: "script",
-        attrs: {
-          async: true,
-          src: "https://www.googletagmanager.com/gtag/js?id=G-5N40B35Q47",
+        {
+          tag: "script",
+          attrs: {
+            async: true,
+            src: "https://www.googletagmanager.com/gtag/js?id=G-5N40B35Q47",
+          },
         },
-       },
         {
           tag: "script",
           attrs: {
