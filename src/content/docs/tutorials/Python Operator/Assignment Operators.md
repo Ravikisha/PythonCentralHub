@@ -217,8 +217,8 @@ C:\Users\Your Name> python operators.py
 In the above example, we have used the bitwise AND assignment operator to perform bitwise AND on operators and assign the result to the left side operand. The value of `x` is `10` and the value of `y` is `5`. The bitwise AND assignment operator performs bitwise AND on the values of `x` and `y` and assigns the result to the variable `x`. The value of `x` is then printed to the console.
 
 ## Bitwise OR Assignment Operators
-#### `\|=` (Bitwise OR Assignment) Operator
-The bitwise OR assignment operator (`\|=`) performs bitwise OR on operators and assigns the result to the left side operand. The following example demonstrates how to use the bitwise OR assignment operator in Python:
+#### `|=` (Bitwise OR Assignment) Operator
+The bitwise OR assignment operator (`|=`) performs bitwise OR on operators and assigns the result to the left side operand. The following example demonstrates how to use the bitwise OR assignment operator in Python:
 
 ```python title="operators.py" showLineNumbers{1} {4}
 # Bitwise OR assignment operator

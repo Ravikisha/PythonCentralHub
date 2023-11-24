@@ -84,27 +84,6 @@ The operator module provides functions corresponding to standard operators. It s
 | `set()` | `operator.set()` | Descriptor access |
 | `delete()` | `operator.delete()` | Descriptor deletion |
 | `get()` | `operator.get()` | Descriptor access |
-<!-- 
-## Addition
-#### `+` (Addition) Operator
-The addition operator (`+`) adds two operands. It can also be used as a unary operator to represent a positive value. The following example demonstrates how to use the addition operator in Python:
-
-```python title="operators.py" showLineNumbers{1} {4} 
-# Addition operator
-x = 10
-y = 5
-z = x + y
-print(z)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2}
-C:\Users\Your Name> python operators.py
-15
-```
-
-In the above example, we have used the addition operator to add two operands `x` and `y` and assign the result to the variable `z`. The value of `z` is then printed to the console. -->
 
 ## Arithmetic Operators
 #### `+` & `-` & `*` & `/` & `%` & `//` & `**` Operators
@@ -171,8 +150,8 @@ True
 In the above example, we have used the comparison operators to compare two operands `x` and `y`. The `eq()` function returns `True` if the operands are equal, otherwise it returns `False`. The `ne()` function returns `True` if the operands are not equal, otherwise it returns `False`. The `lt()` function returns `True` if the first operand `x` is less than the second operand `y`, otherwise it returns `False`. The `gt()` function returns `True` if the first operand `x` is greater than the second operand `y`, otherwise it returns `False`. The `le()` function returns `True` if the first operand `x` is less than or equal to the second operand `y`, otherwise it returns `False`. The `ge()` function returns `True` if the first operand `x` is greater than or equal to the second operand `y`, otherwise it returns `False`.
 
 ## Bitwise Operators
-#### `&` & `\|` & `^` & `~` & `<<` & `>>` Operators
-The bitwise operators (`&`, `\|`, `^`, `~`, `<<`, `>>`) perform bitwise operations on integer operands. The following example demonstrates how to use the bitwise operators in Python:
+#### `&` & `|` & `^` & `~` & `<<` & `>>` Operators
+The bitwise operators (`&`, `|`, `^`, `~`, `<<`, `>>`) perform bitwise operations on integer operands. The following example demonstrates how to use the bitwise operators in Python:
 
 ```python title="bitwise_operators.py" showLineNumbers{1} {5-12}
 # Bitwise operators

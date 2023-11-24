@@ -65,8 +65,8 @@ In this example, we have two integers `x` and `y`. The binary representation of 
 In the above example, we have used the bitwise AND operator to perform a bitwise AND operation on the binary representations of two integers `x` and `y`. The result of this operation is a new integer whose binary representation is the result of the bitwise AND operation. The result of the bitwise AND operation is then assigned to the variable `z`. The value of `z` is then printed to the console.
 
 ## Bitwise OR
-#### `\|` (Bitwise OR) Operator
-The bitwise OR operator (`\|`) performs a bitwise OR operation on the binary representations of two integers. The result of this operation is a new integer whose binary representation is the result of the bitwise OR operation. The following example demonstrates how to use the bitwise OR operator in Python:
+#### `|` (Bitwise OR) Operator
+The bitwise OR operator (`|`) performs a bitwise OR operation on the binary representations of two integers. The result of this operation is a new integer whose binary representation is the result of the bitwise OR operation. The following example demonstrates how to use the bitwise OR operator in Python:
 
 ```python title="operators.py" showLineNumbers{1} {4}
 # Bitwise OR operator
