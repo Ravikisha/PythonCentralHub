@@ -46,7 +46,19 @@ In the above example, we have used the `and` operator to combine two conditions.
 #### `if` & `if-else` & `if-elif-else` & `nested if-else` & `ternary operator` Statement
 Selection statements in Python allow you to make decisions in your code based on certain conditions. The primary selection statement in Python is the if statement, which can be extended with elif (short for "else if") and else clauses for more complex decision-making. Let's explore the syntax and usage of selection statements in Python.
 
+```mermaid
 
+sequenceDiagram
+Alice ->> Bob: Hello Bob, how are you?
+Bob-->>John: How about you John?
+Bob--x Alice: I am good thanks!
+Bob-x John: I am good thanks!
+Note right of John: Bob thinks a long<br/>long time, so long<br/>that the text does<br/>not fit on a row.
+Bob-->Alice: Checking with John...
+Alice->John: Yes... John, how are you?
+
+
+```
 
 There are five types of selection statements in Python:
 - `if` statement

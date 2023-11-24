@@ -4,6 +4,7 @@ import rehypePrettyCode from "rehype-pretty-code";
 import robotsTxt from "astro-robots-txt";
 import { getHighlighter, BUNDLED_LANGUAGES } from "shiki";
 import remarkMermaid from "astro-diagram/remark-mermaid";
+// import rehypeMermaid from "rehype-mermaid";
 // import remarkMermaid from "astro-mermaidjs/remark-mermaid";
 // import remarkMermaid from "remark-mermaid";
 
@@ -50,12 +51,12 @@ export default defineConfig({
   markdown: {
     syntaxHighlight: false,
     // Disable syntax built-in syntax hightlighting from astro
+    remarkPlugins: [
+      remarkMermaid,
+    ],
     rehypePlugins: [
       [rehypePrettyCode, options],
       // remarkMermaid
-    ],
-    remarkPlugins: [
-      remarkMermaid,
     ],
   },
   integrations: [
