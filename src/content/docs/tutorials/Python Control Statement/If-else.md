@@ -291,7 +291,7 @@ In the above example, we have used the `ternary operator` statement to check if 
 
 :::tip
 For more information on the ternary operator, see the [Python documentation](https://docs.python.org/3/reference/expressions.html#conditional-expressions). Or see the [Python Ternary Operator](https://www.python-central-hub.vercel.app/tutorials/ternary-operator) tutorial on Python Central Hub.
-
+:::
 
 ## Conclusion
 In this guide, we explored the syntax and usage of the if-else statement in Python. We also explored the ternary operator, which is a one-line shorthand for the if-else statement. Now that you have a solid understanding of the if-else statement in Python, you can use it to write flexible and dynamic Python programs. In this guide, we explored the syntax and usage of the if-else statement in Python. We also explored the ternary operator, which is a one-line shorthand for the if-else statement. Now that you have a solid understanding of the if-else statement in Python, you can use it to write flexible and dynamic Python programs.
