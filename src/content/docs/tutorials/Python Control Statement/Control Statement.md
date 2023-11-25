@@ -18,30 +18,6 @@ There are three types of control statements in Python:
 - Iteration statements
 - Jump statements
 
-<!-- ## and Operator
-#### `and` Operator
-The `and` operator returns `True` if both operands are `True`. Otherwise, it returns `False`. The following example demonstrates how to use the `and` operator in Python:
-
-```python title="operators.py" showLineNumbers{1} {4-5}
-# and operator
-x = 10
-y = 5
-z = x < 10 and y > 1
-t = x < 10 and y < 1
-print(z)
-print(t)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2-3}
-C:\Users\Your Name> python operators.py
-True
-False
-```
-
-In the above example, we have used the `and` operator to combine two conditions. Since both conditions are `True`, the result of the `and` operator is `True`. The result of the `and` operator is then assigned to the variable `z`. The value of `z` is then printed to the console. -->
-
 ## Selection Statements
 #### `if` & `if-else` & `if-elif-else` & `nested if-else` & `ternary operator` & `match-case` Statements
 Selection statements in Python allow you to make decisions in your code based on certain conditions. The primary selection statement in Python is the if statement, which can be extended with elif (short for "else if") and else clauses for more complex decision-making. Let's explore the syntax and usage of selection statements in Python
@@ -79,3 +55,5 @@ There are four types of jump statements in Python:
 
 ## Conclusion
 In this guide, we explored the key types of control statements in Python, their syntax, and best practices for their effective use. We also explored the ternary operator and match-case statement, which are new in Python 3.10. Now that you have a solid understanding of control statements in Python, you can use them to write flexible and dynamic Python programs.
+
+As you delve deeper into Python programming, experiment with different control statements, explore their applications in real-world scenarios, and use them to enhance the efficiency and clarity of your code. For more hands-on examples and in-depth tutorials, explore our resources on Python Central Hub!
