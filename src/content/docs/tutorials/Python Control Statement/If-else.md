@@ -58,7 +58,7 @@ The `if` statement in Python is used to execute a block of code if a condition i
 
 The syntax of the `if` statement in Python is as follows:
 
-```python title="Syntax" showLineNumbers{1} {1}
+```python title="Syntax" showLineNumbers{1} {1-2}
 if condition:
     # code to execute if condition is True
 ```
@@ -71,7 +71,7 @@ The `if` statement does not have an `else` clause. If you want to execute a bloc
 
 The following example demonstrates how to use the `if` statement in Python:
 
-```python title="if.py" showLineNumbers{1} {3}
+```python title="if.py" showLineNumbers{1} {3-4}
 # if statement
 x = 10
 if x > 5:
@@ -93,7 +93,7 @@ The `if-else` statement in Python is used to execute a block of code if a condit
 
 The syntax of the `if-else` statement in Python is as follows:
 
-```python title="Syntax" showLineNumbers{1} {1,3}
+```python title="Syntax" showLineNumbers{1} {1-4}
 if condition:
     # code to execute if condition is True
 else:
@@ -108,7 +108,7 @@ The `else` clause is optional. If the `else` clause is not present, the code to 
 
 The following example demonstrates how to use the `if-else` statement in Python:
 
-```python title="if-else.py" showLineNumbers{1} {3-5}
+```python title="if-else.py" showLineNumbers{1} {3-6}
 # if-else statement
 x = 10
 if x > 5:
@@ -132,7 +132,7 @@ The `if-elif-else` statement in Python is used to execute a block of code if a c
 
 The syntax of the `if-elif-else` statement in Python is as follows:
 
-```python title="Syntax" showLineNumbers{1} {1,3,5}
+```python title="Syntax" showLineNumbers{1} {1-6}
 if condition1:
     # code to execute if condition1 is True
 elif condition2:
@@ -149,7 +149,7 @@ The `elif` clause is optional. If the `elif` clause is not present, the code to 
 
 The following example demonstrates how to use the `if-elif-else` statement in Python:
 
-```python title="if-elif-else.py" showLineNumbers{1} {3-7}
+```python title="if-elif-else.py" showLineNumbers{1} {3-8}
 # if-elif-else statement
 x = 10
 if x > 5:
@@ -171,7 +171,7 @@ In the above example, we have used the `if-elif-else` statement to check if the 
 
 Another example of the `if-elif-else` statement in Python:
 
-```python title="if-elif-else.py" showLineNumbers{1} {3-7}
+```python title="if-elif-else.py" showLineNumbers{1} {3-10}
 # if-elif-else multiple statements
 x = 10
 if x > 5:
@@ -199,7 +199,7 @@ The `nested if-else` statement in Python is used to execute a block of code if a
 
 The syntax of the `nested if-else` statement in Python is as follows:
 
-```python title="Syntax" showLineNumbers{1} {1,3}
+```python title="Syntax" showLineNumbers{1} {1-10}
 if condition1:
     # code to execute if condition1 is True
     if condition2:
@@ -218,7 +218,7 @@ Nested if-else statements can be nested to any level.
 
 The following example demonstrates how to use the `nested if-else` statement in Python:
 
-```python title="nested-if-else.py" showLineNumbers{1} {3-9}
+```python title="nested-if-else.py" showLineNumbers{1} {3-10}
 # nested if-else statement
 x = 10
 if x > 5:
