@@ -2,7 +2,7 @@
 title: If-else Statement in Python
 description: Learn about if-else statement in Python. The if-else statement is used to execute a block of code based on a condition. We will learn about the syntax of the if-else statement in Python. We will also learn about the ternary operator in Python.
 sidebar: 
-    order: 33
+    order: 34
 ---
 
 ## Mastering If-else Statement in Python: A Comprehensive Guide
@@ -10,31 +10,6 @@ The if-else statement in Python is used to execute a block of code based on a co
 
 ## What is the If-else Statement in Python?
 The if-else statement in Python is used to execute a block of code based on a condition. The if-else statement is also known as the if-then-else statement. The if-else statement is a selection statement, which is a type of control statement in Python.
-
-
-<!-- ## and Operator
-#### `and` Operator
-The `and` operator returns `True` if both operands are `True`. Otherwise, it returns `False`. The following example demonstrates how to use the `and` operator in Python:
-
-```python title="operators.py" showLineNumbers{1} {4-5}
-# and operator
-x = 10
-y = 5
-z = x < 10 and y > 1
-t = x < 10 and y < 1
-print(z)
-print(t)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2-3}
-C:\Users\Your Name> python operators.py
-True
-False
-```
-
-In the above example, we have used the `and` operator to combine two conditions. Since both conditions are `True`, the result of the `and` operator is `True`. The result of the `and` operator is then assigned to the variable `z`. The value of `z` is then printed to the console. -->
 
 ## Syntax of the If-else Statement in Python
 The syntax of the if-else statement in Python is as follows:
