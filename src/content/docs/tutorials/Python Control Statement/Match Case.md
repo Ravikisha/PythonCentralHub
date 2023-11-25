@@ -11,31 +11,6 @@ Match case statement in Python is used to control the flow of execution of the p
 ## What is Match Case Statement in Python?
 Match case statement in Python is used to control the flow of execution of the program. It is also known as pattern matching statement. Match case statement is new in Python 3.10. It is similar to switch case statement in other programming languages. It is used to compare the value of an expression against a list of patterns and execute the corresponding block of code if a match is found.
 
-
-<!-- ## and Operator
-#### `and` Operator
-The `and` operator returns `True` if both operands are `True`. Otherwise, it returns `False`. The following example demonstrates how to use the `and` operator in Python:
-
-```python title="operators.py" showLineNumbers{1} {4-5}
-# and operator
-x = 10
-y = 5
-z = x < 10 and y > 1
-t = x < 10 and y < 1
-print(z)
-print(t)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2-3}
-C:\Users\Your Name> python operators.py
-True
-False
-```
-
-In the above example, we have used the `and` operator to combine two conditions. Since both conditions are `True`, the result of the `and` operator is `True`. The result of the `and` operator is then assigned to the variable `z`. The value of `z` is then printed to the console. -->
-
 ## Syntax of Match Case Statement in Python
 The syntax of match case statement in Python is as follows:
 
