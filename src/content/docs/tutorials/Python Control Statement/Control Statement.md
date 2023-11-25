@@ -43,22 +43,8 @@ False
 In the above example, we have used the `and` operator to combine two conditions. Since both conditions are `True`, the result of the `and` operator is `True`. The result of the `and` operator is then assigned to the variable `z`. The value of `z` is then printed to the console. -->
 
 ## Selection Statements
-#### `if` & `if-else` & `if-elif-else` & `nested if-else` & `ternary operator` Statement
-Selection statements in Python allow you to make decisions in your code based on certain conditions. The primary selection statement in Python is the if statement, which can be extended with elif (short for "else if") and else clauses for more complex decision-making. Let's explore the syntax and usage of selection statements in Python.
-
-```mermaid
-
-sequenceDiagram
-Alice ->> Bob: Hello Bob, how are you?
-Bob-->>John: How about you John?
-Bob--x Alice: I am good thanks!
-Bob-x John: I am good thanks!
-Note right of John: Bob thinks a long<br/>long time, so long<br/>that the text does<br/>not fit on a row.
-Bob-->Alice: Checking with John...
-Alice->John: Yes... John, how are you?
-
-
-```
+#### `if` & `if-else` & `if-elif-else` & `nested if-else` & `ternary operator` & `match-case` Statements
+Selection statements in Python allow you to make decisions in your code based on certain conditions. The primary selection statement in Python is the if statement, which can be extended with elif (short for "else if") and else clauses for more complex decision-making. Let's explore the syntax and usage of selection statements in Python
 
 There are five types of selection statements in Python:
 - `if` statement
@@ -66,4 +52,30 @@ There are five types of selection statements in Python:
 - `if-elif-else` statement
 - `nested if-else` statement
 - `ternary operator` statement
+- `match-case` statement
 
+
+## Iteration Statements
+#### `for` & `while` Statements
+Iteration statements in Python allow you to execute a block of code repeatedly. The primary iteration statements in Python are the for and while statements. Let's explore the syntax and usage of iteration statements in Python. 
+
+There are two types of iteration statements in Python:
+- `for` statement
+- `while` statement
+
+:::tip
+Python does not have a do-while statement.
+:::
+
+## Jump Statements
+#### `break` & `continue` & `pass` & `assert` Statements
+Jump statements in Python allow you to control the flow of execution of a program. The primary jump statements in Python are the break, continue, pass, and assert statements. Let's explore the syntax and usage of jump statements in Python.
+
+There are four types of jump statements in Python:
+- `break` statement
+- `continue` statement
+- `pass` statement
+- `assert` statement
+
+## Conclusion
+In this guide, we explored the key types of control statements in Python, their syntax, and best practices for their effective use. We also explored the ternary operator and match-case statement, which are new in Python 3.10. Now that you have a solid understanding of control statements in Python, you can use them to write flexible and dynamic Python programs.
