@@ -67,7 +67,147 @@ print("The sum is", sum)
 
 Output:
 
-```cmd title="command" showLineNumbers{1} {2-3}
+```cmd title="command" showLineNumbers{1} {2}
 C:\Users\Your Name> python while_loop.py
 The sum is 48
+```
+
+In this program, we initialize the `sum` variable to zero and iterate over all the items of the `numbers` list using the while loop and add them to the `sum` variable. Finally, we print the `sum` variable which contains the sum of numbers in the given list.
+
+## While loop with else
+Same as with for loops, while loops can also have an optional else block.
+
+The else part is executed if the condition in the while loop evaluates to False. The while loop can be terminated with a break statement. In such cases, the else part is ignored. Hence, a while loop's else part runs if no break occurs and the condition is false.
+
+Here is an example to illustrate this.
+
+```python title="while_loop_else.py" showLineNumbers{1} {4-9}
+# while loop with else
+numbers = [6, 5, 3, 8, 4, 2, 5, 4, 11]
+sum = 0
+i = 0
+while i < len(numbers):
+    sum = sum + numbers[i]
+    i = i+1
+else:
+    print("No items left in the list.")
+print("The sum is", sum)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\Your Name> python while_loop_else.py
+No items left in the list.
+The sum is 48
+```
+
+In this program, we have used the else statement with the while loop. This is a unique feature of Python, not found in most other programming languages. When the condition in the while loop evaluates to False, the block of statements in the else clause is executed. This means, the else part will be executed only if the loop condition is False.
+
+## Single Statement While Block
+Similar to the if statement syntax, if your while block consists of only a single statement, you can place it on the same line as the while header.
+
+```python title="single_statement_while_block.py" showLineNumbers{1} {3}
+# single statement while block
+flag = 1
+while (flag): print('Given flag is really true!')
+print("Good bye!")
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-10}
+C:\Users\Your Name> python single_statement_while_block.py
+Given flag is really true!
+Given flag is really true!
+Given flag is really true!
+...
+```
+
+In this program, we have used the single statement while block. Here, the `flag` variable is initialized to `1` and as long as `flag` is true, the `print` statement will be executed. This results in printing the string `Given flag is really true!` infinitely.
+
+## Python Infinite While Loop
+Infinite while loop is an indefinite iteration. It is called infinite because it does not have any end point which means it will be executed forever unless the program is terminated.
+
+```python title="infinite_while_loop.py" {1}
+# infinite while loop
+var = 1
+while var == 1:
+    num = int(input("Enter a number  :"))
+    print("You entered: ", num)
+print("Good bye!")
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-10}
+C:\Users\Your Name> python infinite_while_loop.py
+Enter a number  :5
+You entered:  5
+Enter a number  :6
+You entered:  6
+Enter a number  :7
+You entered:  7
+...
+```
+
+In this program, we have used an infinite while loop. The condition of the while loop is always true, so the loop will run indefinitely. We have used the `input()` function inside the loop body to read the user input. The `input()` function reads a line entered on a console by an input device such as a keyboard and convert it into a string and returns it.
+
+
+## While Loop with String or List
+In Python, while loops are used to iterate over a block of code as long as the test expression (condition) is true.
+
+We generally use this loop when we don't know beforehand, the number of times to iterate.
+
+```python title="while_loop_with_string_or_list.py" {1}
+# while loop with string or list
+name = "pynative"
+while name != "":
+    print("Current Letter :", name[0])
+    name = name[1:]
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-10}
+C:\Users\Your Name> python while_loop_with_string_or_list.py
+Current Letter : p
+Current Letter : y
+Current Letter : n
+Current Letter : a
+Current Letter : t
+Current Letter : i
+Current Letter : v
+Current Letter : e
+```
+
+In this program, we have used the while loop to iterate over the characters in the string `pynative` and print each character. We have used the `name` variable to hold the string `pynative`. The `while` loop iterates over the string as long as the string is not empty. The `name` variable is updated in each iteration by removing the first character from it using the slice operation.
+
+## Nested while Loop
+A nested while loop is a while loop inside another while loop.
+
+```python title="nested_while_loop.py" showLineNumbers{1} {3-8}
+# nested while loop
+i = 2
+while(i < 100):
+    j = 2
+    while(j <= (i/j)):
+        if not(i % j): break
+        j = j + 1
+    if (j > i/j) : print(i, " is prime")
+    i = i + 1
+print("Good bye!")
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-10}
+C:\Users\Your Name> python nested_while_loop.py
+2 is prime
+3 is prime
+5 is prime
+7 is prime
+11 is prime
+13 is prime
+...
 ```
