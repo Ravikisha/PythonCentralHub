@@ -5,31 +5,6 @@ sidebar:
     order: 36
 ---
 
-
-<!-- ## and Operator
-#### `and` Operator
-The `and` operator returns `True` if both operands are `True`. Otherwise, it returns `False`. The following example demonstrates how to use the `and` operator in Python:
-
-```python title="operators.py" showLineNumbers{1} {4-5}
-# and operator
-x = 10
-y = 5
-z = x < 10 and y > 1
-t = x < 10 and y < 1
-print(z)
-print(t)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2-3}
-C:\Users\Your Name> python operators.py
-True
-False
-```
-
-In the above example, we have used the `and` operator to combine two conditions. Since both conditions are `True`, the result of the `and` operator is `True`. The result of the `and` operator is then assigned to the variable `z`. The value of `z` is then printed to the console. -->
-
 ## Unveiling the Power of for Loops in Python
 In Python, the for loop is a versatile and fundamental construct that facilitates the iteration over a sequence of elements. Whether you're working with lists, strings, or other iterable objects, the for loop simplifies the process of executing a set of statements for each item in the sequence. In this comprehensive guide, we'll explore the syntax, functionality, and best practices associated with for loops in Python.
 
