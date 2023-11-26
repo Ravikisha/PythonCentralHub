@@ -211,3 +211,41 @@ C:\Users\Your Name> python nested_while_loop.py
 13 is prime
 ...
 ```
+
+In this program, we have used a nested while loop to find the prime numbers between 2 and 100. The outer while loop iterates from 2 to 100 and the inner while loop iterates from 2 to `i/j`. If the remainder of `i/j` is 0, the control breaks out of the inner while loop and `i` is incremented by 1. If the remainder of `i/j` is not 0, the control breaks out of the inner while loop and prints the value of `i` which is a prime number. The value of `i` is incremented by 1 in each iteration of the outer while loop.
+
+## Reverse while Loop
+In Python, we can use reverse while loop to print numbers from n to 1.
+
+```python title="reverse_while_loop.py" showLineNumbers{1} {3-6}
+# reverse while loop
+n = 10
+while n > 0:
+    print(n)
+    n = n-1
+print("Loop ended.")
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-14}
+C:\Users\Your Name> python reverse_while_loop.py
+10
+9
+8
+7
+6
+5
+4
+3
+2
+1
+Loop ended.
+```
+
+In this program, we have used a reverse while loop to print numbers from 10 to 1. The value of `n` is initialized to 10 and the while loop iterates until `n` becomes 0. The value of `n` is decremented by 1 in each iteration of the while loop.
+
+## Conclusion
+In this tutorial, we have learned about the while loop in Python. We have also learned how to use the while loop with else, how to use a single statement while block, how to use an infinite while loop, how to use a while loop with a string or list, how to use a nested while loop, and how to use a reverse while loop in Python.
+
+As you delve deeper into Python, you'll find yourself using the while loop more and more. It's a powerful tool that allows you to iterate over a sequence of elements and perform a set of operations for each item in the sequence. By mastering the while loop, you'll be able to write more efficient and effective Python programs.
