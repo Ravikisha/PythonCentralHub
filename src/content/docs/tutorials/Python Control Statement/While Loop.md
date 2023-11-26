@@ -33,24 +33,6 @@ In Python, all the statements indented by the same number of character spaces af
 A while loop is also known as condition-controlled loop.
 :::
 
-<!-- ```python title="for_loop.py" showLineNumbers{1} {3-5}
-# for loop
-numbers = [6, 5, 3, 8, 4, 2, 5, 4, 11]
-sum = 0
-for val in numbers:
-    sum = sum+val
-print("The sum is", sum)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2-3}
-C:\Users\Your Name> python for_loop.py
-The sum is 48
-```
-
-In this program, we have used the for loop to iterate over a list and calculate the sum of numbers. We initialize the `sum` variable to zero and iterate over each element of the list using a for loop and add it to the `sum` variable. Finally, we print the `sum` variable which contains the sum of numbers in the given list. -->
-
 ## Example of while Loop in Python
 Here is an example of while loop in Python:
 
@@ -244,6 +226,32 @@ Loop ended.
 ```
 
 In this program, we have used a reverse while loop to print numbers from 10 to 1. The value of `n` is initialized to 10 and the while loop iterates until `n` becomes 0. The value of `n` is decremented by 1 in each iteration of the while loop.
+
+## While Loop with multiple conditions
+In Python, we can use multiple conditions in a while loop.
+
+```python title="while_loop_with_multiple_conditions.py" showLineNumbers{1} {3-6}
+# while loop with multiple conditions
+i = 1
+while i <= 5 and i >= 0:
+    print(i)
+    i = i + 1
+print("Loop ended.")
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-10}
+C:\Users\Your Name> python while_loop_with_multiple_conditions.py
+1
+2
+3
+4
+5
+Loop ended.
+```
+
+In this program, we have used multiple conditions in a while loop. The while loop iterates until `i` becomes 6. The value of `i` is incremented by 1 in each iteration of the while loop.
 
 ## Conclusion
 In this tutorial, we have learned about the while loop in Python. We have also learned how to use the while loop with else, how to use a single statement while block, how to use an infinite while loop, how to use a while loop with a string or list, how to use a nested while loop, and how to use a reverse while loop in Python.
