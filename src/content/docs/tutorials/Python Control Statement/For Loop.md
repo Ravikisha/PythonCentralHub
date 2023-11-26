@@ -27,6 +27,38 @@ Here, `val` is the variable that takes the value of the item inside the sequence
 
 Loop continues until we reach the last item in the sequence. The body of for loop is separated from the rest of the code using indentation.
 
+## Structure of for Loop
+- **Initialization**: In this step, we initialize the variable `val` with the first item in the sequence. This is the first item in the sequence.
+    ```python title="Syntax" showLineNumbers{1}
+    for val in sequence:
+    ```
+    Here, `val` is the variable that takes the value of the item inside the sequence on each iteration.
+
+- **Condition**: In this step, the `val` variable is checked to be less than or equal to the last item in the sequence. If it is true, the body of the for loop is executed. Otherwise, the loop terminates.
+    ```python title="Syntax" showLineNumbers{1}
+    for val in sequence:
+    ```
+    Here, `val` is the variable that takes the value of the item inside the sequence on each iteration.
+
+- **Body**: The body of the for loop is separated from the rest of the code using indentation.
+    ```python title="Syntax" showLineNumbers{1}
+    for val in sequence:
+        Body of for
+    ```
+    Here, `Body of for` is the body of the loop. It can contain one or more statements. It is executed once for each item in the sequence.
+
+- **Increment/Decrement**: In this step, the variable `val` is incremented or decremented. The next item in the sequence is assigned to the variable `val`. This continues until the last item in the sequence is reached.
+    ```python title="Syntax" showLineNumbers{1}
+    for val in sequence:
+        Body of for
+    ```
+    Here, Loop continues until we reach the last item in the sequence. The body of for loop is separated from the rest of the code using indentation.
+
+
+:::tip
+A for loop is also known as an iteration or looping statement. It is called as counter-controlled loop.
+:::
+
 ## Example: Python for Loop
 ```python title="for_loop.py" showLineNumbers{1} {3-5}
 # for loop
@@ -267,6 +299,35 @@ C:\Users\Your Name> python nested_for_loop.py
 ```
 
 In this program, we have used the nested `for` loop to iterate over a sequence of numbers. We have used the `range()` function to generate a sequence of numbers. We have used the `i` index to print the number of stars in each row. We have used the `j` index to print the stars in each row. The `j` index depends on the `i` index. The value of the `i` index is used to determine the number of stars in each row. The value of the `j` index is used to print the stars in each row. The value of the `j` index is incremented by 1 in each iteration of the inner `for` loop. The inner `for` loop is executed `i` times for each iteration of the outer `for` loop. The outer `for` loop is executed 5 times. The inner `for` loop is executed 1 time in the first iteration of the outer `for` loop. The inner `for` loop is executed 2 times in the second iteration of the outer `for` loop. The inner `for` loop is executed 3 times in the third iteration of the outer `for` loop. The inner `for` loop is executed 4 times in the fourth iteration of the outer `for` loop. The inner `for` loop is executed 5 times in the fifth iteration of the outer `for` loop. The inner `for` loop is executed 1 + 2 + 3 + 4 + 5 = 15 times.
+
+
+## Reverse Iteration/Loop
+In Python, we can also iterate over a sequence in reverse, i.e., from the last item to the first item. We can do this by using the negative index. Consider the following example:
+
+```python title="for_loop_reverse.py" showLineNumbers{1} {3-5}
+# reverse iteration
+for val in range(10, 0, -1):
+    print(val)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-11}
+C:\Users\Your Name> python for_loop_reverse.py
+10
+9
+8
+7
+6
+5
+4
+3
+2
+1
+```
+
+In this program, we have used the `range()` function to generate a sequence of numbers. We have used the negative index to iterate over the sequence in reverse. We have used `-1` as the step size in the `range()` function. It returns a sequence of numbers starting from `10` to `1` (10 numbers).
+
 
 ## Conclusion
 In this tutorial, we have learned about the for loop in Python. We have learned how to use the for loop to iterate over a sequence of elements. We have also learned how to use the range() function to iterate over a sequence of numbers. We have also learned how to use the for loop to iterate over a string and a list. We have also learned how to use the nested for loop to iterate over a sequence of numbers. We have also learned how to use the else clause with the for loop.
