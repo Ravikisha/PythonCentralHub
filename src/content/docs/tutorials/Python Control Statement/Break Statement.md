@@ -102,6 +102,15 @@ for number in numbers:
         break
 ```
 
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python break_search.py
+Number found!
+```
+
+In this example, the loop is terminated as soon as the target element is found. This prevents unnecessary iterations and improves the efficiency of the program.
+
 ### 2. **Terminating Infinite Loops:**
 
 In scenarios where a loop should continue indefinitely until a certain condition is met, the `break` statement can be employed to terminate the loop.
@@ -113,6 +122,15 @@ while True:
         break
     else:
         print("Invalid input. Please enter a number.")
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python break_infinite.py
+Enter a number: abc
+Invalid input. Please enter a number.
+Enter a number: 123
 ```
 
 In this example, the loop continues to prompt the user for input until a valid number is entered.
@@ -129,6 +147,21 @@ except KeyboardInterrupt:
     print("\nLoop interrupted by user.")
 ```
 
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python break_interrupt.py
+Looping...
+Looping...
+Looping...
+Loop interrupted by user.
+```
+
+In this example, the loop continues to execute until the user interrupts it by pressing `Ctrl+C`.
+
+:::tip
+For more information on handling exceptions in Python, check out our tutorial on [Python Exceptions](/tutorial/python-exceptions).
+
 ## Best Practices for Using the `break` Statement
 
 ### 1. **Use `break` Sparingly:**
@@ -139,7 +172,7 @@ While the `break` statement provides a convenient way to exit a loop prematurely
 
 When using `break`, it's essential to provide clear comments or documentation explaining the conditions under which the loop will be terminated. This enhances code readability and helps future developers understand the logic.
 
-```python
+```python title="break_documentation.py" showLineNumbers{1} {3-7}
 # Terminate the loop when the target element is found
 for item in my_list:
     if item == target:
