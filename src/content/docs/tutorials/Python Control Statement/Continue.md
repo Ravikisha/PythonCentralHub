@@ -101,7 +101,7 @@ In this program, we iterate through the `val` variable. We check if the value of
 
 The `continue` statement is beneficial when certain computations or operations can be skipped for specific conditions.
 
-```python
+```python title="continue_odd_numbers.py" showLineNumbers{1} {3-6}
 numbers = [1, 2, 3, 4, 5]
 
 for number in numbers:
@@ -110,13 +110,22 @@ for number in numbers:
     print(f"{number} is an odd number.")
 ```
 
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-7}
+C:\Users\Your Name> python continue_odd_numbers.py
+1 is an odd number.
+3 is an odd number.
+5 is an odd number.
+```
+
 In this example, the loop prints only the odd numbers in the list, skipping even numbers using `continue`.
 
 ### 2. **Avoiding Errors or Unwanted Actions:**
 
 When processing data or elements in a loop, the `continue` statement can be used to avoid errors or unwanted actions based on specific conditions.
 
-```python
+```python title="continue_invalid_grades.py" showLineNumbers{1} {3-7}
 grades = [85, 92, "invalid", 78, 96]
 
 for grade in grades:
@@ -127,13 +136,24 @@ for grade in grades:
     print(f"Processed grade: {grade}")
 ```
 
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-8}
+C:\Users\Your Name> python continue_invalid_grades.py
+Processed grade: 85
+Processed grade: 92
+Invalid grade: invalid
+Processed grade: 78
+Processed grade: 96
+```
+
 In this example, the loop processes only valid integer grades, skipping the processing of the invalid grade with `continue`.
 
 ### 3. **Handling Special Cases:**
 
 When dealing with special cases or edge conditions, the `continue` statement can be applied to bypass certain iterations.
 
-```python
+```python title="continue_skip_user_response.py" showLineNumbers{1} {3-7}
 user_responses = ["yes", "no", "skip", "yes", "no"]
 
 for response in user_responses:
@@ -142,6 +162,17 @@ for response in user_responses:
         continue
     # Code to process valid responses
     print(f"Processed response: {response}")
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-9}
+C:\Users\Your Name> python continue_skip_user_response.py
+Processed response: yes
+Processed response: no
+Skipped user response.
+Processed response: yes
+Processed response: no
 ```
 
 Here, the loop processes all user responses except for the one marked as "skip."
@@ -156,13 +187,26 @@ While the `continue` statement is a valuable tool, its usage should be approache
 
 When utilizing `continue`, provide clear comments or documentation explaining the conditions under which the remaining code should be skipped. This aids in code readability and understanding.
 
-```python
+```python title="continue_skip_negative_numbers.py" showLineNumbers{1} {3-7}
+numbers = [1, 2, 3, -4, 5, -6]
 # Skip processing for negative numbers
 for number in numbers:
     if number < 0:
         continue
     print(f"Processed number: {number}")
 ```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-8}
+C:\Users\Your Name> python continue_skip_negative_numbers.py
+Processed number: 1
+Processed number: 2
+Processed number: 3
+Processed number: 5
+```
+
+In this example, the loop processes only positive numbers, skipping negative numbers using `continue`.
 
 ### 3. **Consider Alternative Control Flow:**
 
