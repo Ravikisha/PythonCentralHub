@@ -115,7 +115,7 @@ In this example, the loop is terminated as soon as the target element is found. 
 
 In scenarios where a loop should continue indefinitely until a certain condition is met, the `break` statement can be employed to terminate the loop.
 
-```python title="break_infinite.py" showLineNumbers{1} {2-6}
+```python title="break_infinite.py" showLineNumbers{1} {3-4}
 while True:
     user_input = input("Enter a number: ")
     if user_input.isdigit():
@@ -139,7 +139,7 @@ In this example, the loop continues to prompt the user for input until a valid n
 
 The `break` statement is useful for handling user interruptions, such as keyboard interrupts (`Ctrl+C`), allowing graceful termination of the loop.
 
-```python title="break_interrupt.py" showLineNumbers{1} {2-6}
+```python title="break_interrupt.py" showLineNumbers{1} {1-6}
 try:
     while True:
         print("Looping...")
@@ -161,8 +161,9 @@ In this example, the loop continues to execute until the user interrupts it by p
 
 :::tip
 For more information on handling exceptions in Python, check out our tutorial on [Python Exceptions](/tutorial/python-exceptions).
+:::
 
-## Best Practices for Using the `break` Statement
+## Best Practices for Using the break Statement
 
 ### 1. **Use `break` Sparingly:**
 
