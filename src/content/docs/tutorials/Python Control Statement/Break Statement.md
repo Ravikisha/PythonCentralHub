@@ -1,6 +1,6 @@
 ---
 title: Break Statement in Loop in Python
-description: Learn to use break statement to exit loop in Python. Also learn to use break with while and for loop. 
+description: Learn to use break statement to exit loop in Python. Also learn to use break with while and for loop. In this tutorial, we will learn to use break statement with the help of examples.
 sidebar: 
     order: 38
 ---
