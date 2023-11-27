@@ -14,30 +14,6 @@ The break statement is a control flow statement that allows you to terminate the
 :::note
 The break statement can be used in both while and for loops.
 :::
-<!-- 
-## Example of while Loop in Python
-Here is an example of while loop in Python:
-
-```python title="while_loop.py" showLineNumbers{1} {2-6}
-# while loop
-numbers = [6, 5, 3, 8, 4, 2, 5, 4, 11]
-sum = 0
-i = 0
-while i < len(numbers):
-    sum = sum + numbers[i]
-    i = i+1
-print("The sum is", sum)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2}
-C:\Users\Your Name> python while_loop.py
-The sum is 48
-```
-
-In this program, we initialize the `sum` variable to zero and iterate over all the items of the `numbers` list using the while loop and add them to the `sum` variable. Finally, we print the `sum` variable which contains the sum of numbers in the given list. -->
-
 
 ## Syntax of break
 The syntax of a break statement in Python:
