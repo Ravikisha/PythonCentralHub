@@ -20,7 +20,7 @@ The continue statement can be used in both while and for loops.
 The syntax of a continue statement in Python:
 
 ### continue Statement in while Loop
-```python title="continue_while_loop.py" {1-5}
+```python title="continue_while_loop.py" showLineNumbers{1} {1-5}
 while test_expression:
     Body of while
     if test_expression:
@@ -28,7 +28,7 @@ while test_expression:
 ```
 
 ### continue Statement in for Loop
-```python title="continue_for_loop.py" {1-5}
+```python title="continue_for_loop.py" showLineNumbers{1} {1-5}
 for val in sequence:
     Body of for
     if test_expression:
