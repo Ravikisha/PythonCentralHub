@@ -268,6 +268,16 @@ export default defineConfig({
             src: "/scripts/gtag.js",
           },
         },
+        // <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4763909241118146"
+    //  crossorigin="anonymous"></script>
+    {
+      tag: "script",
+      attrs: {
+        async: true,
+        src: "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4763909241118146",
+        crossorigin: "anonymous",
+      },
+    }
       ],
     }),
     tailwind({
