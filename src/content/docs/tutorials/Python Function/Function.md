@@ -362,3 +362,129 @@ C:\Users\Your Name> python function.py
 In this example, we define a function named `update` that takes a parameter `x` and updates its value to `10`. We then call the function with the argument `[5]`. The function updates the value of `x` to `10`. The original value of `x` is modified. This is because the value of `x` is passed to the function by reference. A reference to the value is passed to the function. The function then operates on this reference to the value. The original value is modified. This is how values are passed to functions in Python. 
 
 In python, the primitive data types like `int`, `float`, `bool`, `str`, etc. are passed by value. The non-primitive data types like `list`, `dict`, `set`, etc. are passed by reference. This is because the primitive data types are immutable, while the non-primitive data types are mutable.
+
+## Order of Arguments in Python
+
+In Python, the order of arguments is important. The arguments are passed to the function in the same order as they are defined in the function definition. For example:
+
+```python title="function.py" showLineNumbers{1} {1-3}
+def subtract(x: int, y: int) -> int:
+    """Subtracts two numbers"""
+    return x - y
+
+result1 = subtract(5, 10)
+result2 = subtract(10, 5)
+print(result1)
+print(result2)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python function.py
+-5
+5
+```
+
+In this example, we define a function named `subtract` that takes two parameters `x` and `y` and returns their difference. We then call the function with two arguments `5` and `10`. The function returns `-5`, which is assigned to the variable `result1`. We then call the function with two arguments `10` and `5`. The function returns `5`, which is assigned to the variable `result2`. The values of these variables are then printed to the console. This is how you can pass arguments to a function in Python. The arguments are passed to the function in the same order as they are defined in the function definition.
+
+## Types of Arguments in Python
+
+In Python, there are three types of arguments:
+- **Positional arguments**
+- **Keyword arguments**
+- **Default arguments**
+
+We will discuss each of these in detail in the following sections.
+
+
+## Best Practices for Functions in Python
+
+### 1. **Descriptive Function Names:**
+
+Choose descriptive names that convey the purpose of the function. This enhances code readability and understanding.
+
+```python title="function.py" showLineNumbers{1} {2-3. 6-7}
+# Avoid
+def calc(a, b):
+    return a + b
+
+# Prefer
+def add_numbers(x, y):
+    return x + y
+```
+
+### 2. **Modularity:**
+
+Break down complex tasks into smaller, modular functions. Each function should have a single responsibility.
+
+```python title="function.py" showLineNumbers{1} {2-4. 7-9, 11-13}
+# Avoid
+def process_data(data):
+    # Complex code
+    return result
+
+# Prefer
+def clean_data(data):
+    # Code for data cleaning
+    return cleaned_data
+
+def analyze_data(data):
+    # Code for data analysis
+    return result
+```
+
+### 3. **Use Return Wisely:**
+
+Return meaningful values or use `None` for functions without a specific result.
+
+```python title="function.py" showLineNumbers{1} {2-3. 6-7}
+# Avoid
+def print_greeting(name):
+    print(f"Hello, {name}!")
+
+# Prefer
+def generate_greeting(name):
+    return f"Hello, {name}!"
+```
+
+### 4. **Document Your Functions:**
+
+Provide clear documentation using docstrings to explain the purpose, parameters, and return values of your functions.
+
+```python title="function.py" showLineNumbers{1} {2-11}
+def multiply(a, b):
+    """
+    Multiply two numbers.
+
+    Parameters:
+    a (float): The first number.
+    b (float): The second number.
+
+    Returns:
+    float: The result of the multiplication.
+    """
+    return a * b
+```
+
+### 5. **Avoid Global Variables:**
+
+Minimize the use of global variables within functions. Pass necessary values as parameters.
+
+```python title="function.py" showLineNumbers{1} {2, 4-6. 9-10}
+# Avoid
+total = 0
+
+def add_to_total(value):
+    global total
+    total += value
+
+# Prefer
+def add_numbers(a, b):
+    return a + b
+```
+
+## Conclusion
+
+Functions are fundamental to Python programming, offering a powerful mechanism for organizing and reusing code. By understanding their syntax, using parameters effectively, and adhering to best practices, you can create modular and maintainable code.
+
+As you explore Python, experiment with different types of functions and discover how they contribute to code readability, flexibility, and efficiency. For more insights and practical examples, check out our tutorials on Python Central Hub!
