@@ -31,7 +31,7 @@ def function_name(parameters):
 - **`expression`**: An optional expression that is evaluated and returned by the function.
 - **`:`**: A colon that marks the end of the function header. It is followed by an indented block of code. The indentation is used to indicate the scope of the function. All statements in the function body must be indented.
 
-### Example:
+#### Example:
 ```python title="function.py" showLineNumbers{1} {1-3}
 def add(x: int, y: int) -> int:
     """Adds two numbers"""
@@ -64,7 +64,7 @@ In Python, you can call a function using its name followed by parentheses. The s
 - **`arguments`**: A comma-separated list of arguments. Each argument consists of a value followed by a colon and a type annotation. The type annotation is optional.
 - **`=`**: An optional assignment operator. It is used to assign the return value of the function to a variable.
 
-### Example:
+#### Example:
 ```python title="function.py" showLineNumbers{1} {5}
 def add(x: int, y: int) -> int:
     """Adds two numbers"""
@@ -111,7 +111,7 @@ function_name(parameter1, parameter2, ...)
 - **`parameter1, parameter2, ...`**: A comma-separated list of parameters. Each parameter consists of a name followed by a colon and a type annotation. The type annotation is optional.
 - **`,`**: A comma that separates the parameters.
 
-### Example:
+#### Example:
 ```python title="function.py" showLineNumbers{1} {1-3}
 def add(x: int, y: int) -> int:
     """Adds two numbers"""
@@ -129,6 +129,30 @@ C:\Users\Your Name> python function.py
 
 In this example, we define a function named `add` that takes two parameters `x` and `y` and returns their sum. We then call the function with two arguments `5` and `10`. The function returns `15`, which is assigned to the variable `result`. The value of `result` is then printed to the console.
 
+:::danger
+The number of arguments passed to a function must match the number of parameters defined in the function. If the number of arguments is less than the number of parameters, the remaining parameters are set to `None`. If the number of arguments is greater than the number of parameters, the extra arguments are ignored.
+
+```python title="function.py" showLineNumbers{1} {1-3}
+def add(x: int, y: int) -> int:
+    """Adds two numbers"""
+    return x + y
+
+result = add(5)
+print(result)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python function.py
+Traceback (most recent call last):
+  File "function.py", line 4, in <module>
+    result = add(5)
+TypeError: add() missing 1 required positional argument: 'y'
+```
+
+In this example, we define a function named `add` that takes two parameters `x` and `y` and returns their sum. We then call the function with one argument `5`. The function returns `15`, which is assigned to the variable `result`. The value of `result` is then printed to the console. However, this code will throw an error because the number of arguments passed to the function does not match the number of parameters defined in the function.
+:::
+
 ## Return Value of a Function in Python
 
 In Python, you can return a value from a function using the `return` statement. The syntax for returning a value from a function is as follows:
@@ -140,7 +164,7 @@ return [expression]
 - **`return`**: The `return` keyword.
 - **`expression`**: An optional expression that is evaluated and returned by the function.
 
-### Example:
+#### Example:
 ```python title="function.py" showLineNumbers{1} {1-3}
 def add(x: int, y: int) -> int:
     """Adds two numbers"""
@@ -188,7 +212,7 @@ function_name(arguments)
 function_name(arguments)
 ```
 
-### Example:
+#### Example:
 ```python title="function.py" showLineNumbers{1} {5-7}
 def add(x: int, y: int) -> int:
     """Adds two numbers"""
@@ -211,4 +235,13 @@ C:\Users\Your Name> python function.py
 ```
 
 In this example, we define a function named `add` that takes two parameters `x` and `y` and returns their sum. We then call the function three times with different arguments. The function returns the sum of the arguments, which is assigned to the variables `result1`, `result2`, and `result3`. The values of these variables are then printed to the console. This is how you can call a function multiple times in Python. A function can be called as many times as you want. This is the main advantage of using functions in Python.
+
+## Types of Functions in Python
+
+In Python, there are two types of functions:
+
+- Built-in functions
+- User-defined functions. 
+ 
+Built-in functions are functions that are provided by Python. They are used to perform common tasks such as printing text to the console, reading input from the user, and converting data types. User-defined functions are functions that are defined by the user. They are used to perform specific tasks that are not provided by Python. For example, you might want to define a function that adds two numbers. This function can then be called from anywhere in the program.
 
