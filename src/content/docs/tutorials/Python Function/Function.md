@@ -104,7 +104,7 @@ In this example, we call the `add()` function without assigning its return value
 In Python, you can pass parameters to a function. The syntax for passing parameters to a function is as follows:
 
 ```python title="Syntax" showLineNumbers{1} {1-2}
-function_name(parameter1, parameter2, ...)
+def function_name(parameter1, parameter2, ...):
 ```
 
 - **`function_name`**: The name of the function.
@@ -240,8 +240,53 @@ In this example, we define a function named `add` that takes two parameters `x` 
 
 In Python, there are two types of functions:
 
-- Built-in functions
-- User-defined functions. 
+- **Built-in functions**
+- **User-defined functions** 
  
-Built-in functions are functions that are provided by Python. They are used to perform common tasks such as printing text to the console, reading input from the user, and converting data types. User-defined functions are functions that are defined by the user. They are used to perform specific tasks that are not provided by Python. For example, you might want to define a function that adds two numbers. This function can then be called from anywhere in the program.
+Built-in functions are functions that are provided by Python. They are used to perform common tasks such as printing text to the console, reading input from the user, and converting data types. 
 
+User-defined functions are functions that are defined by the user. They are used to perform specific tasks that are not provided by Python. For example, you might want to define a function that adds two numbers. This function can then be called from anywhere in the program.
+
+:::tip
+Python has a large number of built-in functions. You can find a list of all built-in functions in the [Python documentation](https://docs.python.org/3/library/functions.html). We are going to cover some of the most commonly used built-in functions in next section.
+:::
+
+
+## Arguments of a Function in Python
+
+In Python, you can pass arguments to a function. The syntax for passing arguments to a function is as follows:
+
+```python title="Syntax" showLineNumbers{1} {1-2}
+function_name(argument1, argument2, ...)
+```
+
+- **`function_name`**: The name of the function.
+- **`argument1, argument2, ...`**: A comma-separated list of arguments. Each argument consists of a value followed by a colon and a type annotation. The type annotation is optional.
+- **`,`**: A comma that separates the arguments.
+
+#### Example:
+```python title="function.py" showLineNumbers{1} {1-3}
+def add(x: int, y: int) -> int:
+    """Adds two numbers"""
+    return x + y
+
+result = add(5, 10)
+print(result)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python function.py
+15
+```
+
+In this example, we define a function named `add` that takes two parameters `x` and `y` and returns their sum. We then call the function with two arguments `5` and `10`. The function returns `15`, which is assigned to the variable `result`. The value of `result` is then printed to the console. Here, we are passing arguments to the function. The arguments are `5` and `10`. The function takes these arguments and returns their sum.
+
+:::note
+### What is difference between parameter and argument?
+
+| Parameter | Argument |
+| --- | --- |
+| A parameter is a variable in a function definition. | An argument is the value that is passed to the function when it is called. |
+| A parameter is a variable that is used to store the value of an argument. | An argument is a value that is passed to a function when it is called. |
+:::
