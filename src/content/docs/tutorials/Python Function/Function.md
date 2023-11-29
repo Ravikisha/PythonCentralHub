@@ -100,6 +100,19 @@ C:\Users\Your Name> python function.py
 In this example, we call the `add()` function without assigning its return value to a variable. The function returns `15`, but the return value is discarded.
 :::
 
+:::note
+### Docstring
+The docstring is used to describe the function. It is a string literal that is the first statement in the function body. It is enclosed in triple quotes. The docstring is used by the `help()` function to display information about the function.
+
+```python title="function.py" showLineNumbers{1} {1-3}
+def add(x: int, y: int) -> int:
+    """Adds two numbers"""
+    return x + y
+```
+
+In this example, we define a function named `add` that takes two parameters `x` and `y` and returns their sum. The type annotation for the parameters and return value is optional. The docstring is also optional, but it is good practice to include it. The docstring is used to describe the function. It is a string literal that is the first statement in the function body. It is enclosed in triple quotes. The docstring is used by the `help()` function to display information about the function.
+:::
+
 ## Parameters of a Function in Python
 In Python, you can pass parameters to a function. The syntax for passing parameters to a function is as follows:
 
@@ -285,8 +298,67 @@ In this example, we define a function named `add` that takes two parameters `x` 
 :::note
 ### What is difference between parameter and argument?
 
-| Parameter | Argument |
-| --- | --- |
-| A parameter is a variable in a function definition. | An argument is the value that is passed to the function when it is called. |
-| A parameter is a variable that is used to store the value of an argument. | An argument is a value that is passed to a function when it is called. |
+Parameters are variables that are used in the function definition. Arguments are the values that are passed to the function when it is called. 
+
+For example, in the following function definition, `x` and `y` are parameters:
+```python title="function.py" showLineNumbers{1} {1-3}
+def add(x: int, y: int) -> int:
+    """Adds two numbers"""
+    return x + y
+```
+
+In the following function call, `5` and `10` are arguments:
+```python title="function.py" showLineNumbers{1} {1-3}
+result = add(5, 10)
+```
+
+In this example, we define a function named `add` that takes two parameters `x` and `y` and returns their sum. We then call the function with two arguments `5` and `10`. The function returns `15`, which is assigned to the variable `result`. The value of `result` is then printed to the console. Here, we are passing arguments to the function. The arguments are `5` and `10`. The function takes these arguments and returns their sum.
 :::
+
+## Pass by Reference vs Pass by Value in Python
+
+In Python, the terms "pass by value" and "pass by reference" are often misunderstood because the concept is a bit nuanced. Python uses a mechanism that is more accurately described as "pass by object reference" or "call by object reference." To understand this, let's delve into how values are passed to functions in Python.
+
+### Pass by Value
+In Python, values are passed to functions by value. This means that when you pass a value to a function, a copy of the value is created and passed to the function. The function then operates on this copy of the value. The original value is not modified. For example:
+
+```python title="function.py" showLineNumbers{1} {1-3}
+def update(x: int):
+    """Updates the value of x"""
+    x = 10
+
+x = 5
+update(x)
+print(x)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python function.py
+5
+```
+
+In this example, we define a function named `update` that takes a parameter `x` and updates its value to `10`. We then call the function with the argument `5`. The function updates the value of `x` to `10`. However, the original value of `x` is not modified. The value of `x` is still `5`. This is because the value of `x` is passed to the function by value. A copy of the value is created and passed to the function. The function then operates on this copy of the value. The original value is not modified. This is how values are passed to functions in Python.
+
+### Pass by Reference
+In Python, values are passed to functions by reference. This means that when you pass a value to a function, a reference to the value is passed to the function. The function then operates on this reference to the value. The original value is modified. For example:
+
+```python title="function.py" showLineNumbers{1} {1-3}
+def update(x: list):
+    """Updates the value of x"""
+    x[0] = 10
+
+x = [5]
+update(x)
+print(x)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python function.py
+[10]
+```
+
+In this example, we define a function named `update` that takes a parameter `x` and updates its value to `10`. We then call the function with the argument `[5]`. The function updates the value of `x` to `10`. The original value of `x` is modified. This is because the value of `x` is passed to the function by reference. A reference to the value is passed to the function. The function then operates on this reference to the value. The original value is modified. This is how values are passed to functions in Python. 
+
+In python, the primitive data types like `int`, `float`, `bool`, `str`, etc. are passed by value. The non-primitive data types like `list`, `dict`, `set`, etc. are passed by reference. This is because the primitive data types are immutable, while the non-primitive data types are mutable.
