@@ -51,3 +51,164 @@ The `help()` function is used to display information about a function. It takes 
 :::tip
 Data types are optional in Python. You can use type annotations to specify the data types of parameters and return values. However, Python does not enforce these types. It is up to the developer to ensure that the correct types are passed to the function.
 :::
+
+## Calling a Function in Python
+In Python, you can call a function using its name followed by parentheses. The syntax for calling a function is as follows:
+
+```python title="Syntax" showLineNumbers{1} {1}
+[variable] = function_name(arguments)
+```
+
+- **`variable`**: An optional variable that stores the return value of the function.
+- **`function_name`**: The name of the function.
+- **`arguments`**: A comma-separated list of arguments. Each argument consists of a value followed by a colon and a type annotation. The type annotation is optional.
+- **`=`**: An optional assignment operator. It is used to assign the return value of the function to a variable.
+
+### Example:
+```python title="function.py" showLineNumbers{1} {5}
+def add(x: int, y: int) -> int:
+    """Adds two numbers"""
+    return x + y
+
+result = add(5, 10)
+print(result)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python function.py
+15
+```
+
+In this example, we call the `add()` function with two arguments `5` and `10`. The function returns `15`, which is assigned to the variable `result`. The value of `result` is then printed to the console. 
+
+:::tip
+You can also call a function without assigning its return value to a variable. In this case, the return value is discarded.
+```python title="function.py" showLineNumbers{1} {5}
+def add(x: int, y: int) -> int:
+    """Adds two numbers"""
+    return x + y
+
+add(5, 10)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python function.py
+```
+
+In this example, we call the `add()` function without assigning its return value to a variable. The function returns `15`, but the return value is discarded.
+:::
+
+## Parameters of a Function in Python
+In Python, you can pass parameters to a function. The syntax for passing parameters to a function is as follows:
+
+```python title="Syntax" showLineNumbers{1} {1-2}
+function_name(parameter1, parameter2, ...)
+```
+
+- **`function_name`**: The name of the function.
+- **`parameter1, parameter2, ...`**: A comma-separated list of parameters. Each parameter consists of a name followed by a colon and a type annotation. The type annotation is optional.
+- **`,`**: A comma that separates the parameters.
+
+### Example:
+```python title="function.py" showLineNumbers{1} {1-3}
+def add(x: int, y: int) -> int:
+    """Adds two numbers"""
+    return x + y
+
+result = add(5, 10)
+print(result)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python function.py
+15
+```
+
+In this example, we define a function named `add` that takes two parameters `x` and `y` and returns their sum. We then call the function with two arguments `5` and `10`. The function returns `15`, which is assigned to the variable `result`. The value of `result` is then printed to the console.
+
+## Return Value of a Function in Python
+
+In Python, you can return a value from a function using the `return` statement. The syntax for returning a value from a function is as follows:
+
+```python title="Syntax" showLineNumbers{1} {1-2}
+return [expression]
+```
+
+- **`return`**: The `return` keyword.
+- **`expression`**: An optional expression that is evaluated and returned by the function.
+
+### Example:
+```python title="function.py" showLineNumbers{1} {1-3}
+def add(x: int, y: int) -> int:
+    """Adds two numbers"""
+    return x + y
+
+result = add(5, 10)
+print(result)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python function.py
+15
+```
+
+In this example, we define a function named `add` that takes two parameters `x` and `y` and returns their sum. We then call the function with two arguments `5` and `10`. The function returns `15`, which is assigned to the variable `result`. The value of `result` is then printed to the console.
+
+Return values are optional in Python. If you don't specify a return value, the function returns `None`. For example:
+
+```python title="function.py" showLineNumbers{1} {1-3}
+def add(x: int, y: int) -> int:
+    """Adds two numbers"""
+    print(x + y)
+
+result = add(5, 10)
+print(result)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\Your Name> python function.py
+15
+None
+```
+
+In this example, we define a function named `add` that takes two parameters `x` and `y` and prints their sum. We then call the function with two arguments `5` and `10`. The function prints `15` to the console. The return value of the function is `None`, which is assigned to the variable `result`. The value of `result` is then printed to the console.
+
+## Multiple calls to a Function in Python
+
+In Python, you can call a function multiple times. The syntax for calling a function multiple times is as follows:
+
+```python title="Syntax" showLineNumbers{1} {1-3}
+function_name(arguments)
+function_name(arguments)
+function_name(arguments)
+```
+
+### Example:
+```python title="function.py" showLineNumbers{1} {5-7}
+def add(x: int, y: int) -> int:
+    """Adds two numbers"""
+    return x + y
+
+result1 = add(5, 10)
+result2 = add(10, 20)
+result3 = add(20, 30)
+print(result1)
+print(result2)
+print(result3)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python function.py
+15
+30
+50
+```
+
+In this example, we define a function named `add` that takes two parameters `x` and `y` and returns their sum. We then call the function three times with different arguments. The function returns the sum of the arguments, which is assigned to the variables `result1`, `result2`, and `result3`. The values of these variables are then printed to the console. This is how you can call a function multiple times in Python. A function can be called as many times as you want. This is the main advantage of using functions in Python.
+
