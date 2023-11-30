@@ -51,9 +51,7 @@ export default defineConfig({
   markdown: {
     syntaxHighlight: false,
     // Disable syntax built-in syntax hightlighting from astro
-    remarkPlugins: [
-      remarkMermaid,
-    ],
+    remarkPlugins: [remarkMermaid],
     rehypePlugins: [
       [rehypePrettyCode, options],
       // remarkMermaid
@@ -268,29 +266,29 @@ export default defineConfig({
             src: "/scripts/gtag.js",
           },
         },
-    {
-      tag: "script",
-      attrs: {
-        async: true,
-        src: "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4763909241118146",
-        crossorigin: "anonymous",
-      },
-    }, 
-    // <script type="text/javascript" src="//cdn.datacamp.com/dcl-react.js.gz"></script>
-    {
-      tag: "script",
-      attrs: {
-        async: true,
-        src: "//cdn.datacamp.com/dcl-react.js.gz",
-      },
-    },
-    {
-      tag: "script",
-      attrs: {
-        async: true,
-        src: "/scripts/datacamp.js",
-      },
-    }
+        {
+          tag: "script",
+          attrs: {
+            async: true,
+            src: "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4763909241118146",
+            crossorigin: "anonymous",
+          },
+        },
+        // <script type="text/javascript" src="//cdn.datacamp.com/dcl-react.js.gz"></script>
+        {
+          tag: "script",
+          attrs: {
+            async: true,
+            src: "//cdn.datacamp.com/dcl-react.js.gz",
+          },
+        },
+        {
+          tag: "script",
+          attrs: {
+            async: true,
+            src: "/scripts/datacamp.js",
+          },
+        },
       ],
     }),
     tailwind({
