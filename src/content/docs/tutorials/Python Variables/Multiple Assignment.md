@@ -14,6 +14,14 @@ We can assign multiple values to multiple variables in one line. This is called 
 a, b, c = 10, 20.5, "Hello, World!"
 print(a, b, c) # 10 20.5 Hello, World!
 ```
+
+Output
+
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python variable.py
+10 20.5 Hello, World!
+```
+
 :::caution
 The number of variables on the left and the number of values on the right must be the same.
 :::
@@ -28,6 +36,13 @@ a = b = c = 10
 print(a, b, c) # 10 10 10
 ```
 
+Output
+
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python variable.py
+10 10 10
+```
+
 ## Multiple Values to One Variable
 We can assign multiple values to one variable in one line. This is called multiple values to one variable.
 
@@ -37,6 +52,14 @@ We can assign multiple values to one variable in one line. This is called multip
 a = 10, 20, 30
 print(a) # (10, 20, 30)
 ```
+
+Output
+
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python variable.py
+(10, 20, 30)
+```
+
 In this case, the variable `a` is a tuple.
 
 ## Unpacking a Tuple
@@ -50,6 +73,13 @@ x, y, z = a
 print(x, y, z) # 10 20 30
 ```
 
+Output
+
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python variable.py
+10 20 30
+```
+
 ## Unpacking a List
 We can unpack a list in multiple variables. This is called unpacking a list.
 
@@ -59,4 +89,11 @@ We can unpack a list in multiple variables. This is called unpacking a list.
 a = [10, 20, 30]
 x, y, z = a
 print(x, y, z) # 10 20 30
+```
+
+Output
+
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python variable.py
+10 20 30
 ```
