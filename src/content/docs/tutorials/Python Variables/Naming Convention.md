@@ -100,34 +100,34 @@ There are different naming styles for different types of identifiers. The follow
 ### Camel Case
 Starts each word with a capital letter except the first word. For example: `firstName`, `lastName`, `getFirstName()`, `setFirstName()`, etc.
 ```python title="variable.py" showLineNumbers{1} {2,3,4,5,6,7} 
-    # Camel Case
-    firstName = "John"
-    lastName = "Doe"
-    def getFirstName():
-        pass
-    def setFirstName():
-        pass
+# Camel Case
+firstName = "John"
+lastName = "Doe"
+def getFirstName():
+    pass
+def setFirstName():
+    pass
 ```
 ### Pascal Case
 Starts each word with a capital letter. For example: `FirstName`, `LastName`, `GetFirstName()`, `SetFirstName()`, etc.
 ```python title="variable.py" showLineNumbers{1} {2,3,4,5,6,7} 
-    # Pascal Case
-    FirstName = "John"
-    LastName = "Doe"
-    def GetFirstName():
-        pass
-    def SetFirstName():
-        pass
+# Pascal Case
+FirstName = "John"
+LastName = "Doe"
+def GetFirstName():
+    pass
+def SetFirstName():
+    pass
 ```
 
 ### Snake Case
 Uses underscores (`_`) between words. For example: `first_name`, `last_name`, `get_first_name()`, `set_first_name()`, etc.
 ```python title="variable.py" showLineNumbers{1} {2,3,4,5,6,7} 
-    # Snake Case
-    first_name = "John"
-    last_name = "Doe"
-    def get_first_name():
-        pass
-    def set_first_name():
-        pass
+# Snake Case
+first_name = "John"
+last_name = "Doe"
+def get_first_name():
+    pass
+def set_first_name():
+    pass
 ```
