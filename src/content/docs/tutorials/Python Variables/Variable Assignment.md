@@ -71,11 +71,11 @@ In Python, you can use either single quotes (`'`) or double quotes (`"`) to decl
 ```python title="variable.py" showLineNumbers{1} {2,6}
 # Single quotes
 a = 'Hello, World!'
-print(a) # Hello, World!
+print(a)
 
 # Double quotes
 b = "Hello, World!"
-print(b) # Hello, World!
+print(b)
 ```
 
 Output:
@@ -93,8 +93,8 @@ Python is case-sensitive, which means that `a` and `A` are different variables. 
 # Case-sensitive variables
 a = 10
 A = 20.5
-print(a) # 10
-print(A) # 20.5
+print(a)
+print(A)
 ```
 
 Output:

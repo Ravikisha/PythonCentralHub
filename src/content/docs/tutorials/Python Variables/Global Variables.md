@@ -13,8 +13,8 @@ We can create a variable outside of a function. This is called a global variable
 name = "John"
 def display():
     print("Hello, " + name)
-display() # Hello, John
-print("Hello, " + name) # Hello, John
+display()
+print("Hello, " + name)
 ```
 
 Output:
@@ -41,8 +41,8 @@ def display():
     # Local variable
     name = "Smith"
     print("Hello, " + name)
-display() # Hello, Smith
-print("Hello, " + name) # Hello, John
+display()
+print("Hello, " + name)
 ```
 
 Output:
@@ -68,8 +68,8 @@ def display():
     global name
     name = "Smith"
     print("Hello, " + name)
-display() # Hello, Smith
-print("Hello, " + name) # Hello, Smith
+display() 
+print("Hello, " + name) 
 ```
 
 Output:

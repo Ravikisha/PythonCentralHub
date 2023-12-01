@@ -12,7 +12,7 @@ We can assign multiple values to multiple variables in one line. This is called 
 ```python title="variable.py" showLineNumbers{1} {2,3,4}
 # Multiple assignment
 a, b, c = 10, 20.5, "Hello, World!"
-print(a, b, c) # 10 20.5 Hello, World!
+print(a, b, c)
 ```
 
 Output
@@ -33,7 +33,7 @@ We can assign one value to multiple variables in one line. This is called one va
 ```python title="variable.py" showLineNumbers{1} {2}
 # One value to multiple variables
 a = b = c = 10
-print(a, b, c) # 10 10 10
+print(a, b, c)
 ```
 
 Output
@@ -50,7 +50,7 @@ We can assign multiple values to one variable in one line. This is called multip
 ```python title="variable.py" showLineNumbers{1} {2}
 # Multiple values to one variable
 a = 10, 20, 30
-print(a) # (10, 20, 30)
+print(a)
 ```
 
 Output
@@ -70,7 +70,7 @@ We can unpack a tuple in multiple variables. This is called unpacking a tuple.
 # Unpacking a tuple
 a = 10, 20, 30
 x, y, z = a
-print(x, y, z) # 10 20 30
+print(x, y, z)
 ```
 
 Output
@@ -88,7 +88,7 @@ We can unpack a list in multiple variables. This is called unpacking a list.
 # Unpacking a list
 a = [10, 20, 30]
 x, y, z = a
-print(x, y, z) # 10 20 30
+print(x, y, z)
 ```
 
 Output
