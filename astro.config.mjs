@@ -2,11 +2,6 @@ import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import rehypePrettyCode from "rehype-pretty-code";
 import robotsTxt from "astro-robots-txt";
-import { getHighlighter, BUNDLED_LANGUAGES } from "shiki";
-import remarkMermaid from "astro-diagram/remark-mermaid";
-// import rehypeMermaid from "rehype-mermaid";
-// import remarkMermaid from "astro-mermaidjs/remark-mermaid";
-// import remarkMermaid from "remark-mermaid";
 
 const site = "https://python-central-hub.vercel.app";
 
@@ -51,10 +46,8 @@ export default defineConfig({
   markdown: {
     syntaxHighlight: false,
     // Disable syntax built-in syntax hightlighting from astro
-    remarkPlugins: [remarkMermaid],
     rehypePlugins: [
       [rehypePrettyCode, options],
-      // remarkMermaid
     ],
   },
   integrations: [
@@ -272,21 +265,6 @@ export default defineConfig({
             async: true,
             src: "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4763909241118146",
             crossorigin: "anonymous",
-          },
-        },
-        // <script type="text/javascript" src="//cdn.datacamp.com/dcl-react.js.gz"></script>
-        {
-          tag: "script",
-          attrs: {
-            async: true,
-            src: "//cdn.datacamp.com/dcl-react.js.gz",
-          },
-        },
-        {
-          tag: "script",
-          attrs: {
-            async: true,
-            src: "/scripts/datacamp.js",
           },
         },
       ],
