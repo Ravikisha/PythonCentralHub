@@ -17,6 +17,14 @@ display() # Hello, John
 print("Hello, " + name) # Hello, John
 ```
 
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python variable.py
+Hello, John
+Hello, John
+```
+
 In the above example, we created a global variable `name` outside of the function `display()`. We can access the global variable `name` inside or outside of the function `display()`.
 :::tip
 We can access the global variable inside or outside of a function.
@@ -36,6 +44,15 @@ def display():
 display() # Hello, Smith
 print("Hello, " + name) # Hello, John
 ```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python variable.py
+Hello, Smith
+Hello, John
+```
+
 In this example, we created a local variable `name` inside the function `display()`. We can access the local variable `name` inside the function `display()`. We can't access the local variable `name` outside the function `display()`.
 :::tip
 We can access the local variable inside the function. We can't access the local variable outside the function.
@@ -54,4 +71,13 @@ def display():
 display() # Hello, Smith
 print("Hello, " + name) # Hello, Smith
 ```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python variable.py
+Hello, Smith
+Hello, Smith
+```
+
 In this example, we used the `global` keyword to access the global variable `name` inside the function `display()`. We can access the global variable `name` inside the function `display()`. We can also access the global variable `name` outside the function `display()`.
