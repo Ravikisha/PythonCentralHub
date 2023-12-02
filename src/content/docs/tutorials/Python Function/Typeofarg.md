@@ -1,27 +1,9 @@
 ---
-title: Type of Arguments in Python
+title: Types of Arguments in Python
 description: Learn about the different types of arguments in Python. In this tutorial, we will learn about the different types of arguments in Python. We will also learn how to use them in our Python programs. There are three types of arguments in Python. They are positional arguments, keyword arguments, and default arguments.
 sidebar: 
     order: 43
 ---
-
-<!-- ```python title="function.py" showLineNumbers{1} {1-3}
-def add(x: int, y: int) -> int:
-    """Adds two numbers"""
-    print(x + y)
-
-result = add(5, 10)
-print(result)
-```
-
-Output:
-```cmd title="command" showLineNumbers{1} {2-3}
-C:\Users\Your Name> python function.py
-15
-None
-```
-
-In this example, we define a function named `add` that takes two parameters `x` and `y` and prints their sum. We then call the function with two arguments `5` and `10`. The function prints `15` to the console. The return value of the function is `None`, which is assigned to the variable `result`. The value of `result` is then printed to the console. -->
 
 ## What are Arguments in Python?
 
@@ -624,3 +606,7 @@ phone: 1234567890
 email: john@gmail.com
 ```
 
+## Conclusion
+In this tutorial, we learned about the different types of arguments in Python. We also learned how to use them in our Python programs. There are three types of arguments in Python. They are positional arguments, keyword arguments, and default arguments. We also learned about positional only arguments, keyword only arguments, and arbitrary arguments. 
+
+As you explore Python, experiment with different types of functions and discover how they contribute to code readability, flexibility, and efficiency. For more insights and practical examples, check out our tutorials on Python Central Hub!
