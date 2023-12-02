@@ -290,7 +290,89 @@ Let's see the difference between keyword arguments and positional arguments.
 | You cannot pass the positional arguments after the keyword arguments. | You can pass the positional arguments after the keyword arguments. |
 | You can call a function with positional arguments and keyword arguments. | You can call a function with positional arguments and keyword arguments. But you have to pass the positional arguments before the keyword arguments. |
 
-## Keyword only Arguments
+
+## Positional Only Arguments
+
+In Python, you can define a function with positional only arguments. Positional only arguments are the arguments that can be passed to a function or method only without a keyword. In other words, positional only arguments are the arguments that can be passed to a function or method only without a keyword. 
+
+```python title="Syntax" showLineNumbers{1} {1-3}
+def function_name(argument1, argument2, argument3, /):
+    """Docstring"""
+    # Function body
+```
+
+In the above syntax, `argument1`, `argument2`, `argument3`, and so on are the positional only arguments passed to the function or method call. You have to pass the positional only arguments without a keyword. You cannot pass the positional only arguments with a keyword.
+
+Let's see an example of a function with positional only arguments.
+
+```python title="positional-only-arguments.py" {1-3}
+def add(x, y, /):
+    """Adds two numbers"""
+    print(x + y)
+
+add(5, 10)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\Your Name> python positional-only-arguments.py
+15
+```
+
+In the above example, we define a function named `add` that takes two positional only arguments `x` and `y`. We then call the function with two positional arguments `5` and `10`. The function prints `15` to the console.
+
+Another example of a function with positional only arguments.
+
+```python title="positional-only-arguments.py" {1-4, 6-8}
+def interest(p, /, r, t):
+    """Calculates the simple interest"""
+    i = (p * r * t) / 100
+    print(f"Simple interest is {i}")
+
+interest(1000, 5, 1)
+interest(1000, r=10, t=2)
+interest(1000, 10, t=2)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python positional-only-arguments.py
+Simple interest is 50.0
+Simple interest is 200.0
+Simple interest is 200.0
+```
+
+In this example, we declare `p` as a positional only argument and `r` and `t` as keyword arguments. We are calling the function with positional arguments. We are passing the arguments in different orders. In the positional arguments, you have to pass the arguments in the same order as they are defined in the function definition but in the keyword arguments, you can pass the arguments in any order.
+
+:::danger
+In the interest function, `p` is a positional only argument and `r` and `t` are keyword arguments. You cannot pass the keyword arguments before the positional only arguments. If you do so, you will get an error.
+
+```python title="positional-only-arguments.py" {1-4, 6-9}
+def interest(p, /, r,*, t):
+    """Calculates the simple interest"""
+    i = (p * r * t) / 100
+    print(f"Simple interest is {i}")
+
+interest(1000, r=5, t=1)
+interest(1000, r=10, t=2)
+interest(1000, 10, t=2)
+interest(1000, 10, 2)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-7}
+C:\Users\Your Name> python positional-only-arguments.py
+Simple interest is 50.0
+Simple interest is 200.0
+Simple interest is 200.0
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+TypeError: interest() takes 2 positional arguments but 3 were given
+```
+:::
+
+## Keyword Only Arguments
 
 In Python, you can define a function with keyword only arguments. Keyword only arguments are the arguments that can be passed to a function or method only with a keyword. In other words, keyword only arguments are the arguments that can be passed to a function or method only with a keyword. 
 
