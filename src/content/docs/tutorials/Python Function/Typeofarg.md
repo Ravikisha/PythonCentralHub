@@ -279,3 +279,13 @@ SyntaxError: positional argument follows keyword argument
 In the above example, we are passing the positional argument `1` after the keyword argument `r=5`. This will give us an error.
 :::
 
+## Keyword Arguments vs Positional Arguments
+
+Let's see the difference between keyword arguments and positional arguments.
+
+| Keyword Arguments | Positional Arguments |
+| --- | --- |
+| Keyword arguments are the arguments that are passed to a function or method with a keyword. | Positional arguments are the arguments that are passed to a function or method without a keyword. |
+| You can pass the keyword arguments in any order. | You have to pass the positional arguments in the same order as they are defined in the function definition. |
+| You cannot pass the positional arguments after the keyword arguments. | You can pass the positional arguments after the keyword arguments. |
+| You can call a function with positional arguments and keyword arguments. | You can call a function with positional arguments and keyword arguments. But you have to pass the positional arguments before the keyword arguments. |
