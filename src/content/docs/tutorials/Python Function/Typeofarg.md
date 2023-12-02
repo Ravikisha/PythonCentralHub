@@ -449,3 +449,178 @@ TypeError: interest() takes 1 positional argument but 2 positional arguments (an
 In the above example, we are passing the positional argument `1` after the keyword only argument `r=5`. This will give us an error.
 :::
 
+
+## Arbitrary Arguments
+
+In Python, you can define a function with arbitrary arguments. Arbitrary arguments are the arguments that can be passed to a function or method with any number of arguments. In other words, arbitrary arguments are the arguments that can be passed to a function or method with any number of arguments. 
+
+There are two types of arbitrary arguments in Python. They are:
+- **Arbitrary Positional Arguments**
+- **Arbitrary Keyword Arguments**
+
+
+### Arbitrary Positional Arguments
+In Python, you can define a function with arbitrary positional arguments. Arbitrary positional arguments are the positional arguments that can be passed to a function or method with any number of arguments. In other words, arbitrary positional arguments are the positional arguments that can be passed to a function or method with any number of arguments. 
+
+```python title="Syntax" showLineNumbers{1} {1-3}
+def function_name(*args):
+    """Docstring"""
+    # Function body
+```
+
+In the above syntax, `args` is the arbitrary positional arguments passed to the function or method call. You can pass any number of arguments to the function or method.
+
+Let's see an example of a function with arbitrary positional arguments.
+
+```python title="arbitrary-positional-arguments.py" {1-6}
+def add(*args):
+    """Adds two numbers"""
+    result = 0
+    for num in args:
+        result += num
+    print(result)
+
+add(5, 10)
+add(5, 10, 15)
+add(5, 10, 15, 20)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python arbitrary-positional-arguments.py
+15
+30
+50
+```
+
+In the above example, we define a function named `add` that takes arbitrary positional arguments `args`. We then call the function with two arguments `5` and `10`. The function prints `15` to the console. We then call the function with three arguments `5`, `10`, and `15`. The function prints `30` to the console. We then call the function with four arguments `5`, `10`, `15`, and `20`. The function prints `50` to the console.
+
+Another example of a function with arbitrary positional arguments.
+
+```python title="arbitrary-positional-arguments.py" {1-5, 7-9}
+def interest(*args):
+    """Calculates the simple interest"""
+    p, r, t = args
+    i = (p * r * t) / 100
+    print(f"Simple interest is {i}")
+
+interest(1000, 5, 1)
+interest(1000, 10, 2)
+interest(1000, 10, 6)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python arbitrary-positional-arguments.py
+Simple interest is 50.0
+Simple interest is 200.0
+Simple interest is 600.0
+```
+
+In this example, we are calling the function with arbitrary positional arguments. We are passing the arguments in different orders. In the positional arguments, you have to pass the arguments in the same order as they are defined in the function definition. Here, we are unpacking the arguments into three variables `p`, `r`, and `t`. We are then using these variables to calculate the simple interest. 
+
+### Arbitrary Keyword Arguments
+In Python, you can define a function with arbitrary keyword arguments. Arbitrary keyword arguments are the keyword arguments that can be passed to a function or method with any number of arguments. In other words, arbitrary keyword arguments are the keyword arguments that can be passed to a function or method with any number of arguments. 
+
+```python title="Syntax" showLineNumbers{1} {1-3}
+def function_name(**kwargs):
+    """Docstring"""
+    # Function body
+```
+
+In the above syntax, `kwargs` is the arbitrary keyword arguments passed to the function or method call. You can pass any number of arguments to the function or method.
+
+Let's see an example of a function with arbitrary keyword arguments.
+
+```python title="arbitrary-keyword-arguments.py" {1-6}
+def add(**kwargs):
+    """Adds two numbers"""
+    result = 0
+    for key, value in kwargs.items():
+        result += value
+    print(result)
+
+add(x=5, y=10)
+add(x=5, y=10, z=15)
+add(x=5, y=10, z=15, a=20)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python arbitrary-keyword-arguments.py
+15
+30
+50
+```
+
+In the above example, we define a function named `add` that takes arbitrary keyword arguments `kwargs`. We then call the function with two arguments `x=5` and `y=10`. The function prints `15` to the console. We then call the function with three arguments `x=5`, `y=10`, and `z=15`. The function prints `30` to the console. We then call the function with four arguments `x=5`, `y=10`, `z=15`, and `a=20`. The function prints `50` to the console.
+
+Another example of a function with arbitrary keyword arguments.
+
+```python title="arbitrary-keyword-arguments.py" {1-7, 9-12}
+def interest(**kwargs):
+    """Calculates the simple interest"""
+    p = kwargs["p"]
+    r = kwargs["r"]
+    t = kwargs["t"]
+    i = (p * r * t) / 100
+    print(f"Simple interest is {i}")
+
+interest(p=1000, r=5, t=1)
+interest(p=1000, r=10, t=2)
+interest(p=1000, r=10, t=6)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python arbitrary-keyword-arguments.py
+Simple interest is 50.0
+Simple interest is 200.0
+Simple interest is 600.0
+```
+
+In this example, we are calling the function with arbitrary keyword arguments. We are passing the arguments in different orders. In the positional arguments, you have to pass the arguments in the same order as they are defined in the function definition. Here, we are accessing the arguments using the keys `p`, `r`, and `t`. We are then using these variables to calculate the simple interest.
+
+Another example of a function with arbitrary keyword arguments.
+
+```python title="arbitrary-keyword-arguments.py" {1-7, 9-14}
+def intro(name, age, **kwargs):
+    """Prints the name and age"""
+    print(f"Name: {name}")
+    print(f"Age: {age}")
+    print("Other information:")
+    for key, value in kwargs.items():
+        print(f"{key}: {value}")
+    
+intro("John", 25, city="New York", country="USA")
+print("-------------------------")
+intro("John", 25, city="New York", country="USA", phone="1234567890")
+print("-------------------------")
+intro("John", 25, city="New York", country="USA", phone="1234567890", email="john@gmail.com")
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-30}
+C:\Users\Your Name> python arbitrary-keyword-arguments.py
+Name: John
+Age: 25
+Other information:
+city: New York
+country: USA
+-------------------------
+Name: John
+Age: 25
+Other information:
+city: New York
+country: USA
+phone: 1234567890
+-------------------------
+Name: John
+Age: 25
+Other information:
+city: New York
+country: USA
+phone: 1234567890
+email: john@gmail.com
+```
+
