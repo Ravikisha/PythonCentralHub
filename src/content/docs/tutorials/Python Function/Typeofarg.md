@@ -177,3 +177,105 @@ In the postional arguments, you have to pass the arguments in the same order as 
 :::
 
 
+### Keyword Arguments
+Keyword arguments are the arguments that are passed to a function or method with a keyword. In other words, keyword arguments are the arguments that are passed to a function or method with a keyword. 
+
+```python title="Syntax" showLineNumbers{1} {1-3}
+function_name(argument1=value1, argument2=value2, argument3=value3, ...)
+```
+
+In the above syntax, `argument1`, `argument2`, `argument3`, and so on are the arguments passed to the function or method call. `value1`, `value2`, `value3`, and so on are the values passed to the function or method call.
+
+Let's see an example of a function with keyword arguments.
+
+```python title="keyword-arguments.py" {1-3, 5}
+def add(x, y):
+    """Adds two numbers"""
+    print(x + y)
+
+add(x=5, y=10)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\Your Name> python keyword-arguments.py
+15
+```
+
+In the above example, we define a function named `add` that takes two parameters `x` and `y`. We then call the function with two keyword arguments `x=5` and `y=10`. The function prints `15` to the console.
+
+:::note
+**You can pass the keyword arguments in any order.** <br> 
+In the positional arguments, you have to pass the arguments in the same order as they are defined in the function definition but in the keyword arguments, you can pass the arguments in any order.
+:::
+
+Another example of a function with keyword arguments.
+
+```python title="keyword-arguments.py" {1-4, 6-8}
+def interest(p, r, t):
+    """Calculates the simple interest"""
+    i = (p * r * t) / 100
+    print(f"Simple interest is {i}")
+
+interest(p=1000, r=5, t=1)
+interest(t=2, p=1000, r=10)
+interest(r=10, t=2, p=1000)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python keyword-arguments.py
+Simple interest is 50.0
+Simple interest is 200.0
+Simple interest is 200.0
+```
+
+In this example, we are calling the function with keyword arguments. We are passing the arguments in different orders. In the positional arguments, you have to pass the arguments in the same order as they are defined in the function definition but in the keyword arguments, you can pass the arguments in any order.
+
+:::note
+You can call a function with positional arguments and keyword arguments. <br>
+You can call a function with positional arguments and keyword arguments. But you have to pass the positional arguments before the keyword arguments.
+    
+```python title="keyword-arguments.py" {1-4, 6-8}
+def interest(p, r, t):
+    """Calculates the simple interest"""
+    i = (p * r * t) / 100
+    print(f"Simple interest is {i}")
+
+interest(1000, r=5, t=1)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\Your Name> python keyword-arguments.py
+Simple interest is 50.0
+```
+
+In the above example, we are calling the function with positional arguments and keyword arguments. We are passing the positional arguments before the keyword arguments. This will not give us an error.
+:::
+
+:::danger
+**You cannot pass the positional arguments after the keyword arguments.** <br>
+In the positional arguments, you have to pass the arguments in the same order as they are defined in the function definition but in the keyword arguments, you can pass the arguments in any order. But you cannot pass the positional arguments after the keyword arguments. If you do so, you will get an error.
+
+```python title="keyword-arguments.py" {1-4, 6-8}
+def interest(p, r, t):
+    """Calculates the simple interest"""
+    i = (p * r * t) / 100
+    print(f"Simple interest is {i}")
+
+interest(p=1000, r=5, 1)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\Your Name> python keyword-arguments.py
+  File "keyword-arguments.py", line 6
+    interest(p=1000, r=5, 1)
+                          ^
+SyntaxError: positional argument follows keyword argument
+```
+
+In the above example, we are passing the positional argument `1` after the keyword argument `r=5`. This will give us an error.
+:::
+
