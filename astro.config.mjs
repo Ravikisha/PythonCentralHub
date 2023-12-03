@@ -42,6 +42,9 @@ const options = {
 
 // https://astro.build/config
 export default defineConfig({
+  image: {
+    domains: ["yt3.googleusercontent.com"],
+  },
   site,
   markdown: {
     syntaxHighlight: false,
