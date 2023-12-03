@@ -1,6 +1,9 @@
 ---
 title: The Python Library
 description: A curated list of Python books for beginners and experienced developers. Python Central Hub has compiled a list of the best 10 Python books to help you learn Python programming.
+banner:
+  content: |
+    This is a personal recommendation for the best Python books to read. We don't mean to offend anyone. If you have any suggestions, please let us know.
 sidebar:
     order: 2
 ---
