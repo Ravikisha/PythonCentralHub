@@ -57,3 +57,22 @@ The Python extension for Visual Studio Code is a crucial component for a smooth 
 :::tip
 You can also install the Python Extension Pack, which includes the Python extension along with other useful extensions for Python development. To install the extension pack, search for "Python Extension Pack" in the Extensions view and install it.
 :::
+
+## Selecting the Python Interpreter
+
+With the Python extension installed, you need to specify the Python interpreter that VS Code should use for your projects. Follow these steps to set the Python interpreter:
+
+1. Open a Python file or create a new one.
+
+2. Look in the lower right corner of the window, where you'll see "Select Python Interpreter." Click on it
+
+![Status Bar Pythonn Interpreter](../../../assets/statusbar_python.png)
+![Select Python Interpreter](../../../assets/interpreters-list.png)
+   
+or use the shortcut `Ctrl+Shift+P` and search for "Python: Select Interpreter."
+![Control Panel Python Interpreter](../../../assets/select-interpreters-command.png)
+![Select Python Interpreter](../../../assets/enter-interpreter-path.png)
+
+1. Choose the Python interpreter you installed earlier. If it doesn't appear, click on "Enter interpreter path" and manually locate the Python executable.
+
+Setting the interpreter ensures that VS Code uses the correct Python environment for your projects.
