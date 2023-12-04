@@ -31,3 +31,29 @@ This should display the installed Python version.
 
 :::tip
 For more details about python installation, check out our [Python Installation Guide](/tutorials/installation/).
+:::
+
+
+## Installing the Python Extension for Visual Studio Code
+
+The Python extension for Visual Studio Code is a crucial component for a smooth Python development experience. It provides features like IntelliSense, linting, debugging, and more. To install the Python extension, follow these steps:
+
+1. Open Visual Studio Code.
+
+2. Navigate to the Extensions view by clicking on the Extensions icon in the Activity Bar on the side of the window or using the shortcut `Ctrl+Shift+X`.
+
+3. Search for "Python" in the Extensions view search box.
+
+4. Select the "Python" extension provided by Microsoft and click the "Install" button.
+
+![Python Extension](../../../assets/python_extension.png)
+
+5. You need to install another extension called "Code Runner" to run Python code directly from VS Code. Search for "Code Runner" in the Extensions view and install it.
+
+![Code Runner Extension](../../../assets/coderunner.png)
+
+6. After installation, you might need to reload VS Code to activate the extension.
+
+:::tip
+You can also install the Python Extension Pack, which includes the Python extension along with other useful extensions for Python development. To install the extension pack, search for "Python Extension Pack" in the Extensions view and install it.
+:::
