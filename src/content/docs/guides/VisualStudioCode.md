@@ -76,3 +76,78 @@ or use the shortcut `Ctrl+Shift+P` and search for "Python: Select Interpreter."
 1. Choose the Python interpreter you installed earlier. If it doesn't appear, click on "Enter interpreter path" and manually locate the Python executable.
 
 Setting the interpreter ensures that VS Code uses the correct Python environment for your projects.
+
+## Creating a Virtual Environment (Optional)
+
+While not mandatory, creating a virtual environment for each Python project is a good practice. Virtual environments isolate project dependencies, preventing conflicts between different projects. To create a virtual environment:
+
+1. Open a terminal in VS Code (`Ctrl+``).
+
+2. Navigate to the root folder of your project.
+
+3. Run the following commands:
+
+```bash title="command" showLineNumbers{1} {2,5}
+# On Windows
+python -m venv venv
+
+# On macOS/Linux
+python3 -m venv venv
+```
+
+4. Activate the virtual environment:
+
+```bash title="command" showLineNumbers{1} {2,5}
+# On Windows
+venv\Scripts\activate
+
+# On macOS/Linux
+source venv/bin/activate
+```
+
+Now, when the virtual environment is activated, any Python-related commands in the terminal will use the environment-specific Python interpreter and libraries.
+
+## Configuring the Integrated Terminal
+
+The integrated terminal in Visual Studio Code is a powerful tool for running commands and scripts. You can configure it to use your virtual environment by default:
+
+1. Open your project or create a new Python file.
+
+2. Open the integrated terminal (`Ctrl`+ ` ).
+
+3. In the terminal, click on the "Select Default Profile" dropdown and choose "Python 3.x.x 64-bit ('venv': venv)" or a similar option that corresponds to your virtual environment.
+
+![Select Default Profile](../../../assets/integratedTerminal.png)
+
+This ensures that any Python-related commands executed in the terminal are run within the virtual environment.
+
+## Debugging Python Code
+
+Visual Studio Code provides a powerful debugger for Python code. To set up debugging, follow these steps:
+
+1. Open a Python file in VS Code.
+
+2. Add breakpoints to your code by clicking in the gutter next to the line numbers.
+
+3. Press `F5` or go to the Run and Debug sidebar, click on the green arrow, and select "Python File."
+
+4. The debugger will start, and you can use the debug toolbar to step through your code, inspect variables, and more.
+
+## Other Useful VS Code Extensions for Python Development
+
+Enhance your Python development experience by exploring and installing additional extensions. Some popular ones include:
+
+- **Pylance:** A fast and feature-rich language support extension for Python, developed by Microsoft.
+
+- **Python Test Explorer for Visual Studio Code:** Provides a test explorer for discovering and running Python tests.
+
+- **Django for Visual Studio Code:** Offers enhanced support for Django projects, including template syntax highlighting and code snippets.
+
+- **Jupyter:** Allows you to work with Jupyter Notebooks directly within VS Code.
+
+- **Code Spell Checker:** Helps catch spelling mistakes in your code and comments.
+
+## Conclusion
+
+Configuring Visual Studio Code for Python development sets the stage for a productive and enjoyable coding experience. With the right extensions, an efficient terminal setup, and a virtual environment, you'll be equipped to tackle Python projects of any scale. Explore the features VS Code has to offer, and tailor your development environment to suit your preferences. Happy coding!
+
