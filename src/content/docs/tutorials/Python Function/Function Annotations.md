@@ -5,24 +5,6 @@ sidebar:
     order: 44
 ---
 
-<!-- ```python title="function.py" showLineNumbers{1} {1-3}
-def add(x: int, y: int) -> int:
-    """Adds two numbers"""
-    print(x + y)
-
-result = add(5, 10)
-print(result)
-```
-
-Output:
-```cmd title="command" showLineNumbers{1} {2-3}
-C:\Users\Your Name> python function.py
-15
-None
-```
-
-In this example, we define a function named `add` that takes two parameters `x` and `y` and prints their sum. We then call the function with two arguments `5` and `10`. The function prints `15` to the console. The return value of the function is `None`, which is assigned to the variable `result`. The value of `result` is then printed to the console. -->
-
 ## Unraveling Function Annotations in Python: A Comprehensive Guide
 
 Function annotations in Python provide a way to attach metadata, including type hints, to the parameters and return values of functions. Introduced in PEP 3107 and enhanced in subsequent PEPs (Python Enhancement Proposals), function annotations offer a mechanism for developers to provide additional information about the expected types and purpose of function parameters and return values. In this comprehensive guide, we'll explore the syntax, use cases, and best practices associated with function annotations in Python.
