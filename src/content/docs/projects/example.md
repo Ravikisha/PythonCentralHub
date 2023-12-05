@@ -7,3 +7,12 @@ description: This is an example project.
 We are working on the project part. 
 
 ## Coming Soon 😎
+
+
+```mermaid
+graph TD;
+    A-->B;
+    A-->C;
+    B-->D;
+    C-->D;
+```

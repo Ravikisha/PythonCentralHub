@@ -2,6 +2,7 @@ import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import rehypePrettyCode from "rehype-pretty-code";
 import robotsTxt from "astro-robots-txt";
+import remakeMermaid from "./lib/mermaid/remake.ts";
 
 const site = "https://python-central-hub.vercel.app";
 
@@ -51,6 +52,9 @@ export default defineConfig({
     // Disable syntax built-in syntax hightlighting from astro
     rehypePlugins: [
       [rehypePrettyCode, options],
+    ],
+    remarkPlugins: [
+      remakeMermaid,
     ],
   },
   integrations: [
