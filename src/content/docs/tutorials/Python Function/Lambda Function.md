@@ -35,3 +35,33 @@ Output:
 In this example, we define a lambda function named `multiply` that takes two arguments (`x` and `y`) and returns their product. The lambda function is then invoked with the arguments 5 and 3, resulting in the product, which is printed to the console.
 
 Lambda functions are often used for small, one-off operations where a full function definition might be deemed unnecessary.
+
+## Lambda Functions vs. Regular Functions
+
+While lambda functions share similarities with regular functions defined using the `def` keyword, there are key differences that influence their use cases.
+
+### 1. **Syntax:**
+
+Lambda functions have a more compact syntax, consisting of a single line with the `lambda` keyword, whereas regular functions have a more extensive syntax that includes a function name, parameters, and a block of code.
+
+### 2. **Return:**
+
+Lambda functions implicitly return the value of the expression, while regular functions use the `return` keyword to specify the return value.
+
+### 3. **Scope:**
+
+Lambda functions are often used for short, simple operations, while regular functions are suitable for more complex tasks and operations that require multiple statements.
+
+Let's compare the syntax of a lambda function with its equivalent regular function:
+
+```python title="lambda.py" showLineNumbers{1} {2, 5-6}
+# Lambda Function
+multiply = lambda x, y: x * y
+
+# Equivalent Regular Function
+def multiply_regular(x, y):
+    return x * y
+```
+
+In this example, both the lambda function and the regular function perform the same operation: multiplying two numbers. The lambda function, however, accomplishes this with a more concise syntax.
+
