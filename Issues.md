@@ -8,3 +8,18 @@
       "type": "image/png"
 },
 ```
+
+#### #2 Some Code Reference
+import FileCode from '../../../components/FileCode.astro'
+
+
+<FileCode file="package.json" lang="json" title="Package" meta="{1}" />
+
+```mermaid
+flowchart TD
+    A[Start] --> B{Is it?}
+    B -->|Yes| C[OK]
+    C --> D[Rethink]
+    D --> B
+    B ---->|No| E[End]
+```
