@@ -16,12 +16,12 @@
 import { visit } from "unist-util-visit";
 import renderDiagram from "./render-diagram";
 
-const style = `display: flex; justify-content: center; width: 100%;`;
+const style = `all: initial; width: 100%;display: flex; justify-content: center;align-items: center;`;
 
 function plugin() {
   return async function transformer(ast: any) {
     // Find all the mermaid diagram code blocks. i.e. ```mermaid
-    const instances = [];
+    const instances: any[] = [];
     visit(ast, { type: "code", lang: "mermaid" }, (node, index, parent) => {
       instances.push([node, index, parent]);
     });
@@ -40,7 +40,12 @@ function plugin() {
         parent.children.splice(index, 1, {
           type: "html",
           // TODO: put CSS elsewhere
-          value: `<div class="mermaid-diagram" style="${style}">${html}</div>`,
+          value: `
+          <div class="mermaid-diagram" style="${style}">
+            ${html}
+          </div>
+          `,
+
           position: node.position,
         });
       })
