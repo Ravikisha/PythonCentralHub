@@ -44,7 +44,7 @@ export default async function renderDiagram({ config, code }: any) {
         /* Render the mermaid diagram */
         const svgCode = await mermaidAPI.render('diagram', codeB);
         return { status: 'success', svgCode: svgCode.svg };
-      } catch (error) {
+      } catch (error: any) {
         return { status: 'error', error, message: error.message };
       }
     },

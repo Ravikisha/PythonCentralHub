@@ -13,7 +13,7 @@
 /**
  * Code from
  * Astro Diagrams (https://code.juliancataldo.com/component/astro-diagram/)
- * 
+ *
  */
 
 // TODO: Proper TypeScript rehaul for this file.
@@ -22,7 +22,37 @@
 import { visit } from "unist-util-visit";
 import renderDiagram from "./render-diagram";
 
-const style = `all: initial; width: 100%;display: flex; justify-content: center;align-items: center;`;
+const style = `all: initial; width: 100%;display: flex; flex-direction: column; justify-content: center;align-items: center; background-color: #fff; border-radius: 0.5rem; box-shadow: 10px 24px 50px 17px rgba(0, 0, 0, 0.1);border: 1px solid #c2c2c2;`;
+
+function getTitle(meta: string) {
+  // Use a regular expression to extract the title value
+  const match = meta.match(/title="([^"]*)"/);
+
+  // Check if a match is found
+  if (match) {
+    // Extract the title value
+    const title = match[1];
+
+    return title;
+  } else {
+    return false;
+  }
+}
+
+function getDesc(meta: string) {
+  // Use a regular expression to extract the title value
+  const match = meta.match(/desc="([^"]*)"/);
+
+  // Check if a match is found
+  if (match) {
+    // Extract the title value
+    const desc = match[1];
+
+    return desc;
+  } else {
+    return false;
+  }
+}
 
 function plugin() {
   return async function transformer(ast: any) {
@@ -48,7 +78,14 @@ function plugin() {
           // TODO: put CSS elsewhere
           value: `
           <div class="mermaid-diagram" style="${style}">
-            ${html}
+          <p style="text-align: center;color: #222;font-size: 1rem; margin: 1rem 0 1rem 0; font-family: 'Atkinson Hyperlegible', sans-serif;">${
+            getDesc(node.meta) ?? ""
+          }</p>
+          <hr style="width: 80%; margin: 0.5rem 0 0.5rem 0; border: 1px solid #c2c2c2;"/>
+          ${html}
+          <h2 style="text-align: center;color: #222;font-size: 1.5rem; font-weight: 500; margin: 1rem 0 1rem 0; font-family: 'Atkinson Hyperlegible', sans-serif;">${
+            getTitle(node.meta) ?? ""
+          }</h2>
           </div>
           `,
 

@@ -15,7 +15,7 @@ import FileCode from '../../../components/FileCode.astro'
 
 <FileCode file="package.json" lang="json" title="Package" meta="{1}" />
 
-```mermaid
+```mermaid title="A flowchart" desc="This is a diagram"
 flowchart TD
     A[Start] --> B{Is it?}
     B -->|Yes| C[OK]
