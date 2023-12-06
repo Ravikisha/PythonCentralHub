@@ -12,6 +12,12 @@ import puppeteer from 'puppeteer';
 // const require = createRequire(import.meta.url);
 // const path = require.resolve('mermaid/dist/mermaid.js');
 
+/**
+ * Code from
+ * Astro Diagrams (https://code.juliancataldo.com/component/astro-diagram/)
+ * 
+ */
+
 export default async function renderDiagram({ config, code }: any) {
   const browser = await puppeteer.launch({ args: ['--no-sandbox'], headless: "new" });
   const page = await browser.newPage();

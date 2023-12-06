@@ -10,6 +10,12 @@
  * Also, this could be a separate remark plugin?
  */
 
+/**
+ * Code from
+ * Astro Diagrams (https://code.juliancataldo.com/component/astro-diagram/)
+ * 
+ */
+
 // TODO: Proper TypeScript rehaul for this file.
 
 // eslint-disable-next-line import/no-extraneous-dependencies
