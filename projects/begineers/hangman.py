@@ -26,7 +26,7 @@ word = word.lower().strip().replace("\n", "").replace("\r", "").replace(" ", "")
 print("Guess the characters")
 
 guesses = ''
-turns = len(word) + 10
+turns = len(word) * 2 
 
 # Checks if the turns are more than zero
 while turns > 0:
@@ -59,7 +59,7 @@ while turns > 0:
     else:
         print("\nYou have", turns, 'more guesses')
 
-    guess = input("guess a character:")
+    guess = input("guess a character: ")
 
     # every input character will be stored in guesses
     guesses += guess
