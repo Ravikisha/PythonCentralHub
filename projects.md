@@ -13,7 +13,7 @@ Certainly! Here's a list of 150 Python project ideas across different skill leve
 9.  [x] Currency Converter
 10. [x] Simple Chatbot
 11. [ ] Web Page Content Downloader
-12. [ ] Basic Alarm Clock
+12. [x] Basic Alarm Clock
 13. [ ] Hangman Game
 14. [ ] ASCII Art Generator
 15. [ ] URL Shortener
