@@ -11,7 +11,7 @@ Certainly! Here's a list of 150 Python project ideas across different skill leve
 7.  [x] Rock, Paper, Scissors Game
 8.  [x] Dice Rolling Simulator
 9.  [x] Currency Converter
-10. [ ] Simple Chatbot
+10. [x] Simple Chatbot
 11. [ ] Web Page Content Downloader
 12. [ ] Basic Alarm Clock
 13. [ ] Hangman Game
