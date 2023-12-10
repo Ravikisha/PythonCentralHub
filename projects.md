@@ -19,7 +19,7 @@ Certainly! Here's a list of 150 Python project ideas across different skill leve
 15. [x] URL Shortener
 16. [x] Random Password Generator
 17. [ ] Basic File Explorer
-18. [ ] Number Guessing Game with AI
+18. [x] Number Guessing Game with AI
 19. [ ] Calculator with GUI (Tkinter)
 20. [ ] Basic Email Sender
 21. [ ] Simple Paint Program
