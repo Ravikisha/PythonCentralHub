@@ -64,7 +64,7 @@ In the above syntax, `argument1` is a positional argument and `argument2` is a d
 
 Let's see an example of a function with a default argument.
 
-```python title="default-arguments.py" {1-3}
+```python title="default-arguments.py" showLineNumbers{1} {1-3}
 def add(x, y=10):
     """Adds two numbers"""
     print(x + y)
@@ -82,7 +82,7 @@ In the above example, we define a function named `add` that takes two parameters
 
 Another example of a function with a default argument.
 
-```python title="default-arguments.py" {1-4, 6-8}
+```python title="default-arguments.py" showLineNumbers{1} {1-4, 6-8}
 def interest(p, r=5, t=1):
     """Calculates the simple interest"""
     i = (p * r * t) / 100
@@ -115,7 +115,7 @@ In the above syntax, `value1`, `value2`, `value3`, and so on are the values pass
 
 Let's see an example of a function with positional arguments.
 
-```python title="positional-arguments.py" {1-3}
+```python title="positional-arguments.py" showLineNumbers{1} {1-3}
 def add(x, y):
     """Adds two numbers"""
     print(x + y)
@@ -133,7 +133,7 @@ In the above example, we define a function named `add` that takes two parameters
 
 Another example of a function with positional arguments.
 
-```python title="positional-arguments.py" {1-4, 6-8}
+```python title="positional-arguments.py" showLineNumbers{1} {1-4, 6-8}
 def interest(p, r, t):
     """Calculates the simple interest"""
     i = (p * r * t) / 100
@@ -170,7 +170,7 @@ In the above syntax, `argument1`, `argument2`, `argument3`, and so on are the ar
 
 Let's see an example of a function with keyword arguments.
 
-```python title="keyword-arguments.py" {1-3, 5}
+```python title="keyword-arguments.py" showLineNumbers{1} {1-3, 5}
 def add(x, y):
     """Adds two numbers"""
     print(x + y)
@@ -193,7 +193,7 @@ In the positional arguments, you have to pass the arguments in the same order as
 
 Another example of a function with keyword arguments.
 
-```python title="keyword-arguments.py" {1-4, 6-8}
+```python title="keyword-arguments.py" showLineNumbers{1} {1-4, 6-8}
 def interest(p, r, t):
     """Calculates the simple interest"""
     i = (p * r * t) / 100
@@ -218,7 +218,7 @@ In this example, we are calling the function with keyword arguments. We are pass
 You can call a function with positional arguments and keyword arguments. <br>
 You can call a function with positional arguments and keyword arguments. But you have to pass the positional arguments before the keyword arguments.
     
-```python title="keyword-arguments.py" {1-4, 6-8}
+```python title="keyword-arguments.py" showLineNumbers{1} {1-4, 6-8}
 def interest(p, r, t):
     """Calculates the simple interest"""
     i = (p * r * t) / 100
@@ -240,7 +240,7 @@ In the above example, we are calling the function with positional arguments and 
 **You cannot pass the positional arguments after the keyword arguments.** <br>
 In the positional arguments, you have to pass the arguments in the same order as they are defined in the function definition but in the keyword arguments, you can pass the arguments in any order. But you cannot pass the positional arguments after the keyword arguments. If you do so, you will get an error.
 
-```python title="keyword-arguments.py" {1-4, 6-8}
+```python title="keyword-arguments.py" showLineNumbers{1} {1-4, 6-8}
 def interest(p, r, t):
     """Calculates the simple interest"""
     i = (p * r * t) / 100
@@ -287,7 +287,7 @@ In the above syntax, `argument1`, `argument2`, `argument3`, and so on are the po
 
 Let's see an example of a function with positional only arguments.
 
-```python title="positional-only-arguments.py" {1-3}
+```python title="positional-only-arguments.py" showLineNumbers{1} {1-3}
 def add(x, y, /):
     """Adds two numbers"""
     print(x + y)
@@ -305,7 +305,7 @@ In the above example, we define a function named `add` that takes two positional
 
 Another example of a function with positional only arguments.
 
-```python title="positional-only-arguments.py" {1-4, 6-8}
+```python title="positional-only-arguments.py" showLineNumbers{1} {1-4, 6-8}
 def interest(p, /, r, t):
     """Calculates the simple interest"""
     i = (p * r * t) / 100
@@ -329,7 +329,7 @@ In this example, we declare `p` as a positional only argument and `r` and `t` as
 :::danger
 In the interest function, `p` is a positional only argument and `r` and `t` are keyword arguments. You cannot pass the keyword arguments before the positional only arguments. If you do so, you will get an error.
 
-```python title="positional-only-arguments.py" {1-4, 6-9}
+```python title="positional-only-arguments.py" showLineNumbers{1} {1-4, 6-9}
 def interest(p, /, r,*, t):
     """Calculates the simple interest"""
     i = (p * r * t) / 100
@@ -368,7 +368,7 @@ In the above syntax, `argument1`, `argument2`, `argument3`, and so on are the ke
 
 Let's see an example of a function with keyword only arguments.
 
-```python title="keyword-only-arguments.py" {1-3}
+```python title="keyword-only-arguments.py" showLineNumbers{1} {1-3}
 def add(*, x, y):
     """Adds two numbers"""
     print(x + y)
@@ -386,7 +386,7 @@ In the above example, we define a function named `add` that takes two keyword on
 
 Another example of a function with keyword only arguments.
 
-```python title="keyword-only-arguments.py" {1-4, 6-8}
+```python title="keyword-only-arguments.py" showLineNumbers{1} {1-4, 6-8}
 def interest(p, *, r, t):
     """Calculates the simple interest"""
     i = (p * r * t) / 100
@@ -410,7 +410,7 @@ In this example, we are calling the function with keyword only arguments. We are
 :::danger
 In the interest function, `p` is a positional argument and `r` and `t` are keyword only arguments. You cannot pass the positional arguments after the keyword only arguments. If you do so, you will get an error.
 
-```python title="keyword-only-arguments.py" {1-4, 6-8}
+```python title="keyword-only-arguments.py" showLineNumbers{1} {1-4, 6-8}
 def interest(p, *, r, t):
     """Calculates the simple interest"""
     i = (p * r * t) / 100
@@ -454,7 +454,7 @@ In the above syntax, `args` is the arbitrary positional arguments passed to the 
 
 Let's see an example of a function with arbitrary positional arguments.
 
-```python title="arbitrary-positional-arguments.py" {1-6}
+```python title="arbitrary-positional-arguments.py" showLineNumbers{1} {1-6}
 def add(*args):
     """Adds two numbers"""
     result = 0
@@ -479,7 +479,7 @@ In the above example, we define a function named `add` that takes arbitrary posi
 
 Another example of a function with arbitrary positional arguments.
 
-```python title="arbitrary-positional-arguments.py" {1-5, 7-9}
+```python title="arbitrary-positional-arguments.py" showLineNumbers{1} {1-5, 7-9}
 def interest(*args):
     """Calculates the simple interest"""
     p, r, t = args
@@ -514,7 +514,7 @@ In the above syntax, `kwargs` is the arbitrary keyword arguments passed to the f
 
 Let's see an example of a function with arbitrary keyword arguments.
 
-```python title="arbitrary-keyword-arguments.py" {1-6}
+```python title="arbitrary-keyword-arguments.py" showLineNumbers{1} {1-6}
 def add(**kwargs):
     """Adds two numbers"""
     result = 0
@@ -539,7 +539,7 @@ In the above example, we define a function named `add` that takes arbitrary keyw
 
 Another example of a function with arbitrary keyword arguments.
 
-```python title="arbitrary-keyword-arguments.py" {1-7, 9-12}
+```python title="arbitrary-keyword-arguments.py" showLineNumbers{1} {1-7, 9-12}
 def interest(**kwargs):
     """Calculates the simple interest"""
     p = kwargs["p"]
@@ -565,7 +565,7 @@ In this example, we are calling the function with arbitrary keyword arguments. W
 
 Another example of a function with arbitrary keyword arguments.
 
-```python title="arbitrary-keyword-arguments.py" {1-7, 9-14}
+```python title="arbitrary-keyword-arguments.py" showLineNumbers{1} {1-7, 9-14}
 def intro(name, age, **kwargs):
     """Prints the name and age"""
     print(f"Name: {name}")
