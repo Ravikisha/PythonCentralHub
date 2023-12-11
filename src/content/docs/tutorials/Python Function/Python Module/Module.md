@@ -313,7 +313,7 @@ Modules have several attributes that can be used to access information about the
 - `__package__` - Returns the name of the package containing the module
 - `__dict__` - Returns a dictionary containing the module's global variables
 
-```python title="calculator.py" showLineNumbers{1} {2-6}
+```python title="calculator.py" showLineNumbers{1} {2-7}
 # calculator.py
 import math_operations
 print("Module Name:", math_operations.__name__)
