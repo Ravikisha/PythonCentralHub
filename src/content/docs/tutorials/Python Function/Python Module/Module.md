@@ -170,6 +170,9 @@ The module search path includes:
 3. **Standard Library Directories:** Python includes a standard library containing built-in modules. These modules are readily available without additional installations.
 
 4. **Site Packages:** Python searches the site-packages directory, which contains third-party modules installed using tools like `pip`.
+:::tip
+We are going to discuss about `pip` in the next tutorial.
+:::
 
 ## Creating Packages
 
