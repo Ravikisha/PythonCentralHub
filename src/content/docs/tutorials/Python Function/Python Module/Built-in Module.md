@@ -63,3 +63,185 @@ Python has a lot of built-in modules that you can use. You can find the list of 
 | 48 | [shutil](https://docs.python.org/3/library/shutil.html) | This module offers a number of high-level operations on files and collections of files. |
 | 49 | [tempfile](https://docs.python.org/3/library/tempfile.html) | This module generates temporary files and directories. |
 | 50 | [gzip](https://docs.python.org/3/library/gzip.html) | This module provides a simple interface to compress and decompress files just like the GNU programs gzip and gunzip would. |
+
+## Online Modules
+
+There are a lot of modules that are not built-in. You can install them using the Python Package Index (PyPI). You can install them using the `pip` command. You can find the list of all the modules on the [Python Package Index](https://pypi.org/).
+
+### Installing Modules
+
+You can install modules using the `pip` command. You can install them using the following command:
+
+```cmd title="command" showLineNumbers{1}
+pip install <module-name>
+```
+
+You can also install a specific version of a module using the following command:
+
+```cmd title="command" showLineNumbers{1}
+pip install <module-name>==<version>
+```
+
+You can also install a module using a requirements file. You can create a requirements file using the following command:
+
+```cmd title="command" showLineNumbers{1}
+pip freeze > requirements.txt
+```
+
+You can install all the modules in the requirements file using the following command:
+
+```cmd title="command" showLineNumbers{1}
+pip install -r requirements.txt
+```
+
+### Table of Online Modules
+
+These are some of the most popular modules that you can install using the `pip` command.
+
+| S.No. | Module Name | Description |
+| :---: | :--- | :--- |
+| 1 | [numpy](https://pypi.org/project/numpy/) | NumPy is the fundamental package for array computing with Python. |
+| 2 | [pandas](https://pypi.org/project/pandas/) | pandas is a fast, powerful, flexible and easy to use open source data analysis and manipulation tool, built on top of the Python programming language. |
+| 3 | [matplotlib](https://pypi.org/project/matplotlib/) | Matplotlib is a comprehensive library for creating static, animated, and interactive visualizations in Python. |
+| 4 | [scipy](https://pypi.org/project/scipy/) | SciPy (pronounced “Sigh Pie”) is a Python-based ecosystem of open-source software for mathematics, science, and engineering. |
+| 5 | [scikit-learn](https://pypi.org/project/scikit-learn/) | scikit-learn is a Python module for machine learning built on top of SciPy and distributed under the 3-Clause BSD license. |
+| 6 | [tensorflow](https://pypi.org/project/tensorflow/) | TensorFlow is an end-to-end open source platform for machine learning. |
+| 7 | [keras](https://pypi.org/project/keras/) | Keras is a high-level neural networks API, written in Python and capable of running on top of TensorFlow, CNTK, or Theano. |
+| 8 | [pytorch](https://pypi.org/project/pytorch/) | PyTorch is an open source machine learning library based on the Torch library, used for applications such as computer vision and natural language processing. |
+| 9 | [opencv-python](https://pypi.org/project/opencv-python/) | OpenCV-Python is a library of Python bindings designed to solve computer vision problems. |
+| 10 | [pillow](https://pypi.org/project/pillow/) | Pillow is the friendly PIL fork by Alex Clark and Contributors. PIL is the Python Imaging Library by Fredrik Lundh and Contributors. |
+| 11 | [requests](https://pypi.org/project/requests/) | Requests is an elegant and simple HTTP library for Python, built for human beings. |
+| 12 | [beautifulsoup4](https://pypi.org/project/beautifulsoup4/) | Beautiful Soup is a library that makes it easy to scrape information from web pages. |
+| 13 | [selenium](https://pypi.org/project/selenium/) | Selenium is a portable framework for testing web applications. |
+| 14 | [flask](https://pypi.org/project/flask/) | Flask is a lightweight WSGI web application framework. |
+| 15 | [django](https://pypi.org/project/django/) | Django is a high-level Python Web framework that encourages rapid development and clean, pragmatic design. |
+| 16 | [pyqt5](https://pypi.org/project/PyQt5/) | PyQt5 is a comprehensive set of Python bindings for Qt v5. |
+| 17 | [pyinstaller](https://pypi.org/project/pyinstaller/) | PyInstaller bundles a Python application and all its dependencies into a single package. |
+| 18 | [cx-freeze](https://pypi.org/project/cx-Freeze/) | cx_Freeze is a set of scripts and modules for freezing Python scripts into executables in much the same way that py2exe and py2app do. |
+| 19 | [py2exe](https://pypi.org/project/py2exe/) | py2exe is a Python Distutils extension which converts Python scripts into executable Windows programs, able to run without requiring a Python installation. |
+| 20 | [py2app](https://pypi.org/project/py2app/) | py2app is a Python setuptools command which will allow you to make standalone application bundles and plugins from Python scripts. |
+| 21 | [tinydb](https://pypi.org/project/tinydb/) | TinyDB is a lightweight document oriented database optimized for your happiness. |
+| 22 | [thinker](https://pypi.org/project/thinker/) | Thinker is a Python library for building interactive command line interfaces. |
+| 23 | [pytube](https://pypi.org/project/pytube/) | pytube is a lightweight, Pythonic, dependency-free, library (and command-line utility) for downloading YouTube Videos. |
+| 24 | [pyautogui](https://pypi.org/project/PyAutoGUI/) | PyAutoGUI lets your Python scripts control the mouse and keyboard to automate interactions with other applications. |
+| 25 | [MySQL Connector](https://pypi.org/project/mysql-connector-python/) | MySQL Connector/Python is a standardized database driver for Python platforms and development. |
+| 26 | [psycopg2](https://pypi.org/project/psycopg2/) | psycopg2 is a PostgreSQL database adapter for the Python programming language. |
+| 27 | [PyGreSQL](https://pypi.org/project/PyGreSQL/) | PyGreSQL is a Python module that interfaces to a PostgreSQL database. |
+| 28 | [psycopg2](https://pypi.org/project/psycopg2/) | psycopg2 is a PostgreSQL database adapter for the Python programming language. |
+| 29 | [cx_Oracle](https://pypi.org/project/cx-Oracle/) | cx_Oracle is a Python extension module that enables access to Oracle Database. |
+| 30 | [pymssql](https://pypi.org/project/pymssql/) | pymssql is the Python language extension module that provides access to Microsoft SQL Servers from Python scripts. |
+| 31 | [SQLAlchemy](https://pypi.org/project/SQLAlchemy/) | SQLAlchemy is the Python SQL toolkit and Object Relational Mapper that gives application developers the full power and flexibility of SQL. |
+| 32 | [PyMongo](https://pypi.org/project/pymongo/) | PyMongo is a Python distribution containing tools for working with MongoDB, and is the recommended way to work with MongoDB from Python. |
+| 33 | [redis](https://pypi.org/project/redis/) | The Python interface to the Redis key-value store. |
+| 34 | [pymemcache](https://pypi.org/project/pymemcache/) | A comprehensive, fast, pure Python memcached client. |
+| 35 | [pyscreenshot](https://pypi.org/project/pyscreenshot/) | pyscreenshot is a Python module used to take screenshots. |
+| 36 | [pytesseract](https://pypi.org/project/pytesseract/) | A Python wrapper for Google Tesseract. |
+| 37 | [pywin32](https://pypi.org/project/pywin32/) | pywin32 is a Python extension for Windows. |
+| 38 | [virtualenv](https://pypi.org/project/virtualenv/) | virtualenv is a tool to create isolated Python environments. |
+| 39 | [pylint](https://pypi.org/project/pylint/) | Pylint is a tool that checks for errors in Python code, tries to enforce a coding standard and looks for code smells. |
+| 40 | [autopep8](https://pypi.org/project/autopep8/) | autopep8 automatically formats Python code to conform to the PEP 8 style guide. |
+| 41 | [pygame](https://pypi.org/project/pygame/) | Pygame is a set of Python modules designed for writing video games. |
+| 42 | [pyglet](https://pypi.org/project/pyglet/) | pyglet is a cross-platform windowing and multimedia library for Python. |
+| 43 | [vidstream](https://pypi.org/project/vidstream/) | A cross-platform python package that contains modules for streaming video from your computer to the internet for remote viewing. |
+| 44 | [pyexcel](https://pypi.org/project/pyexcel/) | A wrapper library to read, manipulate and write data in different excel formats: csv, ods, xls, xlsx and xlsm. |
+| 45 | [pipenv](https://pypi.org/project/pipenv/) | Pipenv is a tool that aims to bring the best of all packaging worlds (bundler, composer, npm, cargo, yarn, etc.) to the Python world. |
+| 46 | [NLTK](https://pypi.org/project/nltk/) | NLTK is a leading platform for building Python programs to work with human language data. |
+| 47 | [pyttsx3](https://pypi.org/project/pyttsx3/) | pyttsx3 is a text-to-speech conversion library in Python. |
+| 48 | [theano](https://pypi.org/project/Theano/) | Theano is a Python library that allows you to define, optimize, and evaluate mathematical expressions involving multi-dimensional arrays efficiently. |
+| 49 | [dash](https://pypi.org/project/dash/) | Dash is a Python framework for building analytical web applications. |
+| 50 | [streamlit](https://pypi.org/project/streamlit/) | Streamlit is an open-source Python library that makes it easy to build beautiful custom web-apps for machine learning and data science. |
+
+## Using Modules
+
+You can use the built-in modules in your code. You can import them using the `import` keyword. You can import them using the following syntax:
+
+```python title="syntax" showLineNumbers{1} 
+import <module-name>
+```
+
+You can also import a module using an alias. You can import them using the following syntax:
+
+```python title="syntax" showLineNumbers{1}
+import <module-name> as <alias>
+```
+
+You can also import a specific function from a module. You can import them using the following syntax:
+
+```python title="syntax" showLineNumbers{1}
+from <module-name> import <function-name>
+```
+
+You can also import all the functions from a module. You can import them using the following syntax:
+
+```python title="syntax" showLineNumbers{1}
+from <module-name> import *
+```
+
+You can also import a specific function from a module using an alias. You can import them using the following syntax:
+
+```python title="syntax" showLineNumbers{1}
+from <module-name> import <function-name> as <alias>
+```
+
+You can also import all the functions from a module using an alias. You can import them using the following syntax:
+
+```python title="syntax" showLineNumbers{1}
+from <module-name> import * as <alias>
+```
+
+#### Example
+
+You can use the `math` module in your code. You can import it using the following syntax:
+
+```python title="math.py" showLineNumbers{1} {1,3}
+import math
+
+print(math.pi)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1}
+3.141592653589793
+```
+
+You can also import a specific function from a module. You can import it using the following syntax:
+
+```python title="math.py" showLineNumbers{1} {1,3}
+from math import pi
+print(pi)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1}
+3.141592653589793
+```
+
+You can also import a specific function from a module using an alias. You can import it using the following syntax:
+
+```python title="math.py" showLineNumbers{1} {1,3}
+from math import pi as PI
+
+print(PI)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1}
+3.141592653589793
+```
+
+You can also import all the functions from a module. You can import it using the following syntax:
+
+```python title="math.py" showLineNumbers{1} {1,3}
+from math import *
+
+print(pi)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1}
+3.141592653589793
+```
