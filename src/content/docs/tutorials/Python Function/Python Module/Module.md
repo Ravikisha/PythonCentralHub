@@ -70,3 +70,103 @@ Division: 1.6666666666666667
 ```
 
 In this script, the `math_operations` module is imported, and its functions are used to perform basic mathematical operations. The `import` statement makes all functions within the module accessible to the script.
+
+### Alternative Import Syntax
+
+In addition to the standard import syntax, Python offers alternative ways to import modules. For example, you can use the `from ... import ...` syntax to import specific functions or variables from a module:
+
+```python title="calculator.py" showLineNumbers{1} {1, 3-4}
+from math_operations import add, multiply
+
+result_add = add(5, 3)
+result_multiply = multiply(5, 3)
+
+print("Addition:", result_add)
+print("Multiplication:", result_multiply)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1-2}
+Addition: 8
+Multiplication: 15
+```
+
+This syntax directly imports the `add` and `multiply` functions from the `math_operations` module, allowing you to use them without referencing the module itself.
+
+You can also use the `from ... import *` syntax to import all functions and variables from a module:
+
+```python title="calculator.py" showLineNumbers{1} {1, 3-4}
+from math_operations import *
+
+result_add = add(5, 3)
+result_multiply = multiply(5, 3)
+
+print("Addition:", result_add)
+print("Multiplication:", result_multiply)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1-2}
+Addition: 8
+Multiplication: 15
+```
+
+This syntax imports all functions and variables from the `math_operations` module, allowing you to use them without referencing the module itself.
+
+### Importing Modules with Aliases
+
+Python allows you to assign aliases to module names, providing a way to reference modules with shorter names in your code. This can be particularly useful for modules with long names or when avoiding naming conflicts.
+
+```python title="calculator.py" showLineNumbers{1} {1, 3-4}
+import math_operations as math_ops
+
+result_add = math_ops.add(5, 3)
+result_multiply = math_ops.multiply(5, 3)
+
+print("Addition:", result_add)
+print("Multiplication:", result_multiply)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1-2}
+Addition: 8
+Multiplication: 15
+```
+
+In this example, the `math_operations` module is imported with the alias `math_ops`, allowing for a more concise reference.
+
+### Importing Modules from Packages
+
+To import modules from a package, you can use the dot notation. For example, importing the `rectangle_area` function from the `shapes` module within the `geometry` package:
+
+```python title="calculator.py" showLineNumbers{1} {1, 3-4}
+from geometry.shapes import rectangle_area
+
+result_area = rectangle_area(4, 6)
+print("Rectangle Area:", result_area)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1}
+Rectangle Area: 24
+```
+
+Here, the `rectangle_area` function from the `shapes` module within the `geometry` package is imported and used in the script.
+
+## Module Search Path
+
+When you import a module, Python searches for it in specific directories. The module search path is a list of directories that Python checks in a specific order. Understanding how Python locates modules is crucial for managing module dependencies.
+
+The module search path includes:
+
+1. **The Current Directory:** Python first searches for modules in the directory where the main script is located.
+
+2. **PYTHONPATH Environment Variable:** If the module is not found in the current directory, Python checks the directories specified in the `PYTHONPATH` environment variable.
+
+3. **Standard Library Directories:** Python includes a standard library containing built-in modules. These modules are readily available without additional installations.
+
+4. **Site Packages:** Python searches the site-packages directory, which contains third-party modules installed using tools like `pip`.
