@@ -245,6 +245,6 @@ In the above example, we have used the bitwise right shift operator to perform a
 
 
 ## Conclusion
-itwise operators in Python offer a powerful set of tools for working with individual bits in integers. While these operators may not be as commonly used in everyday programming, they become crucial in scenarios where low-level bit manipulation is required.
+Bitwise operators in Python offer a powerful set of tools for working with individual bits in integers. While these operators may not be as commonly used in everyday programming, they become crucial in scenarios where low-level bit manipulation is required.
 
 As you advance in your Python programming journey, experiment with bitwise operators, explore their applications in real-world scenarios, and leverage their efficiency for tasks involving binary representation. For more insights and practical examples, check out our tutorials on Python Central Hub!
