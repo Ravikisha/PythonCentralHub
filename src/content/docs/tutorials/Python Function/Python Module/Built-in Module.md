@@ -531,3 +531,184 @@ In this example, we have used the `getcwd()` function to get the current working
 |38|path.sameopenfile(fp1, fp2)|Returns True if the file descriptors fp1 and fp2 refer to the same file.|`os.path.sameopenfile("C:\\Users\\username\\Desktop", "C:\\Users\\username\\Desktop")`|
 |39|path.samestat(stat1, stat2)|Returns True if the stat tuples stat1 and stat2 refer to the same file.|`os.path.samestat("C:\\Users\\username\\Desktop", "C:\\Users\\username\\Desktop")`|
 |40|path.split(path)|Splits the pathname path into a pair, (head, tail) where tail is the last pathname component and head is everything leading up to that.|`os.path.split("C:\\Users\\username\\Desktop")`|
+
+:::tip
+More information about the os module can be found [here](https://docs.python.org/3/library/os.html).
+:::
+
+### Sys Module
+Sys module is used to perform system operations. It provides access to the variables and functions related to the Python interpreter. It is always available in Python. It provides various system operations like getting the command line arguments, getting the Python version, etc. It is used by importing the sys module in the program. It is used in the following way:
+
+```python title="sys.py" showLineNumbers{1} {1,3-4}
+import sys
+
+print(sys.argv)
+print(sys.version)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python sys.py 1 2 3
+['sys.py', '1', '2', '3']
+3.9.7 (tags/v3.9.7:1016ef3, Aug 30 2021, 20:04:37) [MSC v.1929 64 bit (AMD64)]
+```
+
+In this example, we have used the `argv` variable to get the command line arguments. We have also used the `version` variable to get the Python version.
+
+#### Some Important Functions of Sys Module
+
+|S.No.|Function Name|Description|Example|
+|:---:|:---|:---|:---|
+|1|argv|Contains the command line arguments passed to the Python program.|`sys.argv`|
+|2|version|Contains the Python version.|`sys.version`|
+|3|version_info|Contains the Python version information.|`sys.version_info`|
+|4|hexversion|Contains the Python version information in hexadecimal.|`sys.hexversion`|
+|5|maxsize|Contains the maximum size of an integer.|`sys.maxsize`|
+|6|path|Contains the search path for modules.|`sys.path`|
+|7|platform|Contains the platform identifier.|`sys.platform`|
+|8|stdin|Contains the standard input stream.|`sys.stdin`|
+|9|stdout|Contains the standard output stream.|`sys.stdout`|
+|10|stderr|Contains the standard error stream.|`sys.stderr`|
+|11|exit([status])|Exits from Python.|`sys.exit()`|
+|12|getrefcount(object)|Returns the reference count of the object.|`sys.getrefcount(1)`|
+|13|getsizeof(object[, default])|Returns the size of the object.|`sys.getsizeof(1)`|
+|14|gettrace()|Returns the global debug tracing function.|`sys.gettrace()`|
+
+:::tip
+More information about the sys module can be found [here](https://docs.python.org/3/library/sys.html).
+:::
+
+### Time Module
+Time module is used to perform time operations. It provides access to the time functions. It is always available in Python. It provides various time operations like getting the current time, getting the current year, getting the current month, etc. It is used by importing the time module in the program. It is used in the following way:
+
+```python title="time.py" showLineNumbers{1} {1,3-4}
+import time
+
+print(time.time())
+print(time.localtime())
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python time.py
+1639209000.0
+time.struct_time(tm_year=2021, tm_mon=12, tm_mday=11, tm_hour=12, tm_min=0, tm_sec=0, tm_wday=5, tm_yday=345, tm_isdst=0)
+```
+
+In this example, we have used the `time()` function to get the current time. We have also used the `localtime()` function to get the current time in the local timezone.
+
+#### Some Important Functions of Time Module
+
+|S.No.|Function Name|Description|Example|
+|:---:|:---|:---|:---|
+|1|time()|Returns the time in seconds since the epoch as a floating point number.|`time.time()`|
+|2|ctime([secs])|Converts a time expressed in seconds since the epoch to a string representing local time.|`time.ctime(1639209000)`|
+|3|gmtime([secs])|Converts a time expressed in seconds since the epoch to a struct_time in UTC in which the dst flag is always zero.|`time.gmtime(1639209000)`|
+|4|localtime([secs])|Converts a time expressed in seconds since the epoch to a struct_time in local time.|`time.localtime(1639209000)`|
+|5|mktime(t)|Accepts an instant expressed as a time tuple in local time and returns a floating-point value with the instant expressed in seconds since the epoch.|`time.mktime(time.localtime(1639209000))`|
+|6|sleep(secs)|Suspends the calling thread for secs seconds.|`time.sleep(1)`|
+|7|strftime(format[, t])|Converts a struct_time or full 9-tuple time tuple to a string according to a format specification.|`time.strftime("%A", time.localtime(1639209000))`|
+|8|strptime(string[, format])|Parses a string representing a time according to a format.|`time.strptime("2021-12-11", "%Y-%m-%d")`|
+|9|time_ns()|Returns the time in nanoseconds since the epoch.|`time.time_ns()`|
+|10|timezone|The offset of the local (non-DST) timezone, in seconds west of UTC (negative in most of Western Europe, positive in the US, zero in the UK).|`time.timezone`|
+|11|tzname|A tuple of two strings: the first is the name of the local non-DST timezone, the second is the name of the local DST timezone.|`time.tzname`|
+|12|altzone|The offset of the local DST timezone, in seconds west of UTC, if one is defined. This is negative if the local DST timezone is east of UTC (as in Western Europe, including the UK).|`time.altzone`|
+|13|daylight|Nonzero if a DST timezone is defined.|`time.daylight`|
+|14|struct_time|The type of the time value sequence returned by gmtime(), localtime(), and strptime().|`time.struct_time`|
+
+
+:::tip
+More information about the time module can be found [here](https://docs.python.org/3/library/time.html).
+:::
+
+### Calendar Module
+Calendar module is used to perform calendar operations. It provides access to the calendar functions. It is always available in Python. It provides various calendar operations like getting the calendar of a month, getting the calendar of a year, etc. It is used by importing the calendar module in the program. It is used in the following way:
+
+```python title="calendar.py" showLineNumbers{1} {1,3-4}
+import calendar
+
+print(calendar.month(2021, 12))
+print(calendar.calendar(2021))
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1}
+C:\Users\username>python calendar.py
+   December 2021
+Mo Tu We Th Fr Sa Su
+       1  2  3  4  5
+ 6  7  8  9 10 11 12
+13 14 15 16 17 18 19
+20 21 22 23 24 25 26
+27 28 29 30 31
+
+                                  2021
+
+      January                   February                   March
+Mo Tu We Th Fr Sa Su      Mo Tu We Th Fr Sa Su      Mo Tu We Th Fr Sa Su
+             1  2  3       1  2  3  4  5  6  7       1  2  3  4  5  6  7
+ 4  5  6  7  8  9 10       8  9 10 11 12 13 14       8  9 10 11 12 13 14
+11 12 13 14 15 16 17      15 16 17 18 19 20 21      15 16 17 18 19 20 21
+18 19 20 21 22 23 24      22 23 24 25 26 27 28      22 23 24 25 26 27 28
+25 26 27 28 29 30 31                                29 30 31
+
+       April                      May                       June
+Mo Tu We Th Fr Sa Su      Mo Tu We Th Fr Sa Su      Mo Tu We Th Fr Sa Su
+          1  2  3  4                      1  2          1  2  3  4  5  6
+ 5  6  7  8  9 10 11       3  4  5  6  7  8  9       7  8  9 10 11 12 13
+12 13 14 15 16 17 18      10 11 12 13 14 15 16      14 15 16 17 18 19 20
+19 20 21 22 23 24 25      17 18 19 20 21 22 23      21 22 23 24 25 26 27
+26 27 28 29 30            24 25 26 27 28 29 30      28 29 30
+                          31
+
+        July                     August                  September
+Mo Tu We Th Fr Sa Su      Mo Tu We Th Fr Sa Su      Mo Tu We Th Fr Sa Su
+          1  2  3  4                         1             1  2  3  4  5
+ 5  6  7  8  9 10 11       2  3  4  5  6  7  8       6  7  8  9 10 11 12
+12 13 14 15 16 17 18       9 10 11 12 13 14 15      13 14 15 16 17 18 19
+19 20 21 22 23 24 25      16 17 18 19 20 21 22      20 21 22 23 24 25 26
+26 27 28 29 30 31         23 24 25 26 27 28 29      27 28 29 30
+                          30 31
+
+      October                   November                  December
+Mo Tu We Th Fr Sa Su      Mo Tu We Th Fr Sa Su      Mo Tu We Th Fr Sa Su
+             1  2  3       1  2  3  4  5  6  7             1  2  3  4  5
+ 4  5  6  7  8  9 10       8  9 10 11 12 13 14       6  7  8  9 10 11 12
+11 12 13 14 15 16 17      15 16 17 18 19 20 21      13 14 15 16 17 18 19
+18 19 20 21 22 23 24      22 23 24 25 26 27 28      20 21 22 23 24 25 26
+25 26 27 28 29 30 31      29 30                     27 28 29 30 31
+```
+
+In this example, we have used the `month()` function to get the calendar of a month. We have also used the `calendar()` function to get the calendar of a year.
+
+#### Some Important Functions of Calendar Module
+
+|S.No.|Function Name|Description|Example|
+|:---:|:---|:---|:---|
+|1|calendar(year, w=2, l=1, c=6, m=3)|Returns a multiline string with a calendar for year year formatted into three columns separated by c spaces.|`calendar.calendar(2021)`|
+|2|month(year, month, w=2, l=1)|Returns a multiline string with a calendar for month month of year year, one line per week plus two header lines.|`calendar.month(2021, 12)`|
+|3|monthcalendar(year, month)|Returns a matrix representing a month’s calendar.|`calendar.monthcalendar(2021, 12)`|
+|4|prmonth(theyear, themonth, w=0, l=0)|Prints a month’s calendar as returned by month()|`calendar.prmonth(2021, 12)`|
+|5|prcal(year, w=0, l=0, c=6, m=3)|Prints the calendar for an entire year as returned by calendar()|`calendar.prcal(2021)`|
+|6|weekday(year, month, day)|Returns the day of the week (0 is Monday) for year (1970–…), month (1–12), day (1–31).|`calendar.weekday(2021, 12, 11)`|
+|7|weekheader(n)|Returns a header containing abbreviated weekday names.|`calendar.weekheader(3)`|
+|8|weekrange(year, week, weekday)|Returns the weekday (0 is Monday) and date of first day of the week containing the given day (1–31) in the given week (1–53) of the given year.|`calendar.weekrange(2021, 12, 11)`|
+|9|isleap(year)|Returns True if year is a leap year; otherwise, False.|`calendar.isleap(2021)`|
+|10|leapdays(y1, y2)|Returns the total number of leap days in the years within range(y1, y2) (exclusive).|`calendar.leapdays(2021, 2022)`|
+|11|month_name|An array that represents the months of the year in the current locale.|`calendar.month_name[12]`|
+|12|month_abbr|An array that represents the abbreviated months of the year in the current locale.|`calendar.month_abbr[12]`|
+|13|day_name|An array that represents the days of the week in the current locale.|`calendar.day_name[5]`|
+|14|day_abbr|An array that represents the abbreviated days of the week in the current locale.|`calendar.day_abbr[5]`|
+|15|setfirstweekday(weekday)|Sets the first day of each week to weekday code.|`calendar.setfirstweekday(5)`|
+|16|firstweekday()|Returns the current setting for the weekday that starts each week.|`calendar.firstweekday()`|
+|17|timegm(tuple)|An unrelated but handy function that takes a time tuple such as returned by the gmtime() function in the time module, and returns the corresponding Unix timestamp value, assuming an epoch of 1970, and the POSIX encoding.|`calendar.timegm((2021, 12, 11, 12, 0, 0, 0, 0, 0))`|
+
+:::tip
+More information about the calendar module can be found [here](https://docs.python.org/3/library/calendar.html).
+:::
+
+## Conclusion
+In this article, we have learned about the Python standard library. We have also learned about the various modules in the Python standard library. We have also learned about the various functions in the Python standard library. When you are writing a Python program, you should always check if the functionality you are trying to implement is already available in the Python standard library. If it is available, then you should use it instead of writing your own code. This will save you a lot of time and effort.  As you continue your journey in Python development, embracing modular programming practices will contribute to writing clean, maintainable, and efficient code. Happy coding!
