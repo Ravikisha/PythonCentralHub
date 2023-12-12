@@ -269,6 +269,8 @@ C:\Users\username>python math.py
 8.0
 ```
 
+In this example, we have used the `pi` constant to print the value of pi. We have also used the `pow()` function to calculate the power of a number.
+
 #### Some Important Functions of Math Module
 
 |S.No.|Function Name|Description|
@@ -328,3 +330,49 @@ C:\Users\username>python math.py
 More information about the math module can be found [here](https://docs.python.org/3/library/math.html).
 :::
 
+### Random Module
+Random module is used to perform random operations. It provides access to the pseudo-random number generators for various distributions. It is always available in Python. It provides various random operations like generating random numbers, shuffling a list, etc. It is used by importing the random module in the program. It is used in the following way:
+
+```python title="random.py" showLineNumbers{1} {1,3-4}
+import random
+
+print(random.random())
+print(random.randint(1, 10))
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1-2}
+C:\Users\username>python random.py
+0.940667756167586
+7
+```
+
+In this example, we have used the `random()` function to generate a random number between 0 and 1. We have also used the `randint()` function to generate a random integer between 1 and 10.
+
+#### Some Important Functions of Random Module
+
+|S.No.|Function Name|Description|Example|
+|:---:|:---|:---|:---|
+|1|random()|Returns a random float number between 0 and 1.|`random.random()`|
+|2|randint(a, b)|Returns a random integer between a and b.|`random.randint(1, 10)`|
+|3|randrange(start, stop[, step])|Returns a randomly selected element from range(start, stop, step).|`random.randrange(1, 10, 2)`|
+|4|choice(seq)|Returns a random element from the non-empty sequence seq.|`random.choice([1, 2, 3, 4, 5])`|
+|5|choices(population[, weights=None, *, cum_weights=None, k=1])|Returns a k sized list of elements chosen from the population with replacement.|`random.choices([1, 2, 3, 4, 5], k=3)`|
+|6|shuffle(x[, random])|Shuffle the sequence x in place.|`random.shuffle([1, 2, 3, 4, 5])`|
+|7|sample(population, k)|Returns a k length list of unique elements chosen from the population sequence or set.|`random.sample([1, 2, 3, 4, 5], k=3)`|
+|8|seed([x])|Initialize the random number generator.|`random.seed(10)`|
+|9|getstate()|Return an object capturing the current internal state of the generator.|`random.getstate()`|
+|10|setstate(state)|Restore the internal state of the generator.|`random.setstate(state)`|
+|11|getrandbits(k)|Returns a non-negative Python integer with k random bits.|`random.getrandbits(5)`|
+|12|uniform(a, b)|Returns a random floating point number between a and b.|`random.uniform(1, 10)`|
+|13|triangular(low, high, mode)|Returns a random floating point number between low and high, with the specified mode between those bounds.|`random.triangular(1, 10, 5)`|
+|14|betavariate(alpha, beta)|Beta distribution.|`random.betavariate(1, 10)`|
+|15|expovariate(lambd)|Exponential distribution.|`random.expovariate(1)`|
+|16|gammavariate(alpha, beta)|Gamma distribution.|`random.gammavariate(1, 10)`|
+|17|gauss(mu, sigma)|Gaussian distribution.|`random.gauss(1, 10)`|
+|18|lognormvariate(mu, sigma)|Log normal distribution.|`random.lognormvariate(1, 10)`|
+|19|normalvariate(mu, sigma)|Normal distribution.|`random.normalvariate(1, 10)`|
+|20|vonmisesvariate(mu, kappa)|von Mises distribution.|`random.vonmisesvariate(1, 10)`|
+|21|paretovariate(alpha)|Pareto distribution.|`random.paretovariate(1)`|
+|22|weibullvariate(alpha, beta)|Weibull distribution.|`random.weibullvariate(1, 10)`|
