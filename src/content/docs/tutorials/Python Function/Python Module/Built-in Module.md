@@ -76,7 +76,20 @@ Python has a lot of built-in functions that you can use. You can find the list o
 | 2 | [all()](https://docs.python.org/3/library/functions.html#all) | This function returns True if all elements of the iterable are true (or if the iterable is empty). | `all([True, False, True])` |
 | 3 | [any()](https://docs.python.org/3/library/functions.html#any) | This function returns True if any element of the iterable is true. If the iterable is empty, return False. | `any([True, False, True])` |
 | 4 | [ascii()](https://docs.python.org/3/library/functions.html#ascii) | This function returns a string containing a printable representation of an object. | `ascii('a')` |
-
+| 5 | [bin()](https://docs.python.org/3/library/functions.html#bin) | This function converts an integer number to a binary string prefixed with “0b”. | `bin(2)` |
+| 6 | [bool()](https://docs.python.org/3/library/functions.html#bool) | This function converts a value to a Boolean. | `bool(2)` |
+| 7 | [bytearray()](https://docs.python.org/3/library/functions.html#func-bytearray) | This function returns a new array of bytes. | `bytearray(2)` |
+| 8 | [bytes()](https://docs.python.org/3/library/functions.html#bytes) | This function returns a new “bytes” object, which is an immutable sequence of integers in the range 0 <= x < 256. | `bytes(2)` |
+| 9 | [callable()](https://docs.python.org/3/library/functions.html#callable) | This function returns True if the object argument appears callable, False if not. | `callable(2)` |
+| 10 | [chr()](https://docs.python.org/3/library/functions.html#chr) | This function returns a string of one character whose ASCII code is the integer i. | `chr(2)` |
+| 11 | [classmethod()](https://docs.python.org/3/library/functions.html#classmethod) | This function returns a class method for the given function. | `classmethod(2)` |
+| 12 | [compile()](https://docs.python.org/3/library/functions.html#compile) | This function returns a code object from the source. | `compile(2)` |
+| 13 | [complex()](https://docs.python.org/3/library/functions.html#complex) | This function returns a complex number with the value real + imag*1j or converts a string or number to a complex number. | `complex(2)` |
+| 14 | [delattr()](https://docs.python.org/3/library/functions.html#delattr) | This function deletes the named attribute from the given object. | `delattr(2)` |
+| 15 | [dict()](https://docs.python.org/3/library/functions.html#func-dict) | This function creates a new dictionary. | `dict(2)` |
+| 16 | [dir()](https://docs.python.org/3/library/functions.html#dir) | This function returns the list of names in the current local scope. | `dir(2)` |
+| 17 | [divmod()](https://docs.python.org/3/library/functions.html#divmod) | This function takes two (non complex) numbers as arguments and returns a pair of numbers consisting of their quotient and remainder when using integer division. | `divmod(2)` |
+| 18 | [enumerate()](https://docs.python.org/3/library/functions.html#enumerate) | This function returns an enumerate object. | `enumerate(2)` |
 
 
 ## Online Modules

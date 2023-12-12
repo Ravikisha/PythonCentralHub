@@ -315,8 +315,7 @@ print(math_operations.add.__doc__)
 
 Output:
 
-```cmd title="command" showLineNumbers{1} {2-3
-}
+```cmd title="command" showLineNumbers{1} {2-3}
 C:\Users\Your Name> python calculator.py
 This module contains basic mathematical operations.
 Adds two numbers.
