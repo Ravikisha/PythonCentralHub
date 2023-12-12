@@ -263,7 +263,7 @@ print(math.pow(2, 3))
 
 Output:
 
-```cmd title="command" showLineNumbers{1} {1-2}
+```cmd title="command" showLineNumbers{1} {2-3}
 C:\Users\username>python math.py
 3.141592653589793
 8.0
@@ -273,58 +273,58 @@ In this example, we have used the `pi` constant to print the value of pi. We hav
 
 #### Some Important Functions of Math Module
 
-|S.No.|Function Name|Description|
-|:---:|:---|:---|
-|1|ceil(x)|Returns the smallest integer greater than or equal to x.|
-|2|copysign(x, y)|Returns x with the sign of y.|
-|3|fabs(x)|Returns the absolute value of x.|
-|4|factorial(x)|Returns the factorial of x.|
-|5|floor(x)|Returns the largest integer less than or equal to x.|
-|6|fmod(x, y)|Returns the remainder when x is divided by y.|
-|7|frexp(x)|Returns the mantissa and exponent of x as the pair (m, e).|
-|8|fsum(iterable)|Returns an accurate floating point sum of values in the iterable.|
-|9|isfinite(x)|Returns True if x is neither an infinity nor a NaN (Not a Number).|
-|10|isinf(x)|Returns True if x is a positive or negative infinity.|
-|11|isnan(x)|Returns True if x is a NaN.|
-|12|ldexp(x, i)|Returns x * (2**i).|
-|13|modf(x)|Returns the fractional and integer parts of x.|
-|14|trunc(x)|Returns the truncated integer value of x.|
-|15|exp(x)|Returns e**x.|
-|16|expm1(x)|Returns e**x - 1.|
-|17|log(x[, base])|Returns the logarithm of x to the base (defaults to e).|
-|18|log1p(x)|Returns the natural logarithm of 1+x.|
-|19|log2(x)|Returns the base-2 logarithm of x.|
-|20|log10(x)|Returns the base-10 logarithm of x.|
-|21|pow(x, y)|Returns x raised to the power y.|
-|22|sqrt(x)|Returns the square root of x.|
-|23|acos(x)|Returns the arc cosine of x.|
-|24|asin(x)|Returns the arc sine of x.|
-|25|atan(x)|Returns the arc tangent of x.|
-|26|atan2(y, x)|Returns atan(y / x).|
-|27|cos(x)|Returns the cosine of x.|
-|28|hypot(x, y)|Returns the Euclidean norm, sqrt(x*x + y*y).|
-|29|sin(x)|Returns the sine of x.|
-|30|tan(x)|Returns the tangent of x.|
-|31|degrees(x)|Converts angle x from radians to degrees.|
-|32|radians(x)|Converts angle x from degrees to radians.|
-|33|acosh(x)|Returns the inverse hyperbolic cosine of x.|
-|34|asinh(x)|Returns the inverse hyperbolic sine of x.|
-|35|atanh(x)|Returns the inverse hyperbolic tangent of x.|
-|36|cosh(x)|Returns the hyperbolic cosine of x.|
-|37|sinh(x)|Returns the hyperbolic cosine of x.|
-|38|tanh(x)|Returns the hyperbolic tangent of x.|
-|39|erf(x)|Returns the error function at x.|
-|40|erfc(x)|Returns the complementary error function at x.|
-|41|gamma(x)|Returns the Gamma function at x.|
-|42|lgamma(x)|Returns the natural logarithm of the absolute value of the Gamma function at x.|
-|43|pi|Mathematical constant, the ratio of circumference of a circle to it's diameter (3.14159...)|
-|44|e|mathematical constant e (2.71828...)|
-|45|tau|mathematical constant tau (6.28318...)|
-|46|inf|floating-point positive infinity|
-|47|nan|floating-point NaN (not a number)|
-|48|isqrt(n)|Returns the integer square root of the nonnegative integer n.|
-|49|comb(n, k)|Returns the number of ways to choose k items from n items without repetition and without order.|
-|50|perm(n, k)|Returns the number of ways to choose k items from n items without repetition and with order.|
+|S.No.|Function Name|Description|Example|
+|:---:|:---|:---|:---|
+|1|ceil(x)|Returns the smallest integer greater than or equal to x.|`math.ceil(2.3)`|
+|2|copysign(x, y)|Returns x with the sign of y.|`math.copysign(2, -3)`|
+|3|fabs(x)|Returns the absolute value of x.|`math.fabs(-2.3)`|
+|4|factorial(x)|Returns the factorial of x.|`math.factorial(4)`|
+|5|floor(x)|Returns the largest integer less than or equal to x.|`math.floor(2.3)`|
+|6|fmod(x, y)|Returns the remainder when x is divided by y.|`math.fmod(2, 3)`|
+|7|frexp(x)|Returns the mantissa and exponent of x as the pair (m, e).|`math.frexp(2)`|
+|8|fsum(iterable)|Returns an accurate floating point sum of values in the iterable.|`math.fsum([1, 2, 3, 4, 5])`|
+|9|isfinite(x)|Returns True if x is neither an infinity nor a NaN (Not a Number).| `math.isfinite(2)`|
+|10|isinf(x)|Returns True if x is a positive or negative infinity.|`math.isinf(2)`|
+|11|isnan(x)|Returns True if x is a NaN.|`math.isnan(2)`|
+|12|ldexp(x, i)|Returns x * (2**i).|`math.ldexp(2, 3)`|
+|13|modf(x)|Returns the fractional and integer parts of x.|`math.modf(2.3)`|
+|14|trunc(x)|Returns the truncated integer value of x.|`math.trunc(2.3)`|
+|15|exp(x)|Returns e**x.| `math.exp(2)`|
+|16|expm1(x)|Returns e**x - 1. | `math.expm1(2)`|
+|17|log(x[, base])|Returns the logarithm of x to the base (defaults to e).| `math.log(2)`|
+|18|log1p(x)|Returns the natural logarithm of 1+x. | `math.log1p(2)`|
+|19|log2(x)|Returns the base-2 logarithm of x. | `math.log2(2)`|
+|20|log10(x)|Returns the base-10 logarithm of x. | `math.log10(2)`|
+|21|pow(x, y)|Returns x raised to the power y. | `math.pow(2, 3)`|
+|22|sqrt(x)|Returns the square root of x. | `math.sqrt(2)`|
+|23|acos(x)|Returns the arc cosine of x.| `math.acos(2)`|
+|24|asin(x)|Returns the arc sine of x.| `math.asin(2)`|
+|25|atan(x)|Returns the arc tangent of x.| `math.atan(2)`|
+|26|atan2(y, x)|Returns atan(y / x).| `math.atan2(2, 3)`|
+|27|cos(x)|Returns the cosine of x.| `math.cos(2)`|
+|28|hypot(x, y)|Returns the Euclidean norm, sqrt(x*x + y*y).| `math.hypot(2, 3)`|
+|29|sin(x)|Returns the sine of x.| `math.sin(2)`|
+|30|tan(x)|Returns the tangent of x.| `math.tan(2)`|
+|31|degrees(x)|Converts angle x from radians to degrees.| `math.degrees(2)`|
+|32|radians(x)|Converts angle x from degrees to radians.| `math.radians(2)`|
+|33|acosh(x)|Returns the inverse hyperbolic cosine of x.| `math.acosh(2)`|
+|34|asinh(x)|Returns the inverse hyperbolic sine of x.| `math.asinh(2)`|
+|35|atanh(x)|Returns the inverse hyperbolic tangent of x.| `math.atanh(2)`|
+|36|cosh(x)|Returns the hyperbolic cosine of x.| `math.cosh(2)`|
+|37|sinh(x)|Returns the hyperbolic cosine of x.| `math.sinh(2)`|
+|38|tanh(x)|Returns the hyperbolic tangent of x.| `math.tanh(2)`|
+|39|erf(x)|Returns the error function at x.| `math.erf(2)`|
+|40|erfc(x)|Returns the complementary error function at x.| `math.erfc(2)`|
+|41|gamma(x)|Returns the Gamma function at x.| `math.gamma(2)`|
+|42|lgamma(x)|Returns the natural logarithm of the absolute value of the Gamma function at x.| `math.lgamma(2)`|
+|43|pi|Mathematical constant, the ratio of circumference of a circle to it's diameter (3.14159...)| `math.pi`|
+|44|e|mathematical constant e (2.71828...)| `math.e`|
+|45|tau|mathematical constant tau (6.28318...)| `math.tau`|
+|46|inf|floating-point positive infinity| `math.inf`|
+|47|nan|floating-point NaN (not a number)| `math.nan`|
+|48|isqrt(n)|Returns the integer square root of the nonnegative integer n.| `math.isqrt(2)`|
+|49|comb(n, k)|Returns the number of ways to choose k items from n items without repetition and without order.| `math.comb(2, 3)`|
+|50|perm(n, k)|Returns the number of ways to choose k items from n items without repetition and with order.| `math.perm(2, 3)`|
 
 :::tip
 More information about the math module can be found [here](https://docs.python.org/3/library/math.html).
@@ -342,7 +342,7 @@ print(random.randint(1, 10))
 
 Output:
 
-```cmd title="command" showLineNumbers{1} {1-2}
+```cmd title="command" showLineNumbers{1} {2-3}
 C:\Users\username>python random.py
 0.940667756167586
 7
@@ -376,3 +376,64 @@ In this example, we have used the `random()` function to generate a random numbe
 |20|vonmisesvariate(mu, kappa)|von Mises distribution.|`random.vonmisesvariate(1, 10)`|
 |21|paretovariate(alpha)|Pareto distribution.|`random.paretovariate(1)`|
 |22|weibullvariate(alpha, beta)|Weibull distribution.|`random.weibullvariate(1, 10)`|
+
+:::tip
+More information about the random module can be found [here](https://docs.python.org/3/library/random.html).
+:::
+
+### Datetime Module
+Datetime module is used to perform date and time operations. It provides access to the date and time functions. It is always available in Python. It provides various date and time operations like getting the current date and time, getting the current year, getting the current month, etc. It is used by importing the datetime module in the program. It is used in the following way:
+
+```python title="datetime.py" showLineNumbers{1} {1,3-4}
+import datetime
+
+print(datetime.datetime.now())
+print(datetime.date(2021,12,11).strftime("%A"))
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python datetime.py
+2023-12-01 12:00:00.000000
+Saturday
+```
+
+In this example, we have used the `now()` function to get the current date and time. We have also used the `strftime()` function to get the day of the week from a date.
+
+#### Some Important Functions of Datetime Module
+
+|S.No.|Function Name|Description|Example|
+|:---:|:---|:---|:---|
+|1|date(year, month, day)|Returns a date object with the specified year, month, and day.|`datetime.date(2021, 12, 11)`|
+|2|datetime(year, month, day[, hour[, minute[, second[, microsecond[, tzinfo]]]]])|Returns a datetime object with the specified year, month, day, hour, minute, second, microsecond, and tzinfo.|`datetime.datetime(2021, 12, 11, 12, 0, 0, 0)`|
+|3|time([hour[, minute[, second[, microsecond[, tzinfo]]]]])|Returns a time object with the specified hour, minute, second, microsecond, and tzinfo.|`datetime.time(12, 0, 0, 0)`|
+|4|timedelta([days[, seconds[, microseconds[, milliseconds[, minutes[, hours[, weeks]]]]]]])|Returns a timedelta object with the specified days, seconds, microseconds, milliseconds, minutes, hours, and weeks.|`datetime.timedelta(1)`|
+|5|today()|Returns the current local date.|`datetime.datetime.today()`|
+|6|now([tz])|Returns the current local date and time.|`datetime.datetime.now()`|
+|7|utcnow()|Returns the current UTC date and time.|`datetime.datetime.utcnow()`|
+|8|fromtimestamp(timestamp[, tz])|Returns the local date and time corresponding to the POSIX timestamp.|`datetime.datetime.fromtimestamp(1639209000)`|
+|9|utcfromtimestamp(timestamp)|Returns the UTC date and time corresponding to the POSIX timestamp.|`datetime.datetime.utcfromtimestamp(1639209000)`|
+|10|combine(date, time)|Returns a datetime object with the specified date and time.|`datetime.datetime.combine(datetime.date(2021, 12, 11), datetime.time(12, 0, 0, 0))`|
+|11|strptime(date_string, format)|Returns a datetime corresponding to date_string, parsed according to format.|`datetime.datetime.strptime("2021-12-11", "%Y-%m-%d")`|
+|12|strftime(format)|Returns a string representing the date and time, controlled by an explicit format string.|`datetime.datetime(2021, 12, 11, 12, 0, 0, 0).strftime("%A")`|
+|13|date()|Returns the date part.|`datetime.datetime(2021, 12, 11, 12, 0, 0, 0).date()`|
+|14|time()|Returns the time part.|`datetime.datetime(2021, 12, 11, 12, 0, 0, 0).time()`|
+|15|replace([year[, month[, day[, hour[, minute[, second[, microsecond[, tzinfo]]]]]]]])|Returns a datetime with the same attributes, except for those attributes given new values by whichever keyword arguments are specified.|`datetime.datetime(2021, 12, 11, 12, 0, 0, 0).replace(2021, 12, 11)`|
+|16|astimezone(tz=None)|Returns a datetime object with new tzinfo attribute tz, adjusting the date and time data so the result is the same UTC time as self, but in tz's local time.|`datetime.datetime(2021, 12, 11, 12, 0, 0, 0).astimezone()`|
+|17|timetuple()|Returns a time.struct_time such as returned by time.localtime().|`datetime.datetime(2021, 12, 11, 12, 0, 0, 0).timetuple()`|
+|18|utctimetuple()|Returns a time.struct_time such as returned by time.gmtime().|`datetime.datetime(2021, 12, 11, 12, 0, 0, 0).utctimetuple()`|
+|19|toordinal()|Returns the proleptic Gregorian ordinal of the date.|`datetime.datetime(2021, 12, 11, 12, 0, 0, 0).toordinal()`|
+|20|timestamp()|Returns POSIX timestamp corresponding to the datetime instance.|`datetime.datetime(2021, 12, 11, 12, 0, 0, 0).timestamp()`|
+|21|ctime()|Returns a string representing the date and time.|`datetime.datetime(2021, 12, 11, 12, 0, 0, 0).ctime()`|
+|22|isoformat([sep='T', timespec='auto'])|Returns a string representing the date and time in ISO 8601 format.|`datetime.datetime(2021, 12, 11, 12, 0, 0, 0).isoformat()`|
+|23|__str__()|Returns a string representing the date and time.|`datetime.datetime(2021, 12, 11, 12, 0, 0, 0).__str__()`|
+|24|__repr__()|Returns a string representing the date and time.|`datetime.datetime(2021, 12, 11, 12, 0, 0, 0).__repr__()`|
+|25|weekday()|Returns the day of the week as an integer, where Monday is 0 and Sunday is 6.|`datetime.datetime(2021, 12, 11, 12, 0, 0, 0).weekday()`|
+|26|isoweekday()|Returns the day of the week as an integer, where Monday is 1 and Sunday is 7.|`datetime.datetime(2021, 12, 11, 12, 0, 0, 0).isoweekday()`|
+|27|isocalendar()|Returns a 3-tuple, (ISO year, ISO week number, ISO weekday).|`datetime.datetime(2021, 12, 11, 12, 0, 0, 0).isocalendar()`|
+|28|fromisocalendar(year, week, day)|Returns the date corresponding to the specified ISO year, week number, and weekday.|`datetime.datetime.fromisocalendar(2021, 12, 11)`|
+
+:::tip
+More information about the datetime module can be found [here](https://docs.python.org/3/library/datetime.html).
+:::
