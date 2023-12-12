@@ -62,7 +62,8 @@ print("Division:", result_divide)
 
 Output:
 
-```cmd title="command" showLineNumbers{1} {1-4}
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\Your Name> python calculator.py
 Addition: 8
 Subtraction: 2
 Multiplication: 15
@@ -86,8 +87,8 @@ print("Multiplication:", result_multiply)
 ```
 
 Output:
-
-```cmd title="command" showLineNumbers{1} {1-2}
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\Your Name> python calculator.py
 Addition: 8
 Multiplication: 15
 ```
@@ -108,7 +109,8 @@ print("Multiplication:", result_multiply)
 
 Output:
 
-```cmd title="command" showLineNumbers{1} {1-2}
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\Your Name> python calculator.py
 Addition: 8
 Multiplication: 15
 ```
@@ -131,7 +133,8 @@ print("Multiplication:", result_multiply)
 
 Output:
 
-```cmd title="command" showLineNumbers{1} {1-2}
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\Your Name> python calculator.py
 Addition: 8
 Multiplication: 15
 ```
@@ -151,7 +154,8 @@ print("Rectangle Area:", result_area)
 
 Output:
 
-```cmd title="command" showLineNumbers{1} {1}
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python calculator.py
 Rectangle Area: 24
 ```
 
@@ -230,12 +234,19 @@ Using packages, you can organize related modules into a hierarchical directory s
 
 To import modules from a package, you can use the dot notation. For example, importing the `rectangle_area` function from the `shapes` module within the `geometry` package:
 
-```python
+```python title="calculator.py" showLineNumbers{1} {2, 4-5}
 # Importing from a package
 from geometry.shapes import rectangle_area
 
 result_area = rectangle_area(4, 6)
 print("Rectangle Area:", result_area)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\Your Name> python calculator.py
+Rectangle Area: 24
 ```
 
 Here, the `rectangle_area` function from the `shapes` module within the `geometry` package is imported and used in the script.
@@ -244,7 +255,7 @@ Here, the `rectangle_area` function from the `shapes` module within the `geometr
 
 Python allows you to assign aliases to module names, providing a way to reference modules with shorter names in your code. This can be particularly useful for modules with long names or when avoiding naming conflicts.
 
-```python
+```python title="calculator.py" showLineNumbers{1} {2-3}
 # Module aliasing
 import math_operations as math_ops
 
@@ -253,6 +264,14 @@ result_multiply = math_ops.multiply(5, 3)
 
 print("Addition:", result_add)
 print("Multiplication:", result_multiply)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\Your Name> python calculator.py
+Addition: 8
+Multiplication: 15
 ```
 
 In this example, the `math_operations` module is imported with the alias `math_ops`, allowing for a more concise reference.
@@ -296,7 +315,9 @@ print(math_operations.add.__doc__)
 
 Output:
 
-```cmd title="command" showLineNumbers{1} {1-2}
+```cmd title="command" showLineNumbers{1} {2-3
+}
+C:\Users\Your Name> python calculator.py
 This module contains basic mathematical operations.
 Adds two numbers.
 ```
@@ -325,7 +346,8 @@ print("Module Dictionary:", math_operations.__dict__)
 
 Output:
 
-```cmd title="command" showLineNumbers{1} {1-5}
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\Your Name> python calculator.py
 Module Name: math_operations
 Module File: /Users/username/Desktop/math_operations.py
 Module Docstring: This module contains basic mathematical operations.
