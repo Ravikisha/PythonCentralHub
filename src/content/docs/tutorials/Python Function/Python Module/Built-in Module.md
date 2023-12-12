@@ -64,6 +64,21 @@ Python has a lot of built-in modules that you can use. You can find the list of 
 | 49 | [tempfile](https://docs.python.org/3/library/tempfile.html) | This module generates temporary files and directories. |
 | 50 | [gzip](https://docs.python.org/3/library/gzip.html) | This module provides a simple interface to compress and decompress files just like the GNU programs gzip and gunzip would. |
 
+## Build-in Functions
+
+Python has a lot of built-in functions that you can use. You can find the list of all the built-in functions in the [Python Built-in Functions](https://docs.python.org/3/library/functions.html). You can use these functions without importing them. You can use them in your code.
+
+### Table of Built-in Functions
+
+| S.No. | Function Name | Description | Example |
+| :---: | :--- | :--- | :--- |
+| 1 | [abs()](https://docs.python.org/3/library/functions.html#abs) | This function returns the absolute value of a number. | `abs(-2)` |
+| 2 | [all()](https://docs.python.org/3/library/functions.html#all) | This function returns True if all elements of the iterable are true (or if the iterable is empty). | `all([True, False, True])` |
+| 3 | [any()](https://docs.python.org/3/library/functions.html#any) | This function returns True if any element of the iterable is true. If the iterable is empty, return False. | `any([True, False, True])` |
+| 4 | [ascii()](https://docs.python.org/3/library/functions.html#ascii) | This function returns a string containing a printable representation of an object. | `ascii('a')` |
+
+
+
 ## Online Modules
 
 There are a lot of modules that are not built-in. You can install them using the Python Package Index (PyPI). You can install them using the `pip` command. You can find the list of all the modules on the [Python Package Index](https://pypi.org/).
@@ -437,3 +452,69 @@ In this example, we have used the `now()` function to get the current date and t
 :::tip
 More information about the datetime module can be found [here](https://docs.python.org/3/library/datetime.html).
 :::
+
+### OS Module
+OS module is used to perform operating system operations. It provides access to the operating system functions. It is always available in Python. It provides various operating system operations like getting the current working directory, changing the current working directory, etc. It is used by importing the os module in the program. It is used in the following way:
+
+```python title="os.py" showLineNumbers{1} {1,3-5}
+import os
+
+print(os.getcwd())
+os.chdir("C:\\Users\\username\\Desktop")
+print(os.getcwd())
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os.py
+C:\Users\username
+C:\Users\username\Desktop
+```
+
+In this example, we have used the `getcwd()` function to get the current working directory. We have also used the `chdir()` function to change the current working directory.
+
+#### Some Important Functions of OS Module
+
+|S.No.|Function Name|Description|Example|
+|:---:|:---|:---|:---|
+|1|chdir(path)|Changes the current working directory to path.|`os.chdir("C:\\Users\\username\\Desktop")`|
+|2|getcwd()|Returns the current working directory.|`os.getcwd()`|
+|3|listdir(path='.')|Returns a list containing the names of the entries in the directory given by path.|`os.listdir("C:\\Users\\username\\Desktop")`|
+|4|mkdir(path, mode=0o777, *, dir_fd=None)|Creates a directory named path with numeric mode mode.|`os.mkdir("C:\\Users\\username\\Desktop\\New Folder")`|
+|5|makedirs(name, mode=0o777, exist_ok=False)|Recursive directory creation function.|`os.makedirs("C:\\Users\\username\\Desktop\\New Folder\\New Folder")`|
+|6|rmdir(path, *, dir_fd=None)|Removes the directory path.|`os.rmdir("C:\\Users\\username\\Desktop\\New Folder\\New Folder")`|
+|7|removedirs(name)|Removes directories recursively.|`os.removedirs("C:\\Users\\username\\Desktop\\New Folder\\New Folder")`|
+|8|rename(src, dst, *, src_dir_fd=None, dst_dir_fd=None)|Renames the file or directory src to dst.|`os.rename("C:\\Users\\username\\Desktop\\New Folder", "C:\\Users\\username\\Desktop\\New Folder 1")`|
+|9|renames(old, new)|Renames the file or directory old to new, recursively.|`os.renames("C:\\Users\\username\\Desktop\\New Folder", "C:\\Users\\username\\Desktop\\New Folder 1")`|
+|10|remove(path, *, dir_fd=None)|Removes (deletes) the file path.|`os.remove("C:\\Users\\username\\Desktop\\New Folder")`|
+|11|rmtree(path, ignore_errors=False, onerror=None)|Deletes an entire directory tree.|`os.rmtree("C:\\Users\\username\\Desktop\\New Folder")`|
+|12|system(command)|Executes the command (a string) in a subshell.|`os.system("dir")`|
+|13|walk(top, topdown=True, onerror=None, followlinks=False)|Generates the file names in a directory tree by walking the tree either top-down or bottom-up.|`os.walk("C:\\Users\\username\\Desktop")`|
+|14|path.abspath(path)|Returns the absolute path of path.|`os.path.abspath("C:\\Users\\username\\Desktop")`|
+|15|path.basename(path)|Returns the base name of path.|`os.path.basename("C:\\Users\\username\\Desktop")`|
+|16|path.commonpath(paths)|Returns the longest common sub-path of each pathname in paths.|`os.path.commonpath(["C:\\Users\\username\\Desktop", "C:\\Users\\username\\Desktop\\New Folder"])`|
+|17|path.commonprefix(list)|Returns the longest path prefix (taken character-by-character) that is a prefix of all paths in list.|`os.path.commonprefix(["C:\\Users\\username\\Desktop", "C:\\Users\\username\\Desktop\\New Folder"])`|
+|18|path.dirname(path)|Returns the directory name of path.|`os.path.dirname("C:\\Users\\username\\Desktop")`|
+|19|path.exists(path)|Returns True if path refers to an existing path.|`os.path.exists("C:\\Users\\username\\Desktop")`|
+|20|path.lexists(path)|Returns True if path refers to an existing path.|`os.path.lexists("C:\\Users\\username\\Desktop")`|
+|21|path.expanduser(path)|Expands ~ and ~user constructions.|`os.path.expanduser("~")`|
+|22|path.expandvars(path)|Expands shell variables.|`os.path.expandvars("%USERPROFILE%")`|
+|23|path.getatime(path)|Returns the time of last access of path.|`os.path.getatime("C:\\Users\\username\\Desktop")`|
+|24|path.getmtime(path)|Returns the time of last modification of path.|`os.path.getmtime("C:\\Users\\username\\Desktop")`|
+|25|path.getctime(path)|Returns the system’s ctime which, on some systems (like Unix) is the time of the last metadata change, and, on others (like Windows), is the creation time for path.|`os.path.getctime("C:\\Users\\username\\Desktop")`|
+|26|path.getsize(path)|Returns the size, in bytes, of path.|`os.path.getsize("C:\\Users\\username\\Desktop")`|
+|27|path.isabs(path)|Returns True if path is an absolute pathname.|`os.path.isabs("C:\\Users\\username\\Desktop")`|
+|28|path.isfile(path)|Returns True if path is an existing regular file.|`os.path.isfile("C:\\Users\\username\\Desktop")`|
+|29|path.isdir(path)|Returns True if path is an existing directory.|`os.path.isdir("C:\\Users\\username\\Desktop")`|
+|30|path.islink(path)|Returns True if path refers to a directory entry that is a symbolic link.|`os.path.islink("C:\\Users\\username\\Desktop")`|
+|31|path.ismount(path)|Returns True if pathname path is a mount point: a point in a file system where a different file system has been mounted.|`os.path.ismount("C:\\Users\\username\\Desktop")`|
+|32|path.join(path1[, path2[, ...]])|Joins one or more path components intelligently.|`os.path.join("C:\\Users\\username\\Desktop", "New Folder")`|
+|33|path.normcase(path)|Normalizes the case of a pathname.|`os.path.normcase("C:\\Users\\username\\Desktop")`|
+|34|path.normpath(path)|Normalizes path, eliminating double slashes, etc.|`os.path.normpath("C:\\Users\\username\\Desktop")`|
+|35|path.realpath(path)|Returns the canonical path of the specified filename, eliminating any symbolic links encountered in the path.|`os.path.realpath("C:\\Users\\username\\Desktop")`|
+|36|path.relpath(path[, start])|Returns a relative filepath to path either from the current directory or from an optional start directory.|`os.path.relpath("C:\\Users\\username\\Desktop")`|
+|37|path.samefile(path1, path2)|Returns True if both pathname arguments refer to the same file or directory.|`os.path.samefile("C:\\Users\\username\\Desktop", "C:\\Users\\username\\Desktop")`|
+|38|path.sameopenfile(fp1, fp2)|Returns True if the file descriptors fp1 and fp2 refer to the same file.|`os.path.sameopenfile("C:\\Users\\username\\Desktop", "C:\\Users\\username\\Desktop")`|
+|39|path.samestat(stat1, stat2)|Returns True if the stat tuples stat1 and stat2 refer to the same file.|`os.path.samestat("C:\\Users\\username\\Desktop", "C:\\Users\\username\\Desktop")`|
+|40|path.split(path)|Splits the pathname path into a pair, (head, tail) where tail is the last pathname component and head is everything leading up to that.|`os.path.split("C:\\Users\\username\\Desktop")`|
