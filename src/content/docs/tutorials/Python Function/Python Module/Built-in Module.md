@@ -201,7 +201,8 @@ print(math.pi)
 
 Output:
 
-```cmd title="command" showLineNumbers{1} {1}
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python math.py
 3.141592653589793
 ```
 
@@ -214,7 +215,8 @@ print(pi)
 
 Output:
 
-```cmd title="command" showLineNumbers{1} {1}
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python math.py
 3.141592653589793
 ```
 
@@ -228,7 +230,8 @@ print(PI)
 
 Output:
 
-```cmd title="command" showLineNumbers{1} {1}
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python math.py
 3.141592653589793
 ```
 
@@ -242,6 +245,86 @@ print(pi)
 
 Output:
 
-```cmd title="command" showLineNumbers{1} {1}
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python math.py
 3.141592653589793
 ```
+
+## Some Useful Modules
+### Math Module
+Math module is used to perform mathematical operations. It provides access to the mathematical functions defined by the C standard. It is always available in Python. It provides various mathematical operations like trigonometric operations, exponential operations, logarithmic operations, etc. It also provides some constants like pi, e, etc. It is used by importing the math module in the program. It is used in the following way:
+
+```python title="math.py" showLineNumbers{1} {1,3-4}
+import math
+
+print(math.pi)
+print(math.pow(2, 3))
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1-2}
+C:\Users\username>python math.py
+3.141592653589793
+8.0
+```
+
+#### Some Important Functions of Math Module
+
+|S.No.|Function Name|Description|
+|:---:|:---|:---|
+|1|ceil(x)|Returns the smallest integer greater than or equal to x.|
+|2|copysign(x, y)|Returns x with the sign of y.|
+|3|fabs(x)|Returns the absolute value of x.|
+|4|factorial(x)|Returns the factorial of x.|
+|5|floor(x)|Returns the largest integer less than or equal to x.|
+|6|fmod(x, y)|Returns the remainder when x is divided by y.|
+|7|frexp(x)|Returns the mantissa and exponent of x as the pair (m, e).|
+|8|fsum(iterable)|Returns an accurate floating point sum of values in the iterable.|
+|9|isfinite(x)|Returns True if x is neither an infinity nor a NaN (Not a Number).|
+|10|isinf(x)|Returns True if x is a positive or negative infinity.|
+|11|isnan(x)|Returns True if x is a NaN.|
+|12|ldexp(x, i)|Returns x * (2**i).|
+|13|modf(x)|Returns the fractional and integer parts of x.|
+|14|trunc(x)|Returns the truncated integer value of x.|
+|15|exp(x)|Returns e**x.|
+|16|expm1(x)|Returns e**x - 1.|
+|17|log(x[, base])|Returns the logarithm of x to the base (defaults to e).|
+|18|log1p(x)|Returns the natural logarithm of 1+x.|
+|19|log2(x)|Returns the base-2 logarithm of x.|
+|20|log10(x)|Returns the base-10 logarithm of x.|
+|21|pow(x, y)|Returns x raised to the power y.|
+|22|sqrt(x)|Returns the square root of x.|
+|23|acos(x)|Returns the arc cosine of x.|
+|24|asin(x)|Returns the arc sine of x.|
+|25|atan(x)|Returns the arc tangent of x.|
+|26|atan2(y, x)|Returns atan(y / x).|
+|27|cos(x)|Returns the cosine of x.|
+|28|hypot(x, y)|Returns the Euclidean norm, sqrt(x*x + y*y).|
+|29|sin(x)|Returns the sine of x.|
+|30|tan(x)|Returns the tangent of x.|
+|31|degrees(x)|Converts angle x from radians to degrees.|
+|32|radians(x)|Converts angle x from degrees to radians.|
+|33|acosh(x)|Returns the inverse hyperbolic cosine of x.|
+|34|asinh(x)|Returns the inverse hyperbolic sine of x.|
+|35|atanh(x)|Returns the inverse hyperbolic tangent of x.|
+|36|cosh(x)|Returns the hyperbolic cosine of x.|
+|37|sinh(x)|Returns the hyperbolic cosine of x.|
+|38|tanh(x)|Returns the hyperbolic tangent of x.|
+|39|erf(x)|Returns the error function at x.|
+|40|erfc(x)|Returns the complementary error function at x.|
+|41|gamma(x)|Returns the Gamma function at x.|
+|42|lgamma(x)|Returns the natural logarithm of the absolute value of the Gamma function at x.|
+|43|pi|Mathematical constant, the ratio of circumference of a circle to it's diameter (3.14159...)|
+|44|e|mathematical constant e (2.71828...)|
+|45|tau|mathematical constant tau (6.28318...)|
+|46|inf|floating-point positive infinity|
+|47|nan|floating-point NaN (not a number)|
+|48|isqrt(n)|Returns the integer square root of the nonnegative integer n.|
+|49|comb(n, k)|Returns the number of ways to choose k items from n items without repetition and without order.|
+|50|perm(n, k)|Returns the number of ways to choose k items from n items without repetition and with order.|
+
+:::tip
+More information about the math module can be found [here](https://docs.python.org/3/library/math.html).
+:::
+
