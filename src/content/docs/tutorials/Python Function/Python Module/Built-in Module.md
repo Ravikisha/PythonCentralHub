@@ -73,23 +73,76 @@ Python has a lot of built-in functions that you can use. You can find the list o
 | S.No. | Function Name | Description | Example |
 | :---: | :--- | :--- | :--- |
 | 1 | [abs()](https://docs.python.org/3/library/functions.html#abs) | This function returns the absolute value of a number. | `abs(-2)` |
-| 2 | [all()](https://docs.python.org/3/library/functions.html#all) | This function returns True if all elements of the iterable are true (or if the iterable is empty). | `all([True, False, True])` |
-| 3 | [any()](https://docs.python.org/3/library/functions.html#any) | This function returns True if any element of the iterable is true. If the iterable is empty, return False. | `any([True, False, True])` |
-| 4 | [ascii()](https://docs.python.org/3/library/functions.html#ascii) | This function returns a string containing a printable representation of an object. | `ascii('a')` |
-| 5 | [bin()](https://docs.python.org/3/library/functions.html#bin) | This function converts an integer number to a binary string prefixed with “0b”. | `bin(2)` |
-| 6 | [bool()](https://docs.python.org/3/library/functions.html#bool) | This function converts a value to a Boolean. | `bool(2)` |
-| 7 | [bytearray()](https://docs.python.org/3/library/functions.html#func-bytearray) | This function returns a new array of bytes. | `bytearray(2)` |
-| 8 | [bytes()](https://docs.python.org/3/library/functions.html#bytes) | This function returns a new “bytes” object, which is an immutable sequence of integers in the range 0 <= x < 256. | `bytes(2)` |
-| 9 | [callable()](https://docs.python.org/3/library/functions.html#callable) | This function returns True if the object argument appears callable, False if not. | `callable(2)` |
-| 10 | [chr()](https://docs.python.org/3/library/functions.html#chr) | This function returns a string of one character whose ASCII code is the integer i. | `chr(2)` |
-| 11 | [classmethod()](https://docs.python.org/3/library/functions.html#classmethod) | This function returns a class method for the given function. | `classmethod(2)` |
-| 12 | [compile()](https://docs.python.org/3/library/functions.html#compile) | This function returns a code object from the source. | `compile(2)` |
-| 13 | [complex()](https://docs.python.org/3/library/functions.html#complex) | This function returns a complex number with the value real + imag*1j or converts a string or number to a complex number. | `complex(2)` |
-| 14 | [delattr()](https://docs.python.org/3/library/functions.html#delattr) | This function deletes the named attribute from the given object. | `delattr(2)` |
-| 15 | [dict()](https://docs.python.org/3/library/functions.html#func-dict) | This function creates a new dictionary. | `dict(2)` |
-| 16 | [dir()](https://docs.python.org/3/library/functions.html#dir) | This function returns the list of names in the current local scope. | `dir(2)` |
-| 17 | [divmod()](https://docs.python.org/3/library/functions.html#divmod) | This function takes two (non complex) numbers as arguments and returns a pair of numbers consisting of their quotient and remainder when using integer division. | `divmod(2)` |
-| 18 | [enumerate()](https://docs.python.org/3/library/functions.html#enumerate) | This function returns an enumerate object. | `enumerate(2)` |
+| 2 | [aiter()](https://docs.python.org/3/library/functions.html#aiter) | This function returns an asynchronous iterator object. | `aiter([1, 2, 3])` |
+| 3 | [all()](https://docs.python.org/3/library/functions.html#all) | This function returns True if all elements of the iterable are true (or if the iterable is empty). | `all([True, False, True])` |
+| 4 | [anext()](https://docs.python.org/3/library/functions.html#anext) | This function retrieves the next item from the asynchronous iterator by calling its __anext__() method. | `anext([1, 2, 3])` |
+| 5 | [any()](https://docs.python.org/3/library/functions.html#any) | This function returns True if any element of the iterable is true. If the iterable is empty, return False. | `any([True, False, True])` |
+| 6 | [ascii()](https://docs.python.org/3/library/functions.html#ascii) | This function returns a string containing a printable representation of an object. | `ascii('a')` |
+| 7 | [bin()](https://docs.python.org/3/library/functions.html#bin) | This function converts an integer number to a binary string prefixed with “0b”. | `bin(2)` |
+| 8 | [bool()](https://docs.python.org/3/library/functions.html#bool) | This function converts a value to a Boolean. | `bool(2)` |
+| 9 | [breakpoint()](https://docs.python.org/3/library/functions.html#breakpoint) | This function enters the debugger at the call site. | `breakpoint()` |
+| 10 | [bytearray()](https://docs.python.org/3/library/functions.html#func-bytearray) | This function returns a new array of bytes. | `bytearray(2)` |
+| 11 | [bytes()](https://docs.python.org/3/library/functions.html#bytes) | This function returns a new “bytes” object, which is an immutable sequence of integers in the range 0 <= x < 256. | `bytes(2)` |
+| 12 | [callable()](https://docs.python.org/3/library/functions.html#callable) | This function returns True if the object argument appears callable, False if not. | `callable(2)` |
+| 13 | [chr()](https://docs.python.org/3/library/functions.html#chr) | This function returns a string of one character whose ASCII code is the integer i. | `chr(2)` |
+| 14 | [classmethod()](https://docs.python.org/3/library/functions.html#classmethod) | This function returns a class method for function. | `classmethod(2)` |
+| 15 | [compile()](https://docs.python.org/3/library/functions.html#compile) | This function returns a code object from source. | `compile(2)` |
+| 16 | [complex()](https://docs.python.org/3/library/functions.html#complex) | This function returns a complex number with the value real + imag*1j or converts a string or number to a complex number. | `complex(2)` |
+| 17 | [delattr()](https://docs.python.org/3/library/functions.html#delattr) | This function deletes the named attribute from the given object. | `delattr(2)` |
+| 18 | [dict()](https://docs.python.org/3/library/functions.html#func-dict) | This function creates a new dictionary. | `dict(2)` |
+| 19 | [dir()](https://docs.python.org/3/library/functions.html#dir) | This function returns the list of names in the current local scope. | `dir(2)` |
+| 20 | [divmod()](https://docs.python.org/3/library/functions.html#divmod) | This function takes two (non complex) numbers as arguments and returns a pair of numbers consisting of their quotient and remainder when using integer division. | `divmod(2)` |
+| 21 | [enumerate()](https://docs.python.org/3/library/functions.html#enumerate) | This function returns an enumerate object. | `enumerate(2)` |
+| 22 | [eval()](https://docs.python.org/3/library/functions.html#eval) | This function parses the expression argument and evaluates it as a Python expression. | `eval(2)` |
+| 23 | [exec()](https://docs.python.org/3/library/functions.html#exec) | This function executes the given source in the context of globals and locals. | `exec(2)` |
+| 24 | [filter()](https://docs.python.org/3/library/functions.html#filter) | This function constructs an iterator from those elements of iterable for which function returns true. | `filter(2)` |
+| 25 | [float()](https://docs.python.org/3/library/functions.html#float) | This function returns a floating point number constructed from a number or string x. | `float(2)` |
+| 26 | [format()](https://docs.python.org/3/library/functions.html#format) | This function returns value.__format__(format_spec). | `format(2)` |
+| 27 | [frozenset()](https://docs.python.org/3/library/functions.html#func-frozenset) | This function returns a new frozenset object, optionally with elements taken from iterable. | `frozenset(2)` |
+| 28 | [getattr()](https://docs.python.org/3/library/functions.html#getattr) | This function returns the value of the named attribute of object. | `getattr(2)` |
+| 29 | [globals()](https://docs.python.org/3/library/functions.html#globals) | This function returns a dictionary representing the current global symbol table. | `globals(2)` |
+| 30 | [hasattr()](https://docs.python.org/3/library/functions.html#hasattr) | This function returns True if the object has the named attribute. | `hasattr(2)` |
+| 31 | [hash()](https://docs.python.org/3/library/functions.html#hash) | This function returns the hash value of the object (if it has one). | `hash(2)` |
+| 32 | [help()](https://docs.python.org/3/library/functions.html#help) | This function invokes the built-in help system. | `help(dir)` |
+| 33 | [hex()](https://docs.python.org/3/library/functions.html#hex) | This function converts an integer number to a lowercase hexadecimal string prefixed with “0x”. | `hex(2)` |
+| 34 | [id()](https://docs.python.org/3/library/functions.html#id) | This function returns the “identity” of an object. | `id(2)` |
+| 35 | [input()](https://docs.python.org/3/library/functions.html#input) | This function reads a line from input, converts it to a string (stripping a trailing newline), and returns that. | `input("Enter your name: ")` |
+| 36 | [int()](https://docs.python.org/3/library/functions.html#int) | This function returns an integer object constructed from a number or string x, or return 0 if no arguments are given. | `int(2)` |
+| 37 | [isinstance()](https://docs.python.org/3/library/functions.html#isinstance) | This function returns True if the object argument is an instance of the classinfo argument, or of a (direct, indirect or virtual) subclass thereof. | `isinstance(2)` |
+| 38 | [issubclass()](https://docs.python.org/3/library/functions.html#issubclass) | This function returns True if class is a subclass (direct, indirect or virtual) of classinfo. | `issubclass(2)` |
+| 39 | [iter()](https://docs.python.org/3/library/functions.html#iter) | This function returns an iterator object. | `iter(2)` |
+| 40 | [len()](https://docs.python.org/3/library/functions.html#len) | This function returns the length (the number of items) of an object. | `len(2)` |
+| 41 | [list()](https://docs.python.org/3/library/functions.html#func-list) | This function returns a list whose items are the same and in the same order as iterable‘s items. | `list(2)` |
+| 42 | [locals()](https://docs.python.org/3/library/functions.html#locals) | This function updates and returns a dictionary representing the current local symbol table. | `locals(2)` |
+| 43 | [map()](https://docs.python.org/3/library/functions.html#map) | This function returns an iterator that applies function to every item of iterable, yielding the results. | `map(2)` |
+| 44 | [max()](https://docs.python.org/3/library/functions.html#max) | This function returns the largest item in an iterable or the largest of two or more arguments. | `max(2)` |
+| 45 | [memoryview()](https://docs.python.org/3/library/functions.html#memoryview) | This function returns a “memory view” object created from the given argument. | `memoryview(2)` |
+| 46 | [min()](https://docs.python.org/3/library/functions.html#min) | This function returns the smallest item in an iterable or the smallest of two or more arguments. | `min(2)` |
+| 47 | [next()](https://docs.python.org/3/library/functions.html#next) | This function retrieves the next item from the iterator by calling its __next__() method. | `next(2)` |
+| 48 | [object()](https://docs.python.org/3/library/functions.html#object) | This function returns a new featureless object. | `object(2)` |
+| 49 | [oct()](https://docs.python.org/3/library/functions.html#oct) | This function converts an integer number to an octal string prefixed with “0o”. | `oct(2)` |
+| 50 | [open()](https://docs.python.org/3/library/functions.html#open) | This function returns a file object. | `open("file.txt")` |
+| 51 | [ord()](https://docs.python.org/3/library/functions.html#ord) | This function returns an integer representing the Unicode character. | `ord(2)` |
+| 52 | [pow()](https://docs.python.org/3/library/functions.html#pow) | This function returns x to the power y; if z is present, return x to the power y, modulo z (computed more efficiently than pow(x, y) % z). | `pow(2, 3)` |
+| 53 | [print()](https://docs.python.org/3/library/functions.html#print) | This function prints the given object to the standard output device. | `print("Hello World")` |
+| 54 | [property()](https://docs.python.org/3/library/functions.html#property) | This function returns a property attribute. | `property(2)` |
+| 55 | [range()](https://docs.python.org/3/library/functions.html#func-range) | This function returns a sequence of numbers, starting from 0 by default, and increments by 1 (by default), and stops before a specified number. | `range(2)` |
+| 56 | [repr()](https://docs.python.org/3/library/functions.html#repr) | This function returns a string containing a printable representation of an object. | `repr(2)` |
+| 57 | [reversed()](https://docs.python.org/3/library/functions.html#reversed) | This function returns a reverse iterator. | `reversed(2)` |
+| 58 | [round()](https://docs.python.org/3/library/functions.html#round) | This function returns the floating point number rounded off to the given ndigits digits after the decimal point. | `round(2.345)` |
+| 59 | [set()](https://docs.python.org/3/library/functions.html#func-set) | This function returns a new set object, optionally with elements taken from iterable. | `set(2)` |
+| 60 | [setattr()](https://docs.python.org/3/library/functions.html#setattr) | This function sets the named attribute on the given object to the specified value. | `setattr(2)` |
+| 61 | [slice()](https://docs.python.org/3/library/functions.html#slice) | This function returns a slice object representing the set of indices specified by range(start, stop, step). | `slice(2)` |
+| 62 | [sorted()](https://docs.python.org/3/library/functions.html#sorted) | This function returns a new sorted list from the items in iterable. | `sorted([2, 1, 3])` |
+| 63 | [staticmethod()](https://docs.python.org/3/library/functions.html#staticmethod) | This function returns a static method for function. | `@staticmethod` |
+| 64 | [str()](https://docs.python.org/3/library/functions.html#func-str) | This function returns a string version of object. | `str(2)` |
+| 65 | [sum()](https://docs.python.org/3/library/functions.html#sum) | This function returns the sum of all items in an iterable. | `sum([1, 2, 3])` |
+| 66 | [super()](https://docs.python.org/3/library/functions.html#super) | This function returns a proxy object that delegates method calls to a parent or sibling class of type. | `super(2)` |
+| 67 | [tuple()](https://docs.python.org/3/library/functions.html#func-tuple) | This function returns a tuple whose items are the same and in the same order as iterable‘s items. | `tuple(2)` |      
+| 68 | [type()](https://docs.python.org/3/library/functions.html#type) | This function returns the type of an object. | `type(2)` |
+| 69 | [vars()](https://docs.python.org/3/library/functions.html#vars) | This function returns the __dict__ attribute for a module, class, instance, or any other object with a __dict__ attribute. | `vars(2)` |
+| 70 | [zip()](https://docs.python.org/3/library/functions.html#zip) | This function returns an iterator of tuples, where the i-th tuple contains the i-th element from each of the argument sequences or iterables. | `zip(2)` |
+| 71 | [__import__()](https://docs.python.org/3/library/functions.html#__import__) | This function is called by the import statement. | `__import__(2)` |
 
 
 ## Online Modules
