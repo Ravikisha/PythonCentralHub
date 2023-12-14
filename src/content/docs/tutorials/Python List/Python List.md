@@ -290,5 +290,244 @@ C:\Users\username>python list_with_list_comprehension.py
 
 In this example, we declare a list using a list comprehension and assign it to the variable `list_with_list_comprehension`. We then print the list to the console. The output shows that the list contains five elements.
 
+## Types of List
+Lists in Python can be categorized into the following types:
+- **Mutable Lists**: Lists whose elements can be modified after creation.
+- **Immutable Lists**: Lists whose elements cannot be modified after creation.
+- **Nested Lists**: Lists that contain other lists as elements.
+- **Empty Lists**: Lists that contain no elements.
+- **Singleton Lists**: Lists that contain a single element.
+- **Homogeneous Lists**: Lists that contain elements of the same data type.
+- **Heterogeneous Lists**: Lists that contain elements of different data types.
+- **Ordered Lists**: Lists whose elements are stored in a particular order.
+- **Unordered Lists**: Lists whose elements are not stored in a particular order.
+- **Sorted Lists**: Lists whose elements are stored in ascending or descending order.
+- **Unsorted Lists**: Lists whose elements are not stored in ascending or descending order.
+
+### Mutable Lists
+Lists in Python are mutable, meaning their elements can be modified after creation. For example, the following code modifies the first element of a list:
+
+```python title="mutable_list.py" showLineNumbers{1-3} {1}
+mutable_list = [1, 2, 3, 4, 5]
+mutable_list[0] = 6
+print(mutable_list)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python mutable_list.py
+[6, 2, 3, 4, 5]
+```
+
+In this example, we declare a list with five elements and assign it to the variable `mutable_list`. We then modify the first element of the list and print the list to the console. The output shows that the first element of the list has been modified.
+
+### Immutable Lists
+Lists in Python are immutable, meaning their elements cannot be modified after creation. For example, the following code attempts to modify the first element of a list:
+
+```python title="immutable_list.py" showLineNumbers{1-3} {1}
+immutable_list = (1, 2, 3, 4, 5)
+immutable_list[0] = 6
+print(immutable_list)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python immutable_list.py
+Traceback (most recent call last):
+  File "immutable_list.py", line 2, in <module>
+    immutable_list[0] = 6
+TypeError: 'tuple' object does not support item assignment
+```
+
+:::tip
+We are going to learn about tuples in the upcoming tutorials.
+:::
+
+In this example, we declare a list with five elements and assign it to the variable `immutable_list`. We then attempt to modify the first element of the list and print the list to the console. The output shows that the first element of the list cannot be modified.
+
+### Nested Lists
+Lists in Python can contain other lists as elements. For example, the following code declares a nested list:
+
+```python title="nested_list.py" showLineNumbers{1-3} {1}
+nested_list = [[1, 2, 3], [4, 5, 6]]
+print(nested_list)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python nested_list.py
+[[1, 2, 3], [4, 5, 6]]
+```
+
+In this example, we declare a nested list and assign it to the variable `nested_list`. We then print the list to the console. The output shows that the list contains two lists as elements. This is also known as a two-dimensional list.
+
+:::note
+If you create multi dimensional list, it is called nested list.
+```python title="nested_list.py" showLineNumbers{1-3} {1}
+nested_list = [[[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [10, 11, 12]]]
+print(nested_list)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python nested_list.py
+[[[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [10, 11, 12]]]
+```
+
+In this example, we declare a nested list and assign it to the variable `nested_list`. We then print the list to the console. The output shows that the list contains two lists as elements. This is also known as a three-dimensional list.
+:::
+
+### Empty Lists
+Lists in Python can be empty, meaning they contain no elements. For example, the following code declares an empty list:
+
+```python title="empty_list.py" showLineNumbers{1-3} {1}
+empty_list = []
+print(empty_list)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python empty_list.py
+[]
+```
+
+In this example, we declare an empty list and assign it to the variable `empty_list`. We then print the list to the console. The output shows that the list is empty.
+
+### Singleton Lists
+Lists in Python can contain a single element. For example, the following code declares a list with a single element:
+
+```python title="singleton_list.py" showLineNumbers{1-3} {1}
+singleton_list = [1]
+print(singleton_list)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python singleton_list.py
+[1]
+```
+
+In this example, we declare a list with a single element and assign it to the variable `singleton_list`. We then print the list to the console. The output shows that the list contains a single element.
+
+### Homogeneous Lists
+Lists in Python can contain elements of the same data type. For example, the following code declares a list with five elements of the same data type:
+
+```python title="homogeneous_list.py" showLineNumbers{1-3} {1}
+homogeneous_list = [1, 2, 3, 4, 5]
+print(homogeneous_list)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python homogeneous_list.py
+[1, 2, 3, 4, 5]
+```
+
+In this example, we declare a list with five elements of the same data type and assign it to the variable `homogeneous_list`. We then print the list to the console. The output shows that the list contains five elements of the same data type.
+
+### Heterogeneous Lists
+Lists in Python can contain elements of different data types. For example, the following code declares a list with four elements of different data types:
+
+```python title="heterogeneous_list.py" showLineNumbers{1-3} {1}
+heterogeneous_list = [1, 2.0, "three", [4, 5]]
+print(heterogeneous_list)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python heterogeneous_list.py
+[1, 2.0, 'three', [4, 5]]
+```
+
+In this example, we declare a list with four elements of different data types and assign it to the variable `heterogeneous_list`. We then print the list to the console. The output shows that the list contains four elements of different data types.
+
+### Ordered Lists
+Lists in Python are ordered, meaning their elements are stored in a particular order. It can't be changed. If you add elements to the list, it will be added at the end of the list. For example, the following code declares a list with five elements in a particular order:
+
+```python title="ordered_list.py" showLineNumbers{1-3} {1}
+ordered_list = [1, 2, 6, 9, 5]
+print(ordered_list)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python ordered_list.py
+[1, 2, 6, 9, 5]
+```
+
+In this example, we declare a list with five elements in a particular order and assign it to the variable `ordered_list`. We then print the list to the console. The output shows that the list contains five elements in a particular order.
+
+
+### Unordered Lists
+Lists in Python are unordered, meaning their elements are not stored in a particular order. It can be changed automatically. For example, the following code declares a list with five elements in no particular order:
+
+```python title="unordered_list.py" showLineNumbers{1-3} {1}
+unordered_list = {1, 2, 6, 9, 5}
+print(unordered_list)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python unordered_list.py
+{1, 2, 6, 9, 5}
+```
+:::tip
+A Set in Python is similar to a list in other programming languages. However, unlike lists, sets do not preserve the order of their elements. It is important to note that sets are unordered.
+:::
+
+In this example, we declare a list with five elements in no particular order and assign it to the variable `unordered_list`. We then print the list to the console. The output shows that the list contains five elements in no particular order.
+
+### Sorted Lists
+Lists in Python can be sorted in ascending or descending order. For example, the following code declares a list with five elements in ascending order:
+
+```python title="sorted_list.py" showLineNumbers{1-3} {1-2}
+sorted_list = [1, 2, 6, 9, 5]
+sorted_list.sort()
+print(sorted_list)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python sorted_list.py
+[1, 2, 5, 6, 9]
+```
+
+In this example, we declare a list with five elements in ascending order and assign it to the variable `sorted_list`. We then print the list to the console. The output shows that the list contains five elements in ascending order.
+
+:::tip
+We are going to learn about sorting in the upcoming tutorials.
+:::
+
+
+### Unsorted Lists
+Lists in Python can be unsorted in ascending or descending order. For example, the following code declares a list with five elements in unsorted order:
+
+```python title="unsorted_list.py" showLineNumbers{1-3} {1}
+unsorted_list = [1, 2, 6, 9, 5]
+print(unsorted_list)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python unsorted_list.py
+[1, 2, 6, 9, 5]
+```
+
+In this example, we declare a list with five elements in unsorted order and assign it to the variable `unsorted_list`. We then print the list to the console. The output shows that the list contains five elements in unsorted order.
+
+
+
 ## Conclusion
 In this guide, we explored the ins and outs of Python lists, covering creation, manipulation, iteration, and best practices. We also covered the properties of lists and how to declare lists in Python. Now that you have a solid understanding of lists, you can start using them in your Python programs.
