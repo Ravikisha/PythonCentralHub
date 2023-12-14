@@ -29,6 +29,22 @@ match expression:
         # statements
 ```
 
+**Diagram**:
+```mermaid title="Match Case Statement" desc="Diagram of the Match Case Statement in Python"
+graph TD
+    A[Start] --> B{expression}
+    B -- pattern1 --> C[statements]
+    B -- pattern2 --> D[statements]
+    B -- pattern3 --> E[statements]
+    B -- patternN --> F[statements]
+    B -- _ --> G[statements]
+    C --> H[End]
+    D --> H
+    E --> H
+    F --> H
+    G --> H
+```
+
 :::tip
 The `case _:` is optional. It is known as the wildcard pattern. It matches any value.
 :::
@@ -151,7 +167,7 @@ In the above example, we have used the match case statement to compare the value
 ## Match Case Statement with if-elif-else Statement
 The match case statement can be combined with the if-elif-else statement. The following example demonstrates how to combine the match case statement with the if-elif-else statement:
 
-```python title="match_case.py" showLineNumbers{1} {3-15}
+```python title="match_case.py" showLineNumbers{1} {3-16}
 # match case statement
 day = "Monday"
 x = 10
@@ -182,7 +198,7 @@ In the above example, we have used the match case statement to compare the value
 ## Nested Match Case Statement
 The match case statement can be nested inside another match case statement. The following example demonstrates how to nest the match case statement:
 
-```python title="match_case.py" showLineNumbers{1} {3-15}
+```python title="match_case.py" showLineNumbers{1} {3-18}
 # match case statement
 day = "Monday"
 x = 10
