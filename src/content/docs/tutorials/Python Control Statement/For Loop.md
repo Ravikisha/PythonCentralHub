@@ -23,6 +23,16 @@ for val in sequence:
     Body of for
 ```
 
+**Diagram**:
+```mermaid title="for loop" desc="How for loop works in Python"
+graph TD
+    A[Start] --> B{Condition}
+    B -- True --> C[Body of for]
+    C --> D[Increment]
+    D --> B
+    B -- False --> E[Exit]
+```
+
 Here, `val` is the variable that takes the value of the item inside the sequence on each iteration.
 
 Loop continues until we reach the last item in the sequence. The body of for loop is separated from the rest of the code using indentation.
@@ -58,6 +68,21 @@ Loop continues until we reach the last item in the sequence. The body of for loo
 :::tip
 A for loop is also known as an iteration or looping statement. It is called as counter-controlled loop.
 :::
+
+**Flowchart of for Loop for Iterating over a Sequence**:
+
+```mermaid title="foreach loop" desc="How foreach loop works in Python"
+graph TD
+    A((Start)) --> B(Initialize array)
+    B --> C{Array not empty?}
+    C -- Yes --> D{Next element available?}
+    C -- No --> E((End))
+    D -- Yes --> F(Process element)
+    F --> G(Update loop variable)
+    G --> C
+    D -- No --> E
+```
+
 
 ## Example: Python for Loop
 ```python title="for_loop.py" showLineNumbers{1} {3-5}
