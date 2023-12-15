@@ -16,7 +16,7 @@ The while loop is used extensively in Python and alone with for and if-else loop
 ### Syntax of while Loop in Python
 The syntax of a while loop in Python programming language is −
 
-```python
+```python title="while_loop_syntax.py" showLineNumbers{1} {1-2}
 while expression:
    statement(s)
 ```
@@ -24,6 +24,20 @@ while expression:
 Here, statement(s) may be a single statement or a block of statements. The condition may be any expression, and true is any non-zero value. The loop iterates while the condition is true.
 
 When the condition becomes false, program control passes to the line immediately following the loop.
+
+**Diagram for while loop in Python**:
+
+```mermaid title="while loop" desc="while loop in Python"
+graph TD
+    A((Start)) --> B(Initialize loop)
+    B --> C{Condition}
+    C -- True --> D(Process loop)
+    D --> E{Condition}
+    E -- True --> D
+    E -- False --> F((End))
+    C -- False --> F
+    F --> G((End))
+```
 
 :::note
 In Python, all the statements indented by the same number of character spaces after a programming construct are considered to be part of a single block of code. Python uses indentation as its method of grouping statements.
@@ -36,7 +50,7 @@ A while loop is also known as condition-controlled loop.
 ## Example of while Loop in Python
 Here is an example of while loop in Python:
 
-```python title="while_loop.py" showLineNumbers{1} {2-6}
+```python title="while_loop.py" showLineNumbers{1} {5-7}
 # while loop
 numbers = [6, 5, 3, 8, 4, 2, 5, 4, 11]
 sum = 0
