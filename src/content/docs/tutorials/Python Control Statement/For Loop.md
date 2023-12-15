@@ -180,6 +180,21 @@ No items left.
 
 In this program, we have used the `for` loop with the `else` clause. The `else` clause executes after the completion of the `for` loop. The `else` clause will be executed even if there is a `continue` statement inside the `for` loop (but not if `break` is encountered).
 
+:::note
+The `else` block just after `for/while` is executed only when the loop is NOT terminated by a `break` statement.
+:::
+
+**Diagram for for loop with else**:
+
+```mermaid title="for loop with else" desc="How for loop with else works in Python"
+graph TD
+    A[Start] --> B{Condition}
+    B -- True --> C[Body of for]
+    C --> D[Increment]
+    D --> B
+    B -- False --> E[Else]
+    E --> F[Exit]
+```
 
 ## Iterating by Sequence Index
 In Python, we can also access the sequence items using the index. The index starts from 0 in Python. We can use the index to iterate over a sequence. Consider the following example:
