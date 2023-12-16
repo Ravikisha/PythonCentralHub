@@ -28,7 +28,7 @@ list[index] = new_value
 
 The following example shows how to change the first item in the list to a different value.
 
-```python title="change_first_item.py" showLineNumbers{1,4}
+```python title="change_first_item.py" showLineNumbers{1} {1,4}
 numbers = [1, 2, 3, 4, 5]
 print(numbers)
 
@@ -55,7 +55,7 @@ list[start:end] = new_list
 
 The following example shows how to change the first three items in the list to different values.
 
-```python title="change_multiple_items.py" showLineNumbers{1,4}
+```python title="change_multiple_items.py" showLineNumbers{1} {1,4}
 numbers = [1, 2, 3, 4, 5]
 print(numbers)
 
@@ -82,7 +82,7 @@ list[index] = new_value
 
 The following example shows how to change the first item in the list to a string.
 
-```python title="change_item_type.py" showLineNumbers{1,4}
+```python title="change_item_type.py" showLineNumbers{1} {1,4}
 numbers = [1, 2, 3, 4, 5]
 print(numbers)
 
@@ -109,7 +109,7 @@ list.insert(index, new_item)
 
 The following example shows how to insert a new item at the beginning of the list.
 
-```python title="insert_item.py" showLineNumbers{1,4}
+```python title="insert_item.py" showLineNumbers{1} {1,4}
 numbers = [1, 2, 3, 4, 5]
 print(numbers)
 
@@ -136,7 +136,7 @@ list.append(new_item)
 
 The following example shows how to append a new item to the end of the list.
 
-```python title="append_item.py" showLineNumbers{1,4}
+```python title="append_item.py" showLineNumbers{1} {1,4}
 numbers = [1, 2, 3, 4, 5]
 print(numbers)
 
@@ -163,7 +163,7 @@ list.insert(index, new_item)
 
 The following example shows how to insert a new item at the end of the list.
 
-```python title="insert_item_at_negative_index.py" showLineNumbers{1,4}
+```python title="insert_item_at_negative_index.py" showLineNumbers{1} {1,4}
 numbers = [1, 2, 3, 4, 5]
 print(numbers)
 
@@ -190,7 +190,7 @@ list.remove(item)
 
 The following example shows how to remove an item from the list.
 
-```python title="remove_item.py" showLineNumbers{1,4}
+```python title="remove_item.py" showLineNumbers{1} {1,4}
 numbers = [1, 2, 3, 4, 5]
 print(numbers)
 
@@ -217,7 +217,7 @@ list.pop(index)
 
 The following example shows how to remove an item at a specific index from the list.
 
-```python title="remove_item_at_index.py" showLineNumbers{1,4}
+```python title="remove_item_at_index.py" showLineNumbers{1} {1,4}
 numbers = [1, 2, 3, 4, 5]
 print(numbers)
 
@@ -244,7 +244,7 @@ list.clear()
 
 The following example shows how to remove all items from the list.
 
-```python title="remove_all_items.py" showLineNumbers{1,4}
+```python title="remove_all_items.py" showLineNumbers{1} {1,4}
 numbers = [1, 2, 3, 4, 5]
 print(numbers)
 
@@ -271,7 +271,7 @@ del list[index]
 
 The following example shows how to remove an item from the list.
 
-```python title="remove_item_using_del.py" showLineNumbers{1,4}
+```python title="remove_item_using_del.py" showLineNumbers{1} {1,4}
 numbers = [1, 2, 3, 4, 5]
 print(numbers)
 
@@ -298,7 +298,7 @@ del list[start:end]
 
 The following example shows how to remove multiple items from the list.
 
-```python title="remove_multiple_items_using_del.py" showLineNumbers{1,4}
+```python title="remove_multiple_items_using_del.py" showLineNumbers{1} {1,4}
 numbers = [1, 2, 3, 4, 5]
 print(numbers)
 
@@ -319,14 +319,14 @@ In the example above, we removed the items 2 and 3 from the list.
 ## Change List Item in Loop
 You can change list items in a loop by using the `enumerate()` function. The `enumerate()` function takes one argument: the list you want to loop over. The `enumerate()` function returns a list of tuples. Each tuple contains the index and the item at that index.
 
-```python title="syntax.py" showLineNumbers{1} {1}
+```python title="syntax.py" showLineNumbers{1} {1-2}
 for index, item in enumerate(list):
     # do something with index and item
 ```
 
 The following example shows how to change list items in a loop.
 
-```python title="change_items_in_loop.py" showLineNumbers{1,4-6}
+```python title="change_items_in_loop.py" showLineNumbers{1} {1,4-5}
 numbers = [1, 2, 3, 4, 5]
 print(numbers)
 
@@ -378,7 +378,7 @@ You can change list items in a list comprehension by using the `enumerate()` fun
 
 The following example shows how to change list items in a list comprehension.
 
-```python title="change_items_in_list_comprehension.py" showLineNumbers{1}
+```python title="change_items_in_list_comprehension.py" showLineNumbers{1} {1,4}
 numbers = [1, 2, 3, 4, 5]
 print(numbers)
 
