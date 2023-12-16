@@ -39,21 +39,6 @@ Here, `val` is the variable that takes the value of the item inside the sequence
 
 We generally use continue statement inside the loop when we want to skip the rest of the code inside the loop for the current iteration only. Loop does not terminate but continues on with the next iteration.
 
-**Diagram for continue statement in loop**:
-
-```mermaid title="continue statement" desc="continue statement in loop"
-graph TD
-    A((Start)) --> B(Initialize loop)
-    B --> C{Condition}
-    C -- True --> D(Process loop)
-    D --> E{Continue condition met?}
-    E -- Yes --> F(Skip to next iteration)
-    F --> C
-    E -- No --> G{End condition met?}
-    G -- Yes --> H((End))
-    G -- No --> C
-```
-
 ## Example of continue Statement in Python
 Here is an example of a continue statement in python:
 

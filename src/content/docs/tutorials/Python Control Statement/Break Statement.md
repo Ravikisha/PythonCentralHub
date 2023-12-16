@@ -38,19 +38,6 @@ Here, `val` is the variable that takes the value of the item inside the sequence
 
 We generally use break statement inside the loop when we want to exit it immediately, for example, when some condition is met.
 
-**Diagram for break statement in loop**:
-
-```mermaid title="break statement" desc="break statement in loop"
-graph TD
-    A((Start)) --> B(Initialize loop)
-    B --> C{Condition}
-    C -- True --> D(Process loop)
-    D --> E{Break condition met?}
-    E -- Yes --> F(Break out of loop)
-    F --> G((End))
-    E -- No --> C
-    C -- False --> G((End))
-```
 
 ## Example of break Statement in Python
 Here is an example of a break statement in python:

@@ -39,18 +39,6 @@ AssertionError: x should be a positive number
 
 In this example, if the value of `x` is not greater than 0, an `AssertionError` is raised with the specified message.
 
-**Diagram for assert statement in Python**:
-
-```mermaid title="assert statement" desc="assert statement in Python"
-graph TD
-    A((Start)) --> B(Initialize)
-    B --> C{Assertion Check}
-    C -- True --> D(Continue Execution)
-    D --> E((End))
-    C -- False --> F(Assertion Error)
-    F --> G((End))
-```
-
 ## Use Cases for the `assert` Statement
 
 ### 1. **Debugging and Development:**
