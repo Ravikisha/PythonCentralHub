@@ -47,18 +47,6 @@ class ClassName:
 ## How Does the pass Statement Work?
 The pass statement is a null operation (NOP) that does nothing when executed. It is used to construct a syntactically correct block of code that does nothing when executed. The pass statement is useful in scenarios where a statement is required by the Python syntax but no action is required by the program. It is also used to create minimal classes and functions that will be implemented in the future. 
 
-**Diagram for pass statement in Python**:
-
-```mermaid title="pass statement" desc="pass statement in Python"
-graph TD
-    A((Start)) --> B(Define Function)
-    B --> C{Function Body}
-    C -- Has Code --> D(Process Code)
-    D --> E((End))
-    C -- No Code --> F(Use pass)
-    F --> E((End))
-```
-
 ## The Role of `pass` in Control Flow
 
 ### 1. **Creating Empty Classes:**

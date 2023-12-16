@@ -25,20 +25,6 @@ Here, statement(s) may be a single statement or a block of statements. The condi
 
 When the condition becomes false, program control passes to the line immediately following the loop.
 
-**Diagram for while loop in Python**:
-
-```mermaid title="while loop" desc="while loop in Python"
-graph TD
-    A((Start)) --> B(Initialize loop)
-    B --> C{Condition}
-    C -- True --> D(Process loop)
-    D --> E{Condition}
-    E -- True --> D
-    E -- False --> F((End))
-    C -- False --> F
-    F --> G((End))
-```
-
 :::note
 In Python, all the statements indented by the same number of character spaces after a programming construct are considered to be part of a single block of code. Python uses indentation as its method of grouping statements.
 :::

@@ -30,16 +30,6 @@ There are five types of selection statements in Python:
 - `ternary operator` statement
 - `match-case` statement
 
-**Diagram of the Selection Statements in Python:**
-    
-```mermaid title="Selection Statements" desc="Diagram of the Selection Statements in Python"
-graph TD
-    A[Start] --> B{condition}
-    B -- True --> C[statements]
-    C --> D[End]
-    B -- False --> E[End]
-```
-
 
 ## Iteration Statements
 #### `for` & `while` Statements
@@ -48,17 +38,6 @@ Iteration statements in Python allow you to execute a block of code repeatedly. 
 There are two types of iteration statements in Python:
 - `for` statement
 - `while` statement
-
-**Diagram of the Iteration Statements in Python:**
-
-```mermaid title="Iteration Statements" desc="Diagram of the Iteration Statements in Python"
-graph TD
-    A[Start] --> C{loop condition}
-    C -- True --> D[statements]
-    D --> E[Increment]
-    E --> C
-    C -- False --> F[End]
-```
 
 :::tip
 Python does not have a do-while statement.
@@ -73,17 +52,6 @@ There are four types of jump statements in Python:
 - `continue` statement
 - `pass` statement
 - `assert` statement
-
-**Diagram of the Jump Statements in Python:**
-
-```mermaid title="Jump Statements" desc="Diagram of the Jump Statements in Python"
-graph TD
-    A[Start] --> B{condition}
-    B -- True --> C[jump statements]
-    C -- break --> D[End]
-    C -- continue --> B
-```
-
 
 ## Conclusion
 In this guide, we explored the key types of control statements in Python, their syntax, and best practices for their effective use. We also explored the ternary operator and match-case statement, which are new in Python 3.10. Now that you have a solid understanding of control statements in Python, you can use them to write flexible and dynamic Python programs.

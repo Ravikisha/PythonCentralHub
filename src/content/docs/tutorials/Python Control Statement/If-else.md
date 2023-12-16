@@ -63,16 +63,6 @@ if condition:
     # code to execute if condition is True
 ```
 
-**Diagram**:
-```mermaid title="if statement" desc="Diagram of the if statement in Python"
-graph TD
-    A[Start] --> B{Condition}
-    B -->|True| C[Execute Code]
-    C --> D[End]
-    B ---->|False| E[End]
-```
-
-
 The `if` statement begins with the `if` keyword, followed by a condition. The condition is followed by a colon (`:`). The code to execute if the condition is `True` is written on the next line, indented by four spaces.
 
 :::tip
@@ -108,16 +98,6 @@ if condition:
     # code to execute if condition is True
 else:
     # code to execute if condition is False
-```
-
-**Diagram**:
-```mermaid title="if-else statement" desc="Diagram of the if-else statement in Python"
-graph TD
-    A[Start] --> B{Condition}
-    B -->|True| C[Execute Code]
-    C --> D[End]
-    B ---->|False| E[Execute Code]
-    E --> F[End]
 ```
 
 The `if-else` statement begins with the `if` keyword, followed by a condition. The condition is followed by a colon (`:`). The code to execute if the condition is `True` is written on the next line, indented by four spaces. The code to execute if the condition is `False` is written after the `else` keyword, on the next line, indented by four spaces.
@@ -159,19 +139,6 @@ elif condition2:
     # code to execute if condition2 is True
 else:
     # code to execute if condition1 and condition2 are False
-```
-
-**Diagram**:
-```mermaid title="if-elif-else statement" desc="Diagram of the if-elif-else statement in Python"
-graph TD
-    A[Start] --> B{Condition1}
-    B -->|True| C[Execute Code]
-    C --> D[End]
-    B ---->|False| E{Condition2}
-    E -->|True| F[Execute Code]
-    F --> G[End]
-    E ---->|False| H[Execute Code]
-    H --> I[End]
 ```
 
 The `if-elif-else` statement begins with the `if` keyword, followed by a condition. The condition is followed by a colon (`:`). The code to execute if the condition is `True` is written on the next line, indented by four spaces. The `elif` keyword is followed by a condition. The condition is followed by a colon (`:`). The code to execute if the condition is `True` is written on the next line, indented by four spaces. The code to execute if the condition is `False` is written after the `else` keyword, on the next line, indented by four spaces.
@@ -243,20 +210,6 @@ else:
     # code to execute if condition1 is False
 ```
 
-**Diagram**:
-```mermaid title="nested if-else statement" desc="Diagram of the nested if-else statement in Python"
-graph TD
-    A[Start] --> B{Condition1}
-    B -->|True| C[Execute Code]
-    C --> D{Condition2}
-    D -->|True| E[Execute Code]
-    E --> F[End]
-    D ---->|False| G[Execute Code]
-    G --> H[End]
-    B ---->|False| I[Execute Code]
-    I --> J[End]
-```
-
 The `nested if-else` statement begins with the `if` keyword, followed by a condition. The condition is followed by a colon (`:`). The code to execute if the condition is `True` is written on the next line, indented by four spaces. The `if` keyword is followed by a condition. The condition is followed by a colon (`:`). The code to execute if the condition is `True` is written on the next line, indented by four spaces. The code to execute if the condition is `False` is written after the `else` keyword, on the next line, indented by four spaces. The code to execute if the condition is `False` is written after the `else` keyword, on the next line, indented by four spaces.
 
 :::tip
@@ -294,16 +247,6 @@ The syntax of the `ternary operator` statement in Python is as follows:
 
 ```python title="Syntax" showLineNumbers{1} {1}
 condition1 if condition2 else condition3
-```
-
-**Diagram**:
-```mermaid title="ternary operator statement" desc="Diagram of the ternary operator statement in Python"
-graph TD
-    A[Start] --> B{Condition2}
-    B -->|True| C[Execute Code]
-    C --> D[End]
-    B ---->|False| E[Execute Code]
-    E --> F[End]
 ```
 
 The `ternary operator` statement begins with a condition, followed by the `if` keyword. The `if` keyword is followed by a condition. The condition is followed by the `else` keyword. The `else` keyword is followed by a condition.
