@@ -333,4 +333,4 @@ C:\Users\username>python list_slice.py
 In the above example, we create a list of five elements and print a slice of the list from index -1 to index 3 with a step of -1. This means that the slice will be created in reverse order.
 
 ## Conclusion
-In this guide, we explored the various methods and techniques for accessing list items in Python. We also learned about list indexing, negative indexing, multidimensional lists, and list slices. Now that you understand how to access list items in Python, you can start working with lists more effectively in your programs. 
+In this guide, we explored the various methods and techniques for accessing list items in Python. We also learned about list indexing, negative indexing, multidimensional lists, and list slices. Now that you understand how to access list items in Python, you can start working with lists more effectively in your programs. For more information on lists, check out Python's [official documentation](https://docs.python.org/3/tutorial/datastructures.html#more-on-lists).
