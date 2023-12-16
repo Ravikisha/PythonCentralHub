@@ -9,19 +9,6 @@ sidebar:
 In Python, lists are a versatile and commonly used data structure for storing ordered collections of items. Understanding how to access elements within a list is fundamental to working with this data structure effectively. In this guide, we'll explore the various methods and techniques for accessing list items in Python.
 
 
-<!-- ```python title="math.py" showLineNumbers{1} {1,3}
-import math
-
-print(math.pi)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2}
-C:\Users\username>python math.py
-3.141592653589793
-``` -->
-
 ## Basics of List Indexing
 List indexing refers to the process of retrieving elements from a list based on their position. In Python, list indexing starts at 0, meaning the first element is at index 0, the second at index 1, and so on. Additionally, negative indices count from the end of the list, with -1 representing the last element.
 
