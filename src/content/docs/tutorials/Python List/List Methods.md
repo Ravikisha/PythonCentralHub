@@ -39,25 +39,6 @@ There are many methods that you can use with lists. Here is a list of all the me
 |24|[del](#del)|Removes the specified index|`del list[index]`|
 |25|[in](#in)|Returns True if a sequence with the specified value is present in the list|`element in list`|
 |26|[not in](#not-in)|Returns True if a sequence with the specified value is not present in the list|`element not in list`|
-<!-- 
-```python title="convert_list_to_string_using_map.py" showLineNumbers{1} {1,3-4}
-numbers = [1, 2, 3, 4, 5]
-
-string = ''.join(map(str, numbers))
-
-print(numbers)
-print(string)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2-3}
-C:\Users\username>python convert_list_to_string_using_map.py
-[1, 2, 3, 4, 5]
-12345
-```
-
-In the example above, we converted a list to a string. -->
 
 
 ## append()
