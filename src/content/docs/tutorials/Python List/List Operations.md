@@ -396,5 +396,228 @@ C:\Users\username>python change_items_in_list_comprehension.py
 
 In the example above, we changed all items in the list to 10 times their original value.
 
+## Change List Item in List Comprehension with Condition
+You can change list items in a list comprehension with a condition by using the `enumerate()` function. The `enumerate()` function takes one argument: the list you want to loop over. The `enumerate()` function returns a list of tuples. Each tuple contains the index and the item at that index.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+[expression for index, item in enumerate(list) if condition]
+```
+
+The following example shows how to change list items in a list comprehension with a condition.
+
+```python title="change_items_in_list_comprehension_with_condition.py" showLineNumbers{1} {1,4}
+numbers = [1, 2, 3, 4, 5]
+print(numbers)
+
+numbers = [item * 10 for index, item in enumerate(numbers) if item % 2 == 0]
+print(numbers)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python change_items_in_list_comprehension_with_condition.py
+[1, 2, 3, 4, 5]
+[20, 40]
+```
+
+In the example above, we changed all even items in the list to 10 times their original value.
+
+## Sort List
+You can sort a list by using the `sort()` method. The `sort()` method takes no arguments.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+list.sort()
+```
+
+The following example shows how to sort a list.
+
+```python title="sort_list.py" showLineNumbers{1} {1,4}
+numbers = [5, 2, 4, 1, 3]
+print(numbers)
+
+numbers.sort()
+print(numbers)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python sort_list.py
+[5, 2, 4, 1, 3]
+[1, 2, 3, 4, 5]
+```
+
+In the example above, we sorted the list in ascending order.
+
+## Sort List in Descending Order
+You can sort a list in descending order by using the `sort()` method with the argument `reverse=True`.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+list.sort(reverse=True)
+```
+
+The following example shows how to sort a list in descending order.
+
+```python title="sort_list_in_descending_order.py" showLineNumbers{1} {1,4}
+numbers = [5, 2, 4, 1, 3]
+print(numbers)
+
+numbers.sort(reverse=True)
+print(numbers)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python sort_list_in_descending_order.py
+[5, 2, 4, 1, 3]
+[5, 4, 3, 2, 1]
+```
+
+In the example above, we sorted the list in descending order.
+
+## Sort List using Sorted
+You can sort a list by using the `sorted()` function. The `sorted()` function takes one argument: the list you want to sort.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+sorted(list)
+```
+
+The following example shows how to sort a list.
+
+```python title="sort_list_using_sorted.py" showLineNumbers{1} {1,4}
+numbers = [5, 2, 4, 1, 3]
+print(numbers)
+
+numbers = sorted(numbers)
+print(numbers)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python sort_list_using_sorted.py
+[5, 2, 4, 1, 3]
+[1, 2, 3, 4, 5]
+```
+
+In the example above, we sorted the list in ascending order.
+
+:::tip
+Sorted `sorted()` function returns a new sorted list. The original list remains unchanged. You can use the `sorted()` function to sort a list.
+It is only work on Python 3.6 or higher.
+:::
+
+## Sort List using Sorted in Descending Order
+You can sort a list in descending order by using the `sorted()` function with the argument `reverse=True`.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+sorted(list, reverse=True)
+```
+
+The following example shows how to sort a list in descending order.
+
+```python title="sort_list_using_sorted_in_descending_order.py" showLineNumbers{1} {1,4}
+numbers = [5, 2, 4, 1, 3]
+print(numbers)
+
+numbers = sorted(numbers, reverse=True)
+print(numbers)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python sort_list_using_sorted_in_descending_order.py
+[5, 2, 4, 1, 3]
+[5, 4, 3, 2, 1]
+```
+
+In the example above, we sorted the list in descending order.
+
+## Sort List with Key
+You can sort a list with a key by using the `sort()` method with the argument `key`. The `sort()` method takes one argument: the key function.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+list.sort(key=key_function)
+```
+
+The following example shows how to sort a list with a key.
+
+```python title="sort_list_with_key.py" showLineNumbers{1} {1,4-5}
+numbers = [5, 2, 4, 1, 3]
+print(numbers)
+
+numbers.sort(key=lambda x: x % 2 == 0)
+print(numbers)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python sort_list_with_key.py
+[5, 2, 4, 1, 3]
+[5, 1, 3, 2, 4]
+```
+
+In the example above, we sorted the list with a key. The key function returns `True` if the item is even and `False` if the item is odd.
+
+## Sort List with Key in Descending Order
+You can sort a list with a key in descending order by using the `sort()` method with the argument `key` and `reverse=True`. The `sort()` method takes two arguments: the key function and the reverse flag.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+list.sort(key=key_function, reverse=True)
+```
+
+The following example shows how to sort a list with a key in descending order.
+
+```python title="sort_list_with_key_in_descending_order.py" showLineNumbers{1} {1,4-5}
+numbers = [5, 2, 4, 1, 3]
+print(numbers)
+
+numbers.sort(key=lambda x: x % 2 == 0, reverse=True)
+print(numbers)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python sort_list_with_key_in_descending_order.py
+[5, 2, 4, 1, 3]
+[4, 2, 5, 1, 3]
+```
+
+In the example above, we sorted the list with a key in descending order. The key function returns `True` if the item is even and `False` if the item is odd.
+
+## Sort List with Key using Sorted
+You can sort a list with a key by using the `sorted()` function with the argument `key`. The `sorted()` function takes two arguments: the list you want to sort and the key function.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+sorted(list, key=key_function)
+```
+
+The following example shows how to sort a list with a key.
+
+```python title="sort_list_with_key_using_sorted.py" showLineNumbers{1} {1,4-5}
+numbers = [5, 2, 4, 1, 3]
+print(numbers)
+
+numbers = sorted(numbers, key=lambda x: x % 2 == 0)
+print(numbers)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python sort_list_with_key_using_sorted.py
+[5, 2, 4, 1, 3]
+[5, 1, 3, 2, 4]
+```
+
+In the example above, we sorted the list with a key. The key function returns `True` if the item is even and `False` if the item is odd.
+
+
+
 ## Conclusion
 You can change list items in Python. You can change a list item at a specific index, change multiple list items at once, or change a list item to a different type. You can also insert, append, and remove items from a list. You can change list items in a loop or in a list comprehension. For more learning resources, see Python Central Hub.
