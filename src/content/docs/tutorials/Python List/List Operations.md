@@ -875,7 +875,157 @@ C:\Users\username>python id.py
 3015155020800
 ```
 
+In the example above, we got the memory address of the list. The memory address of the list is not the same as the memory address of the new list.
+:::
 
+## Join List
+You can join two lists by using the `+` operator. The `+` operator takes two arguments: the first list and the second list.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+new_list = list1 + list2
+```
+
+The following example shows how to join two lists.
+
+```python title="join_list.py" showLineNumbers{1} {1,3-4}
+numbers1 = [1, 2, 3, 4, 5]
+
+numbers2 = [6, 7, 8, 9, 10]
+numbers = numbers1 + numbers2
+
+print(numbers1)
+print(numbers2)
+print(numbers)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python join_list.py
+[1, 2, 3, 4, 5]
+[6, 7, 8, 9, 10]
+[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+```
+
+In the example above, we joined two lists.
+
+## Join List using Extend
+You can join two lists by using the `extend()` method. The `extend()` method takes one argument: the list you want to join.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+list1.extend(list2)
+```
+
+The following example shows how to join two lists.
+
+```python title="join_list_using_extend.py" showLineNumbers{1} {1,3-4}
+numbers1 = [1, 2, 3, 4, 5]
+
+numbers2 = [6, 7, 8, 9, 10]
+numbers1.extend(numbers2)
+
+print(numbers1)
+print(numbers2)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python join_list_using_extend.py
+[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+[6, 7, 8, 9, 10]
+```
+
+In the example above, we joined two lists.
+
+## Join List using Append
+You can join two lists by using the `append()` method. The `append()` method takes one argument: the list you want to join.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+list1.append(list2)
+```
+
+The following example shows how to join two lists.
+
+```python title="join_list_using_append.py" showLineNumbers{1} {1,3-4}
+numbers1 = [1, 2, 3, 4, 5]
+
+numbers2 = [6, 7, 8, 9, 10]
+numbers1.append(numbers2)
+
+print(numbers1)
+print(numbers2)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python join_list_using_append.py
+[1, 2, 3, 4, 5, [6, 7, 8, 9, 10]]
+[6, 7, 8, 9, 10]
+```
+
+In the example above, we joined two lists.
+
+## Join List using Insert
+You can join two lists by using the `insert()` method. The `insert()` method takes two arguments: the index where you want to insert the new list and the new list.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+list1.insert(index, list2)
+```
+
+The following example shows how to join two lists.
+
+```python title="join_list_using_insert.py" showLineNumbers{1} {1,3-4}
+numbers1 = [1, 2, 3, 4, 5]
+
+numbers2 = [6, 7, 8, 9, 10]
+numbers1.insert(5, numbers2)
+
+print(numbers1)
+print(numbers2)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python join_list_using_insert.py
+[1, 2, 3, 4, 5, [6, 7, 8, 9, 10]]
+[6, 7, 8, 9, 10]
+```
+
+In the example above, we joined two lists.
+
+## Join List using List Comprehension
+You can join two lists by using list comprehension. The list comprehension syntax is `[item for item in list1 + list2]`.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+new_list = [item for item in list1 + list2]
+```
+
+The following example shows how to join two lists.
+
+```python title="join_list_using_list_comprehension.py" showLineNumbers{1} {1,3-4}
+numbers1 = [1, 2, 3, 4, 5]
+
+numbers2 = [6, 7, 8, 9, 10]
+numbers = [item for item in numbers1 + numbers2]
+
+print(numbers1)
+print(numbers2)
+print(numbers)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python join_list_using_list_comprehension.py
+[1, 2, 3, 4, 5]
+[6, 7, 8, 9, 10]
+[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+```
+
+In the example above, we joined two lists.
 
 ## Conclusion
 You can change list items in Python. You can change a list item at a specific index, change multiple list items at once, or change a list item to a different type. You can also insert, append, and remove items from a list. You can change list items in a loop or in a list comprehension. For more learning resources, see Python Central Hub.
