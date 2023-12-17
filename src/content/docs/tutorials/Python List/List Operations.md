@@ -617,6 +617,264 @@ C:\Users\username>python sort_list_with_key_using_sorted.py
 
 In the example above, we sorted the list with a key. The key function returns `True` if the item is even and `False` if the item is odd.
 
+## Copy List
+You can copy a list using `=` operator. The `=` operator takes one argument: the list you want to copy.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+new_list = list
+```
+
+The following example shows how to copy a list.
+
+```python title="copy_list.py" showLineNumbers{1} {1,4}
+numbers = [1, 2, 3, 4, 5]
+print(numbers)
+
+new_numbers = numbers
+print(new_numbers)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python copy_list.py
+[1, 2, 3, 4, 5]
+[1, 2, 3, 4, 5]
+```
+
+In the example above, we copied the list. The new list is a reference to the original list. If you change the original list, the new list will also change.
+
+:::caution
+Copy `=` operator creates a reference to the original list. If you change the original list, the new list will also change. You can use the `=` operator to copy a list.
+
+```python title="copy.py" showLineNumbers{1} {1, 3-4}
+numbers = [1, 2, 3, 4, 5]
+
+new_numbers = numbers
+new_numbers[0] = 10
+
+print(numbers)
+print(new_numbers)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python copy.py
+[10, 2, 3, 4, 5]
+[10, 2, 3, 4, 5]
+```
+
+In the example above, we copied the list. The new list is a reference to the original list. If you change the original list, the new list will also change.
+:::
+
+## Copy List using Copy
+You can copy a list using the `copy()` method. The `copy()` method takes no arguments.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+new_list = list.copy()
+```
+
+The following example shows how to copy a list.
+
+```python title="copy_list_using_copy.py" showLineNumbers{1} {1,3-4}
+numbers = [1, 2, 3, 4, 5]
+
+new_numbers = numbers.copy()
+new_numbers[0] = 10
+
+print(numbers)
+print(new_numbers)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python copy_list_using_copy.py
+[1, 2, 3, 4, 5]
+[10, 2, 3, 4, 5]
+```
+
+In the example above, we copied the list. The new list is a copy of the original list. If you change the original list, the new list will not change.
+
+:::tip
+Copy `copy()` method creates a copy of the original list. If you change the original list, the new list will not change. You can use the `copy()` method to copy a list.
+:::
+
+## Copy List using List
+You can copy a list using the `list()` function. The `list()` function takes one argument: the list you want to copy.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+new_list = list(list)
+```
+
+The following example shows how to copy a list.
+
+```python title="copy_list_using_list.py" showLineNumbers{1} {1,3-4}
+numbers = [1, 2, 3, 4, 5]
+
+new_numbers = list(numbers)
+new_numbers[0] = 10
+
+print(numbers)
+print(new_numbers)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python copy_list_using_list.py
+[1, 2, 3, 4, 5]
+[10, 2, 3, 4, 5]
+```
+
+In the example above, we copied the list. The new list is a copy of the original list. If you change the original list, the new list will not change.
+
+:::tip
+Copy `list()` function creates a copy of the original list. If you change the original list, the new list will not change. You can use the `list()` function to copy a list.
+:::
+
+## Copy List using Slicing
+You can copy a list using slicing. The slicing syntax is `list[:]`.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+new_list = list[:]
+```
+
+The following example shows how to copy a list.
+
+```python title="copy_list_using_slicing.py" showLineNumbers{1} {1,3-4}
+numbers = [1, 2, 3, 4, 5]
+
+new_numbers = numbers[:]
+new_numbers[0] = 10
+
+print(numbers)
+print(new_numbers)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python copy_list_using_slicing.py
+[1, 2, 3, 4, 5]
+[10, 2, 3, 4, 5]
+```
+
+In the example above, we copied the list. The new list is a copy of the original list. If you change the original list, the new list will not change.
+
+:::tip
+Copy Slicing `list[:]` creates a copy of the original list. If you change the original list, the new list will not change. You can use the slicing syntax to copy a list.
+:::
+
+## Copy List using List Comprehension
+You can copy a list using list comprehension. The list comprehension syntax is `[item for item in list]`.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+new_list = [item for item in list]
+```
+
+The following example shows how to copy a list.
+
+```python title="copy_list_using_list_comprehension.py" showLineNumbers{1} {1,3-4}
+numbers = [1, 2, 3, 4, 5]
+
+new_numbers = [item for item in numbers]
+new_numbers[0] = 10
+
+print(numbers)
+print(new_numbers)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python copy_list_using_list_comprehension.py
+[1, 2, 3, 4, 5]
+[10, 2, 3, 4, 5]
+```
+
+In the example above, we copied the list. The new list is a copy of the original list. If you change the original list, the new list will not change.
+
+:::tip
+Copy List Comprehension `[item for item in list]` creates a copy of the original list. If you change the original list, the new list will not change. You can use the list comprehension syntax to copy a list.
+:::
+
+
+## Copy List using Deepcopy
+You can copy a list using the `deepcopy()` function from the `copy` module. The `deepcopy()` function takes one argument: the list you want to copy.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+new_list = deepcopy(list)
+```
+
+The following example shows how to copy a list.
+
+```python title="copy_list_using_deepcopy.py" showLineNumbers{1} {1,3,5-6}
+from copy import deepcopy
+
+numbers = [1, 2, 3, 4, 5]
+
+new_numbers = deepcopy(numbers)
+new_numbers[0] = 10
+
+print(numbers)
+print(new_numbers)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-7}
+C:\Users\username>python copy_list_using_deepcopy.py
+[1, 2, 3, 4, 5]
+[10, 2, 3, 4, 5]
+```
+
+In the example above, we copied the list. The new list is a copy of the original list. If you change the original list, the new list will not change.
+
+:::tip
+Copy Deepcopy `deepcopy()` function creates a copy of the original list. If you change the original list, the new list will not change. You can use the `deepcopy()` function to copy a list.
+:::
+
+:::note
+To get the memory address of a list, you can use the `id()` function. The `id()` function takes one argument: the list you want to get the memory address of.
+
+```python title="id.py" showLineNumbers{1} {1, 3-4}
+numbers = [1, 2, 3, 4, 5]
+
+new_numbers = numbers
+
+print(id(numbers))
+print(id(new_numbers))
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python id.py
+140704000000000
+140704000000000
+```
+
+In the example above, we got the memory address of the list. The memory address of the list is the same as the memory address of the new list.
+
+```python title="id.py" showLineNumbers{1} {1, 3-4}
+numbers = [1, 2, 3, 4, 5]
+
+new_numbers = numbers.copy()
+
+print(id(numbers))
+print(id(new_numbers))
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python id.py
+3015155039744
+3015155020800
+```
+
 
 
 ## Conclusion
