@@ -1015,5 +1015,81 @@ C:\Users\username>python join_list_using_list_comprehension.py
 
 In the example above, we joined two lists.
 
+## Convert List to String
+You can convert a list to a string by using the `join()` method. The `join()` method takes one argument: the list you want to convert to a string.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+string = ''.join(list)
+```
+
+The following example shows how to convert a list to a string.
+
+```python title="convert_list_to_string.py" showLineNumbers{1} {1,3-4}
+numbers = [1, 2, 3, 4, 5]
+
+string = ''.join(str(number) for number in numbers)
+
+print(numbers)
+print(string)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python convert_list_to_string.py
+[1, 2, 3, 4, 5]
+12345
+```
+
+In the example above, we converted a list to a string.
+
+You can also convert into string with separator.
+
+```python title="convert_list_to_string_with_separator.py" showLineNumbers{1} {1,3-4}
+numbers = [1, 2, 3, 4, 5]
+
+string = ','.join(str(number) for number in numbers)
+
+print(numbers)
+print(string)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python convert_list_to_string_with_separator.py
+[1, 2, 3, 4, 5]
+1,2,3,4,5
+```
+
+In the example above, we converted a list to a string with separator.
+
+You can convert a list to a string by using the `map()` function. The `map()` function takes two arguments: the function you want to apply to each item in the list and the list you want to convert to a string.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+string = ''.join(map(function, list))
+```
+
+The following example shows how to convert a list to a string.
+
+```python title="convert_list_to_string_using_map.py" showLineNumbers{1} {1,3-4}
+numbers = [1, 2, 3, 4, 5]
+
+string = ''.join(map(str, numbers))
+
+print(numbers)
+print(string)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python convert_list_to_string_using_map.py
+[1, 2, 3, 4, 5]
+12345
+```
+
+In the example above, we converted a list to a string.
+
 ## Conclusion
 You can change list items in Python. You can change a list item at a specific index, change multiple list items at once, or change a list item to a different type. You can also insert, append, and remove items from a list. You can change list items in a loop or in a list comprehension. For more learning resources, see Python Central Hub.
