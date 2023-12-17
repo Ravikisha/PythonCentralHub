@@ -10,18 +10,6 @@ List is a mutable data type. This means that you can change the list after it ha
 ## Change List Item at Specific Index
 You can change a list item at a specific index by assigning a new value to the index. For example, you can change the first item in the list to a different value by assigning a new value to the index 0.
 
-<!-- ```python title="empty_list.py" showLineNumbers{1} {1}
-empty_list = []
-print(empty_list)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2}
-C:\Users\username>python empty_list.py
-[]
-``` -->
-
 ```python title="syntax.py" showLineNumbers{1} {1}
 list[index] = new_value
 ```
