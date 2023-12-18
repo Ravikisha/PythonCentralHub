@@ -73,7 +73,7 @@ while True:
             print("4. Division")
             print("5. Square Root")
             print("6. Power")
-            print("7. Exit")
+            print("E. Exit")
             print("R. Restart")
         else:
             print("Invalid Input")
@@ -87,7 +87,7 @@ while True:
         print("4. Division")
         print("5. Square Root")
         print("6. Power")
-        print("7. Exit")
+        print("E. Exit")
         print("R. Restart")
 
     else:
