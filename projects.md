@@ -23,7 +23,7 @@ Certainly! Here's a list of 150 Python project ideas across different skill leve
 19. [x] Calculator with GUI (Tkinter)
 20. [x] Basic Email Sender
 21. [x] Simple Paint Program
-22. [ ] Basic Quiz Game
+22. [x] Basic Quiz Game
 23. [ ] Text-based Adventure Game
 24. [ ] RSS Feed Reader
 25. [ ] Morse Code Translator
