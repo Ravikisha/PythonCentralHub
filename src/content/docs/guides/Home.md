@@ -33,7 +33,7 @@ Ready to dive in? Here are a few recommended starting points:
 
 - [**Python Fundamentals:**](/tutorials/getstarted/) Explore the core concepts of Python, including variables, data types, and control structures.
 
-- [**Hands-On Projects:**](/projects/example/) Apply your knowledge with our collection of hands-on projects designed for various skill levels.
+- [**Hands-On Projects:**](/projects/helloworld/) Apply your knowledge with our collection of hands-on projects designed for various skill levels.
 
 ## Join the Python Central Hub Community
 
