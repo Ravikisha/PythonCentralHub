@@ -6,7 +6,7 @@ sidebar:
 ---
 
 <!-- 
-```python title="empty_list.py" showLineNumbers{1} {1}
+```python title="empty_tuple.py" showLineNumbers{1} {1}
 empty_list = []
 print(empty_list)
 ```
@@ -29,7 +29,7 @@ In Python, we can access the tuple elements using the index number. The index nu
 ## Access the Tuple Elements Using the Index Number
 In Python, we can access the tuple elements using the index number. The index number starts from 0. We can access the tuple elements using the index number by using the following syntax.
 
-```python title="list_index.py" showLineNumbers{1} {1-5}
+```python title="tuple_index.py" showLineNumbers{1} {1-5}
 data = ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j')
 print(data[0])
 print(data[1])
@@ -40,7 +40,7 @@ print(data[3])
 Output:
 
 ```cmd title="command" showLineNumbers{1} {2-5}
-C:\Users\username>python list_index.py
+C:\Users\username>python tuple_index.py
 a
 b
 c
@@ -52,7 +52,7 @@ In this example, we declare a tuple and assign it to the variable `data`. We the
 ## Access the Tuple Elements Using the Negative Index Number
 In Python, we can access the tuple elements using the negative index number. The negative index number starts from -1. We can access the tuple elements using the negative index number by using the following syntax.
 
-```python title="list_index.py" showLineNumbers{1} {1-5}
+```python title="tuple_index.py" showLineNumbers{1} {1-5}
 data = ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j')
 print(data[-1])
 print(data[-2])
@@ -63,7 +63,7 @@ print(data[-4])
 Output:
 
 ```cmd title="command" showLineNumbers{1} {2-5}
-C:\Users\username>python list_index.py
+C:\Users\username>python tuple_index.py
 j
 i
 h
@@ -75,7 +75,7 @@ In this example, we declare a tuple and assign it to the variable `data`. We the
 ## Diagram of Tuple Indexing
 The following diagram illustrates the indexing of a tuple with five elements:
 
-```python title="list_indexing.py" showLineNumbers{1} {1,3-7}
+```python title="tuple_indexing.py" showLineNumbers{1} {1,3-7}
 my_list = ('a', 'b', 'c', 'd', 'e')
 ```
 
@@ -147,7 +147,7 @@ You can also use negative indices to access multidimensional lists. For example,
 ## Access the Tuple Elements Using the Range of Index Numbers
 In Python, we can access the tuple elements using the range of index numbers. We can access the tuple elements using the range of index numbers by using the following syntax.
 
-```python title="list_index.py" showLineNumbers{1} {1-5}
+```python title="tuple_index.py" showLineNumbers{1} {1-5}
 data = ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j')
 print(data[0:4])
 print(data[1:5])
@@ -158,7 +158,7 @@ print(data[3:7])
 Output:
 
 ```cmd title="command" showLineNumbers{1} {2-5}
-C:\Users\username>python list_index.py
+C:\Users\username>python tuple_index.py
 ('a', 'b', 'c', 'd')
 ('b', 'c', 'd', 'e')
 ('c', 'd', 'e', 'f')
@@ -167,10 +167,18 @@ C:\Users\username>python list_index.py
 
 In this example, we declare a tuple and assign it to the variable `data`. We then print the tuple elements using the range of index numbers. The output shows that the tuple elements are accessed using the range of index numbers.
 
-## Access the Tuple Elements Using the Range of Negative Index Numbers
+## Accessing tuple Slices
+tuple slices are a way of accessing a subset of a tuple. In Python, tuple slices are created using the syntax `tuple[start:stop]`, where `start` is the index of the first element to include in the slice and `stop` is the index of the first element to exclude from the slice. If `start` is omitted, it defaults to 0, and if `stop` is omitted, it defaults to the length of the tuple.
+
+**Syntax**:
+```python title="syntax.py" showLineNumbers{1} {1,3-4}
+tuple[start:stop]
+```
+
+### Access the Tuple Elements Using the Range of Negative Index Numbers
 In Python, we can access the tuple elements using the range of negative index numbers. We can access the tuple elements using the range of negative index numbers by using the following syntax.
 
-```python title="list_index.py" showLineNumbers{1} {1-5}
+```python title="tuple_index.py" showLineNumbers{1} {1-5}
 data = ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j')
 print(data[-4:-1])
 print(data[-5:-2])
@@ -181,7 +189,7 @@ print(data[-7:-4])
 Output:
 
 ```cmd title="command" showLineNumbers{1} {2-5}
-C:\Users\username>python list_index.py
+C:\Users\username>python tuple_index.py
 ('g', 'h', 'i')
 ('f', 'g', 'h')
 ('e', 'f', 'g')
@@ -190,3 +198,221 @@ C:\Users\username>python list_index.py
 
 In this example, we declare a tuple and assign it to the variable `data`. We then print the tuple elements using the range of negative index numbers. The output shows that the tuple elements are accessed using the range of negative index numbers.
 
+### Access the Tuple Elements Using the Range of Index Numbers and Negative Index Numbers
+In Python, we can access the tuple elements using the range of index numbers and negative index numbers. We can access the tuple elements using the range of index numbers and negative index numbers by using the following syntax.
+
+```python title="tuple_index.py" showLineNumbers{1} {1-5}
+data = ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j')
+print(data[0:-1])
+print(data[1:-2])
+print(data[2:-3])
+print(data[3:-4])
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python tuple_index.py
+('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i')
+('b', 'c', 'd', 'e', 'f', 'g', 'h')
+('c', 'd', 'e', 'f', 'g')
+('d', 'e', 'f')
+```
+
+In this example, we declare a tuple and assign it to the variable `data`. We then print the tuple elements using the range of index numbers and negative index numbers. The output shows that the tuple elements are accessed using the range of index numbers and negative index numbers.
+
+### Access the Tuple Elements Using Step
+In Python, we can access the tuple elements using the range of negative index numbers and index numbers and step. We can access the tuple elements using the range of negative index numbers and index numbers and step by using the following syntax.
+
+```python title="syntax.py" showLineNumbers{1} {1,3-4}
+tuple[start:stop:step]
+```
+
+Example:
+```python title="tuple_index.py" showLineNumbers{1} {1-5}
+data = ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j')
+print(data[0:-1:2])
+print(data[1:-2:2])
+print(data[2:-3:2])
+print(data[3:-4:2])
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python tuple_index.py
+('a', 'c', 'e', 'g', 'i')
+('b', 'd', 'f', 'h')
+('c', 'e', 'g')
+('d', 'f')
+```
+
+In this example, we declare a tuple and assign it to the variable `data`. We then print the tuple elements using the range of negative index numbers and index numbers and step. The output shows that the tuple elements are accessed using the range of negative index numbers and index numbers and step.
+
+### Omitting the Start and Stop Indices
+In Python, we can omit the start and stop indices. We can omit the start and stop indices by using the following syntax.
+
+```python title="syntax.py" showLineNumbers{1} {1-2}
+tuple[start:]
+tuple[:stop]
+```
+
+Example:
+```python title="tuple_index.py" showLineNumbers{1} {1-5}
+data = ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j')
+print(data[0:])
+print(data[:5])
+print(data[2:])
+print(data[:7])
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python tuple_index.py
+('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j')
+('a', 'b', 'c', 'd', 'e')
+('c', 'd', 'e', 'f', 'g', 'h', 'i', 'j')
+('a', 'b', 'c', 'd', 'e', 'f', 'g')
+```
+
+In this example, we declare a tuple and assign it to the variable `data`. We then print the tuple elements using the range of negative index numbers and index numbers and step. The output shows that the tuple elements are accessed using the range of negative index numbers and index numbers and step.
+
+In Slicing, when you omit the start index, it defaults to 0. When you omit the stop index, it defaults to the length of the tuple. 
+
+`data[0:]` -> `data[0:len(data)]`
+`data[:5]` -> `data[0:5]`
+`data[2:]` -> `data[2:len(data)]`
+`data[:7]` -> `data[0:7]`
+
+### Omitting the Start and Stop Indices with Step
+In Python, we can omit the start and stop indices with step. We can omit the start and stop indices with step by using the following syntax.
+
+```python title="syntax.py" showLineNumbers{1} {1-2}
+tuple[start::step]
+tuple[:stop:step]
+```
+
+Example:
+```python title="tuple_index.py" showLineNumbers{1} {1-5}
+data = ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j')
+print(data[0::2])
+print(data[:5:2])
+print(data[2::2])
+print(data[:7:2])
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python tuple_index.py
+('a', 'c', 'e', 'g', 'i')
+('a', 'c', 'e')
+('c', 'e', 'g', 'i')
+('a', 'c', 'e', 'g')
+```
+
+In this example, we declare a tuple and assign it to the variable `data`. We then print the tuple elements using the range of negative index numbers and index numbers and step. The output shows that the tuple elements are accessed using the range of negative index numbers and index numbers and step.
+
+In Slicing, when you omit the start index, it defaults to 0. When you omit the stop index, it defaults to the length of the tuple.
+
+`data[0::2]` -> `data[0:len(data):2]`
+`data[:5:2]` -> `data[0:5:2]`
+`data[2::2]` -> `data[2:len(data):2]`
+`data[:7:2]` -> `data[0:7:2]`
+
+### Omitting the Start and Stop Indices with Negative Step
+In Python, we can omit the start and stop indices with negative step. We can omit the start and stop indices with negative step by using the following syntax.
+
+```python title="syntax.py" showLineNumbers{1} {1-2}
+tuple[start::-step]
+tuple[:stop:-step]
+```
+
+Example:
+```python title="tuple_index.py" showLineNumbers{1} {1-5}
+data = ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j')
+print(data[0::-2])
+print(data[:5:-2])
+print(data[2::-2])
+print(data[:7:-2])
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python tuple_index.py
+('a',)
+('j', 'h', 'f')
+('c', 'a')
+('j', 'h', 'f', 'd')
+```
+
+In this example, we declare a tuple and assign it to the variable `data`. We then print the tuple elements using the range of negative index numbers and index numbers and step. The output shows that the tuple elements are accessed using the range of negative index numbers and index numbers and step.
+
+`data[0::-2]` -> `data[0: len(data): -2]`
+`data[:5:-2]` -> `data[0:5: -2]`
+`data[2::-2]` -> `data[2: len(data): -2]`
+`data[:7:-2]` -> `data[0:7: -2]`
+
+### Omitting the Both Indices
+In Python, we can omit the both indices. We can omit the both indices by using the following syntax.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+tuple[::step]
+```
+
+Example:
+```python title="tuple_index.py" showLineNumbers{1} {1-5}
+data = ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j')
+print(data[::2])
+print(data[::3])
+print(data[::4])
+print(data[::5])
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python tuple_index.py
+('a', 'c', 'e', 'g', 'i')
+('a', 'd', 'g', 'j')
+('a', 'e', 'i')
+('a', 'f')
+```
+
+In this example, we declare a tuple and assign it to the variable `data`. We then print the tuple elements using the range of negative index numbers and index numbers and step. The output shows that the tuple elements are accessed using the range of negative index numbers and index numbers and step.
+
+`data[::2]` -> `data[0: len(data): 2]`
+`data[::3]` -> `data[0: len(data): 3]`
+`data[::4]` -> `data[0: len(data): 4]`
+`data[::5]` -> `data[0: len(data): 5]`
+
+### Slicing with Negative Indices
+In Python, we can slice with negative indices. We can slice with negative indices by using the following syntax.
+
+```python title="syntax.py" showLineNumbers{1} {1}
+tuple[start:stop:step]
+```
+
+Example:
+```python title="tuple_index.py" showLineNumbers{1} {1-5}
+data = ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j')
+print(data[-1::-2])
+print(data[-2::-2])
+print(data[:-3:-2])
+print(data[-4::-2])
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python tuple_index.py
+('j', 'h', 'f', 'd', 'b')
+('i', 'g', 'e', 'c', 'a')
+('j',)
+('g', 'e', 'c', 'a')
+```
+
+## Conclusion
+In this tutorial, we learned how to access the tuple in Python. We learned how to access the tuple elements using the index number. We learned how to access the tuple elements using the negative index number. We learned how to access the tuple elements using the range of index numbers. We learned how to access the tuple elements using the range of negative index numbers. For more information on tuples, visit the [Python Tuple](https://docs.python.org/3/tutorial/datastructures.html#tuples-and-sequences) documentation page.

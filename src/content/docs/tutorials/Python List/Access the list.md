@@ -170,6 +170,8 @@ C:\Users\username>python list_slice.py
 
 In the above example, we create a list of five elements and print a slice of the list from index 0 to index 3. Note that the element at index 3 is not included in the slice.
 
+`my_list[:3]` is equivalent to `my_list[0:3]`.
+
 ### Omitting the Stop Index
 If the stop index is omitted, it defaults to the length of the list. This means that the slice will include all elements from the start index to the end of the list.
 
@@ -187,6 +189,8 @@ C:\Users\username>python list_slice.py
 ```
 
 In the above example, we create a list of five elements and print a slice of the list from index 2 to the end of the list.
+
+`my_list[2:]` is equivalent to `my_list[2:len(my_list)]`.
 
 ### Ommiting Both Indices
 If both the start and stop indices are omitted, the slice will include all elements in the list.
