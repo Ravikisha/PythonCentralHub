@@ -5,21 +5,6 @@ sidebar:
     order: 53
 ---
 
-<!-- 
-```python title="empty_tuple.py" showLineNumbers{1} {1}
-empty_list = []
-print(empty_list)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2}
-C:\Users\username>python empty_list.py
-[]
-```
-
-In this example, we declare an empty list and assign it to the variable `empty_list`. We then print the list to the console. The output shows that the list is empty. -->
-
 ## Navigate Tuple Items: A Guide to Access the Tuple List
 In Python, Tuple is an immutable sequence of elements. It means that once a tuple is created, we cannot change its values. We can access the tuple elements using the index number. We can also access the tuple elements using the negative index number. We can also access the tuple elements using the range of index numbers. We can also access the tuple elements using the range of negative index numbers.
 
@@ -413,6 +398,13 @@ C:\Users\username>python tuple_index.py
 ('j',)
 ('g', 'e', 'c', 'a')
 ```
+
+In this example, we declare a tuple and assign it to the variable `data`. We then print the tuple elements using the range of negative index numbers and index numbers and step. The output shows that the tuple elements are accessed using the range of negative index numbers and index numbers and step.
+
+`data[-1::-2]` -> `data[-1: len(data): -2]`
+`data[-2::-2]` -> `data[-2: len(data): -2]`
+`data[:-3:-2]` -> `data[0: -3: -2]`
+`data[-4::-2]` -> `data[-4: len(data): -2]`
 
 ## Conclusion
 In this tutorial, we learned how to access the tuple in Python. We learned how to access the tuple elements using the index number. We learned how to access the tuple elements using the negative index number. We learned how to access the tuple elements using the range of index numbers. We learned how to access the tuple elements using the range of negative index numbers. For more information on tuples, visit the [Python Tuple](https://docs.python.org/3/tutorial/datastructures.html#tuples-and-sequences) documentation page.
