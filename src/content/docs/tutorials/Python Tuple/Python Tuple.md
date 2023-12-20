@@ -13,20 +13,6 @@ A tuple is an ordered, immutable collection of elements in Python. Immutable mea
 
 ## Creating a Tuple
 Tuples are created by enclosing a sequence of elements in parentheses `()` and separating each element with a comma `,`. For example, the following code creates a tuple of three elements:
-<!-- 
-```python title="empty_list.py" showLineNumbers{1} {1}
-empty_list = []
-print(empty_list)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2}
-C:\Users\username>python empty_list.py
-[]
-```
-
-In this example, we declare an empty list and assign it to the variable `empty_list`. We then print the list to the console. The output shows that the list is empty. -->
 
 
 ```python title="tuple.py" showLineNumbers{1} {1}
