@@ -95,7 +95,7 @@ In the above example, we create a multidimensional list of three elements, each 
 :::note
 Note that multidimensional lists can be nested to any depth, and each dimension is accessed using a separate index.
 
-Diagram of Multidimensional List Indexing
+### Diagram of Multidimensional List Indexing
 
 |Index|0|1|2|
 |---|---|---|---|
