@@ -210,6 +210,8 @@ C:\Users\username>python list_slice.py
 
 In the above example, we create a list of five elements and print a slice of the list from index 0 to the end of the list.
 
+`my_list[:]` is equivalent to `my_list[0:len(my_list)]`.
+
 ### Slicing with a Negative Start Index
 If the start index is negative, it will be interpreted as an offset from the end of the list. This means that the slice will include all elements from the element at the start index to the end of the list.
 
@@ -227,6 +229,8 @@ C:\Users\username>python list_slice.py
 ```
 
 In the above example, we create a list of five elements and print a slice of the list from index -3 to the end of the list.
+
+`my_list[-3:]` is equivalent to `my_list[-3:len(my_list)]`.
 
 ### Slicing with a Negative Stop Index
 If the stop index is negative, it will be interpreted as an offset from the end of the list. This means that the slice will include all elements from the beginning of the list up to, but not including, the element at the stop index.
@@ -246,6 +250,8 @@ C:\Users\username>python list_slice.py
 
 In the above example, we create a list of five elements and print a slice of the list from index 0 to index -3. Note that the element at index -3 is not included in the slice.
 
+`my_list[:-3]` is equivalent to `my_list[0:-3]`.
+
 ### Slicing with a Negative Start and Stop Index
 If both the start and stop indices are negative, they will be interpreted as offsets from the end of the list. This means that the slice will include all elements from the element at the start index to the element at the stop index.
 
@@ -263,6 +269,8 @@ C:\Users\username>python list_slice.py
 ```
 
 In the above example, we create a list of five elements and print a slice of the list from index -3 to index -1. Note that the element at index -1 is not included in the slice.
+
+`my_list[-3:-1]` is equivalent to `my_list[-3:len(my_list)-1]`.
 
 ### Slice Step
 The slice step is an optional third argument that specifies the number of elements to skip between each element in the slice. The default value is 1, meaning that each element in the slice will be included in the result. A value of 2 means that every other element will be included, and so on.
