@@ -2,7 +2,7 @@ Certainly! Here's a list of 150 Python project ideas across different skill leve
 
 ### Beginners (1-50):
 
-1.  [x] Hello World Program 
+1.  [x] Hello World Program
 2.  [x] Simple Calculator 
 3.  [x] Guess the Number Game
 4.  [x] To-Do List Application
