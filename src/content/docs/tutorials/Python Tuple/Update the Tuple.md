@@ -7,28 +7,6 @@ sidebar:
 
 In Python, Tuple is an immutable sequence of elements. Once you create a tuple, you can not change its elements. However, you can update the tuple by converting it into the other data types. In this tutorial, we will learn how to update the tuple in Python.
 
-
-<!-- ```python title="tuple_index.py" showLineNumbers{1} {1-5}
-data = ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j')
-print(data[0])
-print(data[1])
-print(data[2])
-print(data[3])
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2-5}
-C:\Users\username>python tuple_index.py
-a
-b
-c
-d
-```
-
-In this example, we declare a tuple and assign it to the variable `data`. We then print the tuple elements using the index number. The output shows that the tuple elements are accessed using the index number. -->
-
-
 ## Add Elements to the Tuple (Wrong Way)
 You can not add elements to the tuple. If you try to add elements to the tuple, you will get an error.
 
@@ -49,7 +27,7 @@ TypeError: 'tuple' object does not support item assignment
 
 In this example, we try to add an element to the tuple using the index number. The output shows that you can not add elements to the tuple. You will get an error if you try to add elements to the tuple.
 
-## How to Add Elements to the Tuple
+## How to Add Elements to the Tuple (Right Way)
 You can add elements to the tuple by converting it into the other data types.
 
 ### Add Elements to the Tuple Using the List
