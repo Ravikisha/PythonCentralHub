@@ -217,3 +217,47 @@ Traceback (most recent call last):
     a, b, c, d, e, f, g, h, i = data
 ValueError: too many values to unpack (expected 9)
 ```
+
+In this example, we declare a tuple and assign it to the variable `data`. We then unpack the tuple and assign the values of the tuple to the variables `a`, `b`, `c`, `d`, `e`, `f`, `g`, `h`, `i`. We then print the values of the variables. The output shows that the values of the tuple are assigned to the variables. The number of variables is less than the number of values in the tuple, so it raises an error.
+:::
+
+## Unpacking the Nested Tuple
+We can also unpack the nested tuple.
+
+```python title="tuple_nested.py" showLineNumbers{1} {1-15}
+data = ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', ('k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't'))
+a, b, c, d, e, f, g, h, i, j, k = data
+print(a)
+print(b)
+print(c)
+print(d)
+print(e)
+print(f)
+print(g)
+print(h)
+print(i)
+print(j)
+print(k)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-12}
+C:\Users\username>python tuple_nested.py
+a
+b
+c
+d
+e
+f
+g
+h
+i
+j
+('k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't')
+```
+
+In this example, we declare a tuple and assign it to the variable `data`. We then unpack the tuple and assign the values of the tuple to the variables `a`, `b`, `c`, `d`, `e`, `f`, `g`, `h`, `i`, `j`, `k`. We then print the values of the variables. The output shows that the values of the tuple are assigned to the variables. The last value of the tuple is a nested tuple. The nested tuple is assigned to the variable `k`.
+
+## Conclusion
+In this tutorial, you learned how to unpack the tuple in Python. The unpacking of the tuple is a very useful feature in Python. It allows us to assign the values of the tuple to the variables. You can also [read](https://docs.python.org/3/tutorial/datastructures.html#tuples-and-sequences) the official documentation. From now on, if you find any difficulty in unpacking the tuple, you can refer to this tutorial. If you like this tutorial, please share it with others via the social media platform. Happy Pythoning!. For more tutorials, you can visit Python Central Hub.
