@@ -28,7 +28,7 @@ Certainly! Here's a list of 150 Python project ideas across different skill leve
 24. [x] RSS Feed Reader
 25. [x] Morse Code Translator
 26. [ ] Automated File Mover
-27. [ ] Currency Exchange Rate Calculator
+27. [x] Currency Exchange Rate Calculator GUI
 28. [ ] Basic Music Player
 29. [ ] Simple Reminder App
 30. [ ] Web Page Scraper with Notifications
