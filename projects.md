@@ -34,7 +34,7 @@ Certainly! Here's a list of 150 Python project ideas across different skill leve
 30. [ ] Web Page Scraper with Notifications
 31. [ ] Simple Stopwatch
 32. [ ] Text-based Blackjack Game
-33. [ ] Word Counter
+33. [x] Word Counter
 34. [ ] Personal Diary Application
 35. [ ] Basic Web Crawler
 36. [ ] Basic Drawing App (Pygame)
