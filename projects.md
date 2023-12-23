@@ -41,7 +41,7 @@ Certainly! Here's a list of 150 Python project ideas across different skill leve
 37. [ ] Tic-Tac-Toe Game
 38. [ ] Hangman Game with GUI (Tkinter)
 39. [ ] Password Strength Checker
-40. [ ] Basic Web Server (Flask)
+40. [x] Basic Web Server (Flask)
 41. [ ] URL Status Checker
 42. [ ] Simple Timer App
 43. [ ] Basic Text Editor
