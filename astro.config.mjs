@@ -271,7 +271,7 @@ export default defineConfig({
           tag: "script",
           attrs: {
             async: true,
-            src: "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4763909241118146",
+            src: `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${import.meta.env.VITE_GOOGLE_ADSENSE}`,
             crossorigin: "anonymous",
           },
         },
