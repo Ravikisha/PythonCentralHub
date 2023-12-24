@@ -8,7 +8,7 @@ Certainly! Here's a list of 150 Python project ideas across different skill leve
 4.  [x] To-Do List Application - Done
 5.  [x] Temperature Converter - Done
 6.  [x] Basic Web Scraper - Done
-7.  [x] Rock, Paper, Scissors Game
+7.  [x] Rock, Paper, Scissors Game - Done
 8.  [x] Dice Rolling Simulator
 9.  [x] Currency Converter
 10. [x] Simple Chatbot
