@@ -2,12 +2,12 @@ Certainly! Here's a list of 150 Python project ideas across different skill leve
 
 ### Beginners (1-50):
 
-1.  [x] Hello World Program
-2.  [x] Simple Calculator 
-3.  [x] Guess the Number Game
-4.  [x] To-Do List Application
-5.  [x] Temperature Converter
-6.  [x] Basic Web Scraper
+1.  [x] Hello World Program - Done
+2.  [x] Simple Calculator - Done
+3.  [x] Guess the Number Game - Done
+4.  [x] To-Do List Application - Done
+5.  [x] Temperature Converter - Done
+6.  [x] Basic Web Scraper - Done
 7.  [x] Rock, Paper, Scissors Game
 8.  [x] Dice Rolling Simulator
 9.  [x] Currency Converter
