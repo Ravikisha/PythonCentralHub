@@ -140,7 +140,7 @@ export default defineConfig({
           tag: "meta",
           attrs: {
             name: "google-adsense-account",
-            content: "ca-pub-4763909241118146",
+            content: import.meta.env.VITE_GOOGLE_ADSENSE,
           },
         },
         {
