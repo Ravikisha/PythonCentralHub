@@ -39,5 +39,13 @@
 36. [] Dancing Links
 37. [] Trie Hash Tree
 
-
+## Algorithms
+1. [] Analysis of Algorithms
+2. [] Searching and Sorting
+3. [] Greedy Algorithms
+4. [] Dynamic Programming
+5. [] Pattern Searching
+6. [] Other String Algorithms
+7. [] Backtracking
+8. [] Divide and Conquer
 
