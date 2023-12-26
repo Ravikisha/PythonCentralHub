@@ -48,4 +48,19 @@
 6. [] Other String Algorithms
 7. [] Backtracking
 8. [] Divide and Conquer
+9. [] Geometric Algorithms
+10. [] Mathematical Algorithms
+11. [] Bit Algorithms
+12. [] Graph Algorithms
+13. [] Randomized Algorithms
+14. [] Branch and Bound
+15. [] Quizzes on Algorithms
+16. [] Misc
+17. [] Advanced Data Structure
+18. [] Matrix
+19. [] Bit Magic
+20. [] Recursion
+21. [] Game Theory
+22. [] NP Complete
+23. [] Graph Theory
 
