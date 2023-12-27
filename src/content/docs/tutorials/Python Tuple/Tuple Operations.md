@@ -9,30 +9,6 @@ Tuple is an immutable data type in Python. It means we can not modify the tuple 
 
 ## Traversing a Tuple
 There are multiple ways to traverse a tuple in Python. We can use the `for` loop to traverse a tuple. We can also use the `while` loop to traverse a tuple. We can also use the `enumerate()` function to traverse a tuple. we are going to learn all the methods to traverse a tuple in Python.
-<!-- 
-```python title="syntax.py" showLineNumbers{1} {1}
-list[index] = new_value
-```
-
-The following example shows how to change the first item in the list to a different value.
-
-```python title="change_first_item.py" showLineNumbers{1} {1,4}
-numbers = [1, 2, 3, 4, 5]
-print(numbers)
-
-numbers[0] = 10
-print(numbers)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2-3}
-C:\Users\username>python change_first_item.py
-[1, 2, 3, 4, 5]
-[10, 2, 3, 4, 5]
-```
-
-In the example above, we changed the first item in the list to 10. The rest of the items in the list remain the same. -->
 
 ### Using for Loop
 We can use the `for` loop to traverse a tuple in Python. We will use the `for` loop to traverse the tuple elements one by one. We will use the `for` loop with the `in` keyword to traverse the tuple elements. 
