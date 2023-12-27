@@ -327,4 +327,99 @@ C:\Users\username>python concatenate_tuple.py
 
 In the example above, we have two tuples. We used the list comprehension to concatenate two tuples. We used the list comprehension with the two tuples to concatenate them.
 
+## Tuple Repetition
+We can repeat a tuple in Python. We can use the `*` operator to repeat a tuple in Python. We can also use the `*=` operator to repeat a tuple in Python. We will learn all the methods to repeat a tuple in Python.
+
+### Using * Operator
+We can use the `*` operator to repeat a tuple in Python. We will use the `*` operator to repeat a tuple in Python. We will use the `*` operator with the tuple and the number of times to repeat the tuple.
+
+The following example shows how to repeat a tuple using the `*` operator.
+
+```python title="repeat_tuple.py" showLineNumbers{1} {1, 3, 5}
+numbers = (1, 2, 3)
+
+numbers = numbers * 3
+
+print(numbers)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python repeat_tuple.py
+(1, 2, 3, 1, 2, 3, 1, 2, 3)
+```
+
+In the example above, we have a tuple. We used the `*` operator to repeat the tuple. We used the `*` operator with the tuple and the number of times to repeat the tuple.
+
+### Using *= Operator
+We can also use the `*=` operator to repeat a tuple in Python. We will use the `*=` operator to repeat a tuple in Python. We will use the `*=` operator with the tuple and the number of times to repeat the tuple.
+
+The following example shows how to repeat a tuple using the `*=` operator.
+
+```python title="repeat_tuple.py" showLineNumbers{1} {1, 3, 5}
+numbers = (1, 2, 3)
+
+numbers *= 3
+
+print(numbers)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python repeat_tuple.py
+(1, 2, 3, 1, 2, 3, 1, 2, 3)
+```
+
+In the example above, we have a tuple. We used the `*=` operator to repeat the tuple. We used the `*=` operator with the tuple and the number of times to repeat the tuple.
+
+### Using list() Function
+We can also use the `list()` function to repeat a tuple in Python. We will use the `list()` function to repeat a tuple in Python. We will use the `list()` function with the tuple and the number of times to repeat the tuple.
+
+The following example shows how to repeat a tuple using the `list()` function.
+
+```python title="repeat_tuple.py" showLineNumbers{1} {1, 3, 5-6}
+numbers = (1, 2, 3)
+
+numbers = list(numbers) * 3
+
+numbers_tuple = tuple(numbers)
+print(numbers_tuple)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python repeat_tuple.py
+(1, 2, 3, 1, 2, 3, 1, 2, 3)
+```
+
+In the example above, we have a tuple. We used the `list()` function to convert the tuple into a list. We used the `*` operator to repeat the list. We used the `tuple()` function to convert the list into a tuple. We used the `list()` function with the tuple and the number of times to repeat the tuple.
+
+### Using extend() Function
+We can also use the `extend()` function to repeat a tuple in Python. We will use the `extend()` function to repeat a tuple in Python. We will use the `extend()` function with the tuple and the number of times to repeat the tuple.
+
+The following example shows how to repeat a tuple using the `extend()` function.
+
+```python title="repeat_tuple.py" showLineNumbers{1} {1, 3, 5-6}
+numbers = (1, 2, 3)
+
+numbers = list(numbers)
+
+numbers.extend(numbers * 2)
+print(tuple(numbers))
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python repeat_tuple.py
+(1, 2, 3, 1, 2, 3, 1, 2, 3)
+```
+
+In the example above, we have a tuple. We used the `list()` function to convert the tuple into a list. We used the `extend()` function to repeat the list. We used the `tuple()` function to convert the list into a tuple. We used the `extend()` function with the tuple and the number of times to repeat the tuple.
+
+## Conclusion
+In this tutorial, we learned how to perform various operations on the tuple in Python. We learned how to traverse a tuple in Python. We learned how to concatenate two tuples in Python. We learned how to repeat a tuple in Python. Now you can solve problems related to the tuple in Python. For more information, visit the [official Python documentation](https://docs.python.org/3/tutorial/datastructures.html#tuples-and-sequences) and For more tutorials, visit the Python Central Hub.
 
