@@ -277,3 +277,5 @@ C:\Users\username>python tuple_methods.py
 
 In the example above, we have a tuple of numbers. We use the `map()` method to square each number in the tuple.
 
+## Conclusion
+In this tutorial, you learned how to use tuple methods in Python. You also learned how to use each method with examples. Now you can use these methods in your Python programs. You find the examples and other Python tutorials useful, then please share them with others. If you have any questions or feedback, then please drop a note. You can visit [official Python documentation](https://docs.python.org/3/tutorial/datastructures.html#tuples-and-sequences) for more information on tuple methods. For more tutorials, please visit our Python Central Hub.
