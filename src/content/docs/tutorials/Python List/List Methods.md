@@ -5,7 +5,7 @@ sidebar:
     order: 51
 ---
 
-# List Methods
+## List Methods
 The list data type has a set of built-in methods that you can use on lists. In this tutorial, you will learn how to use list methods in Python. Here you will find a list of all the methods that you can use with lists. you will also find examples of how to use them. you can find insert, append, extend, remove, pop, clear, index, count, sort, reverse, copy, and more. 
 
 ## Table of Methods
