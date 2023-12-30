@@ -345,3 +345,68 @@ There are three types of sets in Python:
 - **Unordered Set**: An unordered set is a set that does not have a defined order. The elements in an unordered set do not have a defined order. We cannot access the elements of an unordered set by index.
 - **Ordered Set**: An ordered set is a set that has a defined order. The elements in an ordered set have a defined order. We can access the elements of an ordered set by index.
 
+## Length of a Set
+We can get the length of a set in Python by using the `len()` function. The `len()` function takes a single argument, which is a set. The `len()` function returns the number of elements in the set.
+
+```python title="set.py" showLineNumbers{1} {1-2}
+set1 = {1, 2, 3}
+print(len(set1))
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python set.py
+3
+```
+
+In this example, we declare a set of three elements and assign it to the variable `set1`. We then print the length of the set to the console. The output shows that the set contains three elements.
+
+## Accessing Elements of a Set
+We can access the elements of a set in Python by using the `for` loop. The `for` loop takes a single argument, which is a set. The `for` loop iterates over the elements of the set and executes the code block for each element.
+
+```python title="set.py" showLineNumbers{1} {1-3}
+set1 = {1, 2, 3}
+for x in set1:
+    print(x)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\username>python set.py
+1
+2
+3
+```
+
+In this example, we declare a set of three elements and assign it to the variable `set1`. We then iterate over the elements of the set and print each element to the console. The output shows that the set contains three elements.
+
+:::caution
+Sets are unordered, which means that the elements in a set do not have a defined order. This also means that sets do not support indexing or slicing operations.
+:::
+
+:::danger
+Accessing elements of a set by index is not supported. If you try to access an element of a set by index, you will get an error.
+
+```python title="set.py" showLineNumbers{1} {1}
+set1 = {1, 2, 3}
+print(set1[0])
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python set.py
+Traceback (most recent call last):
+  File "set.py", line 2, in <module>
+    print(set1[0])
+TypeError: 'set' object is not subscriptable
+```
+
+In this example, we try to access the first element of a set by index. Since sets do not support indexing or slicing operations, we get an error.
+
+:::
+
+## Conclusion
+In this comprehensive guide, we have explored the characteristics of sets, how to create and manipulate them, operations that can be performed on sets, and various use cases where sets shine as a data structure in Python. We have also explored the different types of sets in Python, including mutable sets, immutable sets, frozen sets, dynamic sets, static sets, heterogeneous sets, homogeneous sets, unordered sets, and ordered sets. We have also explored how to get the length of a set and how to access the elements of a set. We hope that you now have a better understanding of sets in Python and how to use them in your programs. For more information on sets in Python, check out the [official documentation](https://docs.python.org/3/library/stdtypes.html#set-types-set-frozenset). For more tutorials like this check Python Central Hub.
