@@ -333,3 +333,15 @@ TypeError: unhashable type: 'set'
 
 In this example, we try to declare a nested set with four elements. The first element is an integer, the second element is a float, the third element is a string, and the fourth element is a nested set. Since the fourth element is a nested set, which is mutable, we get an error.
 
+## Types of Sets in Python
+There are three types of sets in Python: 
+- **Mutable Set**: A mutable set is a set that can be modified after it has been created. We can add or remove elements from a mutable set. We can also change the elements of a mutable set.
+- **Immutable Set**: An immutable set is a set that cannot be modified after it has been created. We cannot add or remove elements from an immutable set. We also cannot change the elements of an immutable set.
+- **Frozen Set**: A frozen set is a set that cannot be modified after it has been created. We cannot add or remove elements from a frozen set. We also cannot change the elements of a frozen set.
+- **Dynamic Set**: A dynamic set is a set that can be modified after it has been created. We can add or remove elements from a dynamic set. We can also change the elements of a dynamic set.
+- **Static Set**: A static set is a set that cannot be modified after it has been created. We cannot add or remove elements from a static set. We also cannot change the elements of a static set.
+- **Heterogeneous Set**: A heterogeneous set is a set that can contain elements of different data types. The elements in a heterogeneous set can be of any data type, including integers, floats, strings, tuples, lists, dictionaries, and other sets.
+- **Homogeneous Set**: A homogeneous set is a set that can contain elements of the same data type. The elements in a homogeneous set must be of the same data type, including integers, floats, strings, tuples, lists, dictionaries, and other sets.
+- **Unordered Set**: An unordered set is a set that does not have a defined order. The elements in an unordered set do not have a defined order. We cannot access the elements of an unordered set by index.
+- **Ordered Set**: An ordered set is a set that has a defined order. The elements in an ordered set have a defined order. We can access the elements of an ordered set by index.
+
