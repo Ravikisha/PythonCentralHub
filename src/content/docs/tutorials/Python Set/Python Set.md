@@ -151,7 +151,7 @@ In this example, we declare a set of six elements and assign it to the variable 
 We can declare a set in Python with elements of different data types. The elements in a set can be of any data type, including integers, floats, strings, tuples, lists, dictionaries, and other sets.
 
 ```python title="set.py" showLineNumbers{1} {1}
-set1 = {1, 2.0, "three", (4, 5), [6, 7], {8, 9}}
+set1 = {1, 2.0, "three"}
 print(set1)
 ```
 
@@ -159,7 +159,7 @@ Output:
 
 ```cmd title="command" showLineNumbers{1} {2}
 C:\Users\username>python set.py
-{1, 2.0, 'three', (4, 5), [6, 7], {8, 9}}
+{1, 2.0, 'three'}
 ```
 
 In this example, we declare a set of six elements and assign it to the variable `set1`. We then print the set to the console. The output shows that the set contains elements of different data types.
@@ -394,6 +394,23 @@ TypeError: 'set' object is not subscriptable
 In this example, we try to access the first element of a set by index. Since sets do not support indexing or slicing operations, we get an error.
 
 :::
+
+## Unordered Collection of Unique Elements
+Sets in Python are an unordered collection of unique elements. This means that the elements in a set do not have a defined order. This also means that sets do not support indexing or slicing operations.
+
+```python title="set.py" showLineNumbers{1} {1-3}
+set1 = {17, 2, 3, 1, 5, 7, 11, 13}
+print(set1)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python set.py
+{1, 2, 3, 5, 7, 11, 13, 17}
+```
+
+In this example, we declare a set of eight elements and assign it to the variable `set1`. We then print the set to the console. The output shows that the set contains eight elements. The elements in the set are not in any particular order.
 
 ## Conclusion
 In this comprehensive guide, we have explored the characteristics of sets, how to create and manipulate them, operations that can be performed on sets, and various use cases where sets shine as a data structure in Python. We have also explored the different types of sets in Python, including mutable sets, immutable sets, frozen sets, dynamic sets, static sets, heterogeneous sets, homogeneous sets, unordered sets, and ordered sets. We have also explored how to get the length of a set and how to access the elements of a set. We hope that you now have a better understanding of sets in Python and how to use them in your programs. For more information on sets in Python, check out the [official documentation](https://docs.python.org/3/library/stdtypes.html#set-types-set-frozenset). For more tutorials like this check Python Central Hub.
