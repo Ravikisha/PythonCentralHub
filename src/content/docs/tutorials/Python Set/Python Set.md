@@ -17,19 +17,6 @@ Sets are unordered, which means that the elements in a set do not have a defined
 ## Mutable and Iterable
 Sets are mutable, which means that we can add or remove elements from a set. Sets are also dynamic, which means that we can add or remove elements from a set after it has been created. Sets are also heterogeneous, which means that we can have elements of different data types in a set.
 
-<!-- ```python title="tuple.py" showLineNumbers{1} {1}
-tuple = (1, 2, 3)
-print(tuple)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2}
-C:\Users\username>python tuple.py
-(1, 2, 3)
-```
-
-In this example, we declare a tuple of three elements and assign it to the variable `tuple`. We then print the tuple to the console. The output shows that the tuple contains three elements. -->
 
 ## Creating a Set in Python
 We can create a set in Python by enclosing a comma-separated list of elements within curly braces `{}`. The elements in a set can be of different data types. The elements in a set are unique, which means that there cannot be duplicate elements in a set. If we try to create a set with duplicate elements, the duplicate elements will be removed from the set.
