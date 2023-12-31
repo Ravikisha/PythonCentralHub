@@ -192,4 +192,28 @@ C:\Users\username>python set_union.py
 
 In this example, we declare a set and assign it to the variable `data`. We then declare a string and assign it to the variable `data2`. We then add the items of the `data2` string to the `data` set using the `union()` method. The output shows that the items are added to the set. The `union()` method does not change the original set.
 
+### | Operator
+We can use the `|` operator to add multiple items to the set. The `|` operator takes a single argument and adds it to the set. The `|` operator does not return any value. The `|` operator does not add an item to the set if it is already present in the set.
+
+```python title="set_union.py" showLineNumbers{1} {1-3}
+data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+data2 = {'h', 'i', 'j', 'k', 'l', 'm', 'n'}
+print(data | data2)
+print(data)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python set_union.py
+{'a', 'e', 'd', 'g', 'l', 'j', 'n', 'm', 'b', 'i', 'h', 'f', 'k', 'c'}
+{'a', 'e', 'b', 'd', 'g', 'f', 'c'}
+```
+
+In this example, we declare two sets and assign them to the variables `data` and `data2`. We then add the items of the `data2` set to the `data` set using the `|` operator. The output shows that the items are added to the set. The `|` operator does not change the original set.
+
+:::tip
+The `|` operator is the same as the `union()` method. The `|` operator does not change the original set. The `union()` method does not change the original set. This also work with different data types.
+:::
+
 
