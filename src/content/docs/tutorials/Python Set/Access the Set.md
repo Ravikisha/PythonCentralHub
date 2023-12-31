@@ -229,4 +229,5 @@ m is not in the set
 
 In this example, we declare a set and assign it to the variable `data`. We then check if the element `m` is in the set or not using the `not in` keyword. The output shows that the element `m` is not in the set.
 
-
+## Conclusion
+In this tutorial, we learned how to access the set elements in python. We learn how to access the set elements using the `for` loop, `while` loop, `enumerate()` function, `list()` function, `tuple()` function, `in` keyword, and `not in` keyword. For more information, visit the [official website](https://docs.python.org/3/tutorial/datastructures.html#sets) of the python set. For more tutorials, visit our Python Central Hub.
