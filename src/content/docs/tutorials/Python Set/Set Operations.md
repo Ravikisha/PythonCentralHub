@@ -13,3 +13,131 @@ In the set theory, there are several operations that we can perform on sets. In 
 ### Union (|) Operation
 The union operation returns a new set that contains all the elements that are in either set. In Python, we can use the `|` operator to perform the union operation.
 
+<!-- ```python title="set_update.py" showLineNumbers{1} {1-3}
+data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+data2 = {'h', 'i', 'j', 'k', 'l', 'm', 'n'}
+data.update(data2)
+print(data)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python set_update.py
+{'a', 'e', 'd', 'g', 'l', 'j', 'n', 'm', 'b', 'i', 'h', 'f', 'k', 'c'}
+```
+
+In this example, we declare two sets and assign them to the variables `data` and `data2`. We then add the items of the `data2` set to the `data` set using the `update()` method. The output shows that the items are added to the set. -->
+
+```python title="set_union.py" showLineNumbers{1} {1-3}
+data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+data2 = {'h', 'i', 'j', 'k', 'l', 'm', 'n'}
+data3 = data | data2
+print(data3)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python set_union.py
+{'m', 'd', 'n', 'j', 'h', 'e', 'a', 'b', 'f', 'l', 'k', 'i', 'g', 'c'}
+```
+
+In this example, we declare two sets and assign them to the variables `data` and `data2`. We then use the `|` operator to perform the union operation on the two sets and assign the result to the variable `data3`. The output shows that the items are added to the set.
+
+
+### Intersection (&) Operation
+The intersection operation returns a new set that contains the elements that are common in both sets. In Python, we can use the `&` operator to perform the intersection operation.
+
+```python title="set_intersection.py" showLineNumbers{1} {1-3}
+data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+data2 = {'d', 'e', 'f', 'g', 'h', 'i', 'j'}
+data3 = data & data2
+print(data3)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python set_intersection.py
+{'f', 'g', 'd', 'e'}
+```
+
+In this example, we declare two sets and assign them to the variables `data` and `data2`. We then use the `&` operator to perform the intersection operation on the two sets and assign the result to the variable `data3`. The output shows that the items are added to the set.
+
+### Difference (-) Operation
+The difference operation returns a new set that contains the elements that are in the first set but not in the second set. In Python, we can use the `-` operator to perform the difference operation.
+
+```python title="set_difference.py" showLineNumbers{1} {1-3}
+data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+data2 = {'d', 'e', 'f', 'g', 'h', 'i', 'j'}
+data3 = data - data2
+print(data3)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python set_difference.py
+{'a', 'b', 'c'}
+```
+
+In this example, we declare two sets and assign them to the variables `data` and `data2`. We then use the `-` operator to perform the difference operation on the two sets and assign the result to the variable `data3`. The output shows that the items are added to the set.
+
+### Symmetric Difference (^) Operation
+The symmetric difference operation returns a new set that contains the elements that are in either set but not in both sets. In Python, we can use the `^` operator to perform the symmetric difference operation.
+
+```python title="set_symmetric_difference.py" showLineNumbers{1} {1-3}
+data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+data2 = {'d', 'e', 'f', 'g', 'h', 'i', 'j'}
+data3 = data ^ data2
+print(data3)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python set_symmetric_difference.py
+{'j', 'b', 'c', 'a', 'i', 'h'}
+```
+
+In this example, we declare two sets and assign them to the variables `data` and `data2`. We then use the `^` operator to perform the symmetric difference operation on the two sets and assign the result to the variable `data3`. The output shows that the items are added to the set.
+
+### Subset (<=) Operation
+The subset operation returns `True` if all the elements of the first set are in the second set. In Python, we can use the `<=` operator to perform the subset operation.
+
+```python title="set_subset.py" showLineNumbers{1} {1-3}
+data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+data2 = {'d', 'e', 'f', 'g', 'h', 'i', 'j'}
+data3 = data <= data2
+print(data3)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python set_subset.py
+False
+```
+
+In this example, we declare two sets and assign them to the variables `data` and `data2`. We then use the `<=` operator to perform the subset operation on the two sets and assign the result to the variable `data3`. The output shows that the items are added to the set.
+
+### Superset (>=) Operation
+The superset operation returns `True` if all the elements of the second set are in the first set. In Python, we can use the `>=` operator to perform the superset operation.
+
+```python title="set_superset.py" showLineNumbers{1} {1-3}
+data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+data2 = {'d', 'e', 'f', 'g', 'h', 'i', 'j'}
+data3 = data >= data2
+print(data3)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python set_superset.py
+False
+```
+
+In this example, we declare two sets and assign them to the variables `data` and `data2`. We then use the `>=` operator to perform the superset operation on the two sets and assign the result to the variable `data3`. The output shows that the items are added to the set.
+
