@@ -13,22 +13,6 @@ In the set theory, there are several operations that we can perform on sets. In 
 ### Union (|) Operation
 The union operation returns a new set that contains all the elements that are in either set. In Python, we can use the `|` operator to perform the union operation.
 
-<!-- ```python title="set_update.py" showLineNumbers{1} {1-3}
-data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
-data2 = {'h', 'i', 'j', 'k', 'l', 'm', 'n'}
-data.update(data2)
-print(data)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2-3}
-C:\Users\username>python set_update.py
-{'a', 'e', 'd', 'g', 'l', 'j', 'n', 'm', 'b', 'i', 'h', 'f', 'k', 'c'}
-```
-
-In this example, we declare two sets and assign them to the variables `data` and `data2`. We then add the items of the `data2` set to the `data` set using the `update()` method. The output shows that the items are added to the set. -->
-
 ```python title="set_union.py" showLineNumbers{1} {1-3}
 data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
 data2 = {'h', 'i', 'j', 'k', 'l', 'm', 'n'}
