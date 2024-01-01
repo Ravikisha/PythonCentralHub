@@ -374,3 +374,5 @@ C:\Users\username>python set_length.py
 
 In this example, we declare a set and assign it to the variable `data`. We then use the `len()` method to get the length of the set. The output shows that the length of the set is 7.
 
+## Conclusion
+In this tutorial, we learned how to perform set operations in Python. We covered the union, intersection, difference, and symmetric difference operations. We also covered the subset and superset operations. We also talked about loops and how to use them to iterate over sets. We also learned how to join sets, and how to check if an item exists in a set and also copy a set. Now you can use sets in your Python programs. To learn more about sets, visit the [Python sets](https://docs.python.org/3/tutorial/datastructures.html#sets) page. For more tutorials, visit our Python Central Hub.
