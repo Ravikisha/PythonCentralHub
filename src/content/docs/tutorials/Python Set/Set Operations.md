@@ -141,3 +141,74 @@ False
 
 In this example, we declare two sets and assign them to the variables `data` and `data2`. We then use the `>=` operator to perform the superset operation on the two sets and assign the result to the variable `data3`. The output shows that the items are added to the set.
 
+## Set Loops
+In Python, we can use loops to iterate over sets. In this section, we are going to learn how to use loops to iterate over sets.
+
+### For Loop
+In Python, we can use the `for` loop to iterate over sets. In the `for` loop, we can use the `in` keyword to check if an item exists in a set.
+
+```python title="set_for_loop.py" showLineNumbers{1} {1-3}
+data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+for item in data:
+    print(item)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-8}
+C:\Users\username>python set_for_loop.py
+a
+b
+d
+f
+g
+c
+e
+```
+
+In this example, we declare a set and assign it to the variable `data`. We then use the `for` loop to iterate over the set and print the items.
+
+### While Loop
+In Python, we can use the `while` loop to iterate over sets. In the `while` loop, we can use the `in` keyword to check if an item exists in a set.
+
+```python title="set_while_loop.py" showLineNumbers{1} {1-5}
+data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+i = 0
+while i < len(data):
+    print(data[i])
+    i += 1
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-8}
+C:\Users\username>python set_while_loop.py
+a
+b
+d
+f
+g
+c
+e
+```
+
+In this example, we declare a set and assign it to the variable `data`. We then use the `while` loop to iterate over the set and print the items.
+
+### Adding Elements to a Set Using Loops
+In Python, we can use loops to add elements to a set. In this section, we are going to learn how to use loops to add elements to a set.
+
+```python title="set_add_elements.py" showLineNumbers{1} {1-3}
+data = set()
+for i in range(1, 11):
+    data.add(i)
+print(data)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python set_add_elements.py
+{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+```
+
+In this example, we declare an empty set and assign it to the variable `data`. We then use the `for` loop to iterate over the range of numbers from 1 to 10 and add the numbers to the set using the `add()` method. The output shows that the items are added to the set.
