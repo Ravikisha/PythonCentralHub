@@ -292,3 +292,48 @@ C:\Users\username>python set_unpack.py
 
 In this example, we declare two sets and assign them to the variables `data` and `data2`. We then use the `*` operator to unpack the two sets and assign the result to the variable `data3`. The output shows that the items are added to the set.
 
+## Set Copy
+In Python, we can use the `copy()` method to copy a set. In this section, we are going to learn how to use the `copy()` method to copy a set.
+
+:::caution
+When we copy a set, we are creating a new set that contains the same items as the original set. If we change the items of the original set, the items of the copied set will not change. However, if we change the items of the copied set, the items of the original set will change.
+
+```python title="set_copy.py" showLineNumbers{1} {1-3}
+data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+data2 = data
+data2.add('h')
+print(data)
+print(data2)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\username>python set_copy.py
+{'d', 'e', 'a', 'b', 'f', 'g', 'h', 'c'}
+{'d', 'e', 'a', 'b', 'f', 'g', 'h', 'c'}
+```
+
+In this example, we declare a set and assign it to the variable `data`. We then assign the `data` set to the variable `data2`. We then add the item `h` to the `data2` set. The output shows that the item `h` is added to both sets.
+:::
+
+Now, let's see how to copy a set using the `copy()` method.
+
+```python title="set_copy.py" showLineNumbers{1} {1-3}
+data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+data2 = data.copy()
+data2.add('h')
+print(data)
+print(data2)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\username>python set_copy.py
+{'d', 'e', 'a', 'b', 'f', 'g', 'c'}
+{'d', 'e', 'a', 'b', 'f', 'g', 'h', 'c'}
+```
+
+In this example, we declare a set and assign it to the variable `data`. We then use the `copy()` method to copy the `data` set to the variable `data2`. We then add the item `h` to the `data2` set. The output shows that the item `h` is added to the `data2` set only.
+
