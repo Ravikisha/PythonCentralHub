@@ -337,3 +337,40 @@ C:\Users\username>python set_copy.py
 
 In this example, we declare a set and assign it to the variable `data`. We then use the `copy()` method to copy the `data` set to the variable `data2`. We then add the item `h` to the `data2` set. The output shows that the item `h` is added to the `data2` set only.
 
+## Set Membership
+In Python, we can use the `in` keyword to check if an item exists in a set. In this section, we are going to learn how to use the `in` keyword to check if an item exists in a set.
+
+```python title="set_membership.py" showLineNumbers{1} {1-7}
+data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+if 'a' in data:
+    print('a exists in the set')
+else:
+    print('a does not exist in the set')
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python set_membership.py
+a exists in the set
+```
+
+In this example, we declare a set and assign it to the variable `data`. We then use the `in` keyword to check if the item `a` exists in the set. The output shows that the item `a` exists in the set.
+
+## Set Length
+In Python, we can use the `len()` method to get the length of a set. In this section, we are going to learn how to use the `len()` method to get the length of a set.
+
+```python title="set_length.py" showLineNumbers{1} {1-3}
+data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+print(len(data))
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python set_length.py
+7
+```
+
+In this example, we declare a set and assign it to the variable `data`. We then use the `len()` method to get the length of the set. The output shows that the length of the set is 7.
+
