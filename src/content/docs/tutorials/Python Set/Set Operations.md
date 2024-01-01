@@ -212,3 +212,83 @@ C:\Users\username>python set_add_elements.py
 ```
 
 In this example, we declare an empty set and assign it to the variable `data`. We then use the `for` loop to iterate over the range of numbers from 1 to 10 and add the numbers to the set using the `add()` method. The output shows that the items are added to the set.
+
+## Set Join
+Joining two sets is called a union operation. In Python, we can use the `|`, `update()`, and `union()` methods to join two sets.
+
+### Using the `|` Operator
+In Python, we can use the `|` operator to join two sets.
+
+```python title="set_join.py" showLineNumbers{1} {1-3}
+data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+data2 = {'d', 'e', 'f', 'g', 'h', 'i', 'j'}
+data3 = data | data2
+print(data3)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python set_join.py
+{'d', 'j', 'e', 'a', 'b', 'f', 'i', 'h', 'g', 'c'}
+```
+
+In this example, we declare two sets and assign them to the variables `data` and `data2`. We then use the `|` operator to join the two sets and assign the result to the variable `data3`. The output shows that the items are added to the set.
+
+### Using the `update()` Method
+In Python, we can use the `update()` method to join two sets.
+
+```python title="set_update.py" showLineNumbers{1} {1-3}
+data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+data2 = {'d', 'e', 'f', 'g', 'h', 'i', 'j'}
+data.update(data2)
+print(data)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python set_update.py
+{'d', 'j', 'e', 'a', 'b', 'f', 'i', 'h', 'g', 'c'}
+```
+
+In this example, we declare two sets and assign them to the variables `data` and `data2`. We then use the `update()` method to join the two sets and assign the result to the variable `data3`. The output shows that the items are added to the set.
+
+### Using the `union()` Method
+In Python, we can use the `union()` method to join two sets.
+
+```python title="set_union.py" showLineNumbers{1} {1-3}
+data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+data2 = {'d', 'e', 'f', 'g', 'h', 'i', 'j'}
+data3 = data.union(data2)
+print(data3)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python set_union.py
+{'d', 'j', 'e', 'a', 'b', 'f', 'i', 'h', 'g', 'c'}
+```
+
+In this example, we declare two sets and assign them to the variables `data` and `data2`. We then use the `union()` method to join the two sets and assign the result to the variable `data3`. The output shows that the items are added to the set.
+
+## Unpacking Sets
+In Python, we can use the `*` operator to unpack sets. In this section, we are going to learn how to use the `*` operator to unpack sets.
+
+```python title="set_unpack.py" showLineNumbers{1} {1-3}
+data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+data2 = {'d', 'e', 'f', 'g', 'h', 'i', 'j'}
+data3 = {*data, *data2}
+print(data3)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python set_unpack.py
+{'d', 'j', 'e', 'a', 'b', 'f', 'i', 'h', 'g', 'c'}
+```
+
+In this example, we declare two sets and assign them to the variables `data` and `data2`. We then use the `*` operator to unpack the two sets and assign the result to the variable `data3`. The output shows that the items are added to the set.
+
