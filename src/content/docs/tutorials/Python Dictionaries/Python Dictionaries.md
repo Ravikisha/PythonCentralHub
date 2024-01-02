@@ -2,7 +2,7 @@
 title: Dictionaries in Python
 description: Learn how to use dictionaries in Python. How to create, add, remove, and iterate over key-value pairs. Dictionaries are a powerful data structure in Python.
 sidebar: 
-    order: 63
+    order: 64
 ---
 
 ## Mastering Dictionaries in Python: A Comprehensive Guide

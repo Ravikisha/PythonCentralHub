@@ -2,7 +2,7 @@
 title: Add and Remove in Dictionary
 description: Learn how to add and remove items in a dictionary. In this tutorial, we will learn how to add and remove items in a dictionary. We will also learn how to update the value of an existing key. We will also learn how to remove a key-value pair from a dictionary. We will also learn how to remove all items from a dictionary. We will also learn how to delete a dictionary. 
 sidebar: 
-    order: 65
+    order: 66
 ---
 
 ## Add items in a dictionary

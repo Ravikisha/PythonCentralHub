@@ -2,7 +2,7 @@
 title: Dictionary Methods
 description: Learn about the methods available for dictionaries in Python. We will cover the following methods - clear, copy, fromkeys, get, items, keys, pop, popitem, setdefault, update, and values.
 sidebar: 
-    order: 68
+    order: 69
 ---
 
 ## Dictionary Methods
@@ -28,20 +28,6 @@ In Python, a dictionary is a collection of key-value pairs. Each key is connecte
 | 15 | in | Returns True if a key exists in the dictionary | `key in my_dict` |
 | 16 | not in | Returns True if a key does not exist in the dictionary | `key not in my_dict` |
 
-<!-- ```python title="set_add.py" showLineNumbers{1} {1-3}
-data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
-data.add('h')
-print(data)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2-3}
-C:\Users\username>python set_add.py
-{'a', 'b', 'd', 'f', 'h', 'g', 'c', 'e'}
-```
-
-In this example, we declare a set and assign it to the variable `data`. We then add the item `h` to the set using the `add()` method. The output shows that the item is added to the set. -->
 
 ## clear()
 The `clear()` method removes all the elements from a dictionary.

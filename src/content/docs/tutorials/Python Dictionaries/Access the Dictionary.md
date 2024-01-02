@@ -2,7 +2,7 @@
 title: Access the dictionary
 description: Learn how to access the dictionary in Python. In this tutorial, you will learn how to access the dictionary in Python. You also known as how to access the dictionary in Python using the key. You will also learn how to access the dictionary in Python using the get() method. You change the value of the dictionary in Python.
 sidebar: 
-    order: 64
+    order: 65
 ---
 
 ## Accessing Dictionary Items
