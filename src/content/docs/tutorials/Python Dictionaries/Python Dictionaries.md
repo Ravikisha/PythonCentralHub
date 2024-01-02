@@ -11,20 +11,6 @@ Dictionaries in Python are powerful and flexible data structures that allow you 
 ## Understanding Dictionaries
 A dictionary in Python is an unordered collection of items, where each item consists of a key-value pair. Keys are unique and used to access values associated with them. Dictionaries are dynamic, meaning you can add, modify, or remove key-value pairs as needed.
 
-<!-- ```python title="set.py" showLineNumbers{1} {1}
-set1 = {1, 2, 3}
-print(set1)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2}
-C:\Users\username>python set.py
-{1, 2, 3}
-```
-
-In this example, we declare a set of three elements and assign it to the variable `set1`. We then print the set to the console. The output shows that the set contains three elements. -->
-
 
 ## Creating Dictionaries
 There are several ways to create dictionaries in Python. The most common way is to use curly braces `{}` and separate key-value pairs with commas. Each key-value pair consists of a key and a value separated by a colon `:`. The following example creates a dictionary with three key-value pairs:
@@ -391,6 +377,47 @@ TypeError: unhashable type: 'set'
 ```
 
 In this example, we try to declare a dictionary with three key-value pairs and assign it to the variable `dict1`. We then print the dictionary to the console. The output shows that we get a `TypeError` exception because we tried to declare a dictionary with a set.
+
+### Declaring a Nested Dictionary
+You can declare nested dictionaries in Python using curly braces `{}` and separating key-value pairs with commas. Each key-value pair consists of a key and a value separated by a colon `:`. The following example declares a nested dictionary with three key-value pairs:
+
+```python title="dict.py" showLineNumbers{1} {1-8}
+dict1 = {
+    "name": "John",
+    "age": 30,
+    "city": "New York",
+    "grades": [90, 80, 70],
+    "friends": ("Jane", "Jack", "Joe"),
+    "pets": {"dog": "Spot", "cat": "Fluffy"}
+}
+print(dict1["pets"])
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-9}
+C:\Users\username>python dict.py
+{'dog': 'Spot', 'cat': 'Fluffy'}
+```
+
+In this example, we declare a nested dictionary with six key-value pairs and assign it to the variable `dict1`. We then print the value of the key `pets` to the console. The output shows that the value of the key is `{'dog': 'Spot', 'cat': 'Fluffy'}`.
+
+### Declaring a Dictionary with Nested Tuple
+You can declare nested dictionaries in Python using curly braces `{}` and separating key-value pairs with commas. Each key-value pair consists of a key and a value separated by a colon `:`. The following example declares a nested dictionary with three key-value pairs:
+
+```python title="dict.py" showLineNumbers{1} {1-8}
+dict1 = dict([("name", "John"), ("age", 30), ("city", "New York")])
+print(dict1["name"])
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-9}
+C:\Users\username>python dict.py
+John
+```
+
+In this example, we declare a nested dictionary with three key-value pairs and assign it to the variable `dict1`. We then print the value of the key `name` to the console. The output shows that the value of the key is `John`.
 
 ## Accessing Dictionary Items
 You can access dictionary items by their keys. If you try to access a key that does not exist, you will get a `KeyError` exception. 
