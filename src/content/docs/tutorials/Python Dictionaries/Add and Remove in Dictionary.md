@@ -7,21 +7,6 @@ sidebar:
 
 ## Add items in a dictionary
 In Python, we can add items in a dictionary using the following ways.
-<!-- 
-```python title="set_add.py" showLineNumbers{1} {1-2}
-data = {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
-data.add('h')
-print(data)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2-3}
-C:\Users\username>python set_add.py
-{'a', 'e', 'b', 'd', 'g', 'h', 'f', 'c'}
-```
-
-In this example, we declare a set and assign it to the variable `data`. We then add an item to the set using the `add()` method. The output shows that the item is added to the set. -->
 
 ### Add a new key-value pair using [] operator
 We can add a new key-value pair in a dictionary using the `[]` operator. If the key already exists in the dictionary, then the value of the key is updated. If the key does not exist in the dictionary, then a new key-value pair is added to the dictionary.
