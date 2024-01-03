@@ -359,3 +359,6 @@ Here, we import the array module and assign it to the variable `arr`. We then cr
 :::caution
 You can't create a multidimensional array in Python. You can only create a one-dimensional array.
 :::
+
+## Conclusion
+In this guide, we explored the basics of arrays, how to use the array module, and understand the advantages it offers. We also explored the typecodes for arrays in Python, how to create arrays, how to access elements, how to add elements, how to remove elements, how to update elements, and how to search for elements in an array. For more information on the array module, refer to the [official documentation](https://docs.python.org/3/library/array.html). For tutorials like this, Python Central Hub.
