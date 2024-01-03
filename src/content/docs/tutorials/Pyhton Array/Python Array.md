@@ -11,21 +11,6 @@ Arrays in Python provide a more efficient way to store and manipulate sequences 
 ## Introduction to Arrays
 An array is a collection of elements of the same data type stored in contiguous memory locations. Unlike lists, arrays in Python are more memory-efficient because they are homogeneous, meaning all elements must be of the same type. This leads to a more compact representation of the data.
 
-<!-- ```python title="clear.py" showLineNumbers{1} {1-3}
-data = {'a': 1, 'b': 2, 'c': 3}
-data.clear()
-print(data)
-```
-
-Output:
-
-```cmd title="command" showLineNumbers{1} {2-3}
-C:\Users\username>python clear.py
-{}
-```
-
-In this example, we declare a dictionary and assign it to the variable `data`. We then use the `clear()` method to remove all the elements from the dictionary. The output shows that the dictionary is empty. -->
-
 ## Need for Arrays
 Arrays are useful when you need to store a large number of elements of the same data type. For example, if you need to store the marks of 100 students, you can use an array instead of a list. This is because arrays are more memory-efficient than lists. It uses less memory to store the same number of elements compared to lists. It use the Typecode to store the data in the array. We will explore this in detail in the next section.
 
