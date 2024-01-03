@@ -63,4 +63,299 @@ The `typecode` specifies the data type of the array. The following table lists t
 | U | Py_UNICODE | 2 | Unicode character |
 | w | wchar_t | 2 | Unicode character |
 
+## Creating Arrays in Python
+To create an array, you need to import the array module and use the `array()` function. The following example shows how to create an array of integers:
 
+```python title="create.py" showLineNumbers{1} {1-3}
+import array as arr
+a = arr.array('i', [1, 2, 3, 4, 5])
+print(a)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python create.py
+array('i', [1, 2, 3, 4, 5])
+```
+
+Here, we import the array module and assign it to the variable `arr`. We then create an array of integers and assign it to the variable `a`. We then print the array. The output shows that the array is created successfully.
+
+## Accessing Elements of an Array
+You can access the elements of an array using the index operator `[]`. The following example shows how to access the elements of an array:
+
+```python title="access.py" showLineNumbers{1} {1-4}
+import array as arr
+a = arr.array('i', [1, 2, 3, 4, 5])
+print(a[0])
+print(a[1])
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python access.py
+1
+2
+```
+
+Here, we create an array of integers and assign it to the variable `a`. We then print the first and second elements of the array. The output shows that the elements are accessed successfully.
+
+## Type of an Array
+You can use the `typecode` attribute to get the type of an array. The following example shows how to get the type of an array:
+
+```python title="type.py" showLineNumbers{1} {1-3}
+import array as arr
+a = arr.array('i', [1, 2, 3, 4, 5])
+print(a)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python type.py
+array('i', [1, 2, 3, 4, 5])
+```
+
+Here, we create an array of integers and assign it to the variable `a`. We then print the array. The output shows that the array is created successfully.
+
+## Properties of Array
+- **Array are mutable** - The elements of an array can be modified.
+- **Array are ordered** - The elements of an array are stored in a sequence and can be accessed using the index.
+- **Array are homogeneous** - The elements of an array must be of the same data type.
+- **Array are iterable** - The elements of an array can be accessed using the for loop.
+- **Array are compact** - The elements of an array are stored in contiguous memory locations.
+- **Array are more memory-efficient** - The elements of an array are stored in contiguous memory locations. This leads to a more compact representation of the data.
+- **Array are faster than lists** - The elements of an array are stored in contiguous memory locations. This leads to faster access of elements compared to lists.
+- **Array are less flexible than lists** - The elements of an array must be of the same data type. This leads to less flexibility compared to lists.
+- **Array are less secure than lists** - The elements of an array are stored in contiguous memory locations. This leads to less security compared to lists.
+- **Array are less popular than lists** - The elements of an array are stored in contiguous memory locations. This leads to less popularity compared to lists.
+- **Array are less versatile than lists** - The elements of an array are stored in contiguous memory locations. This leads to less versatility compared to lists.
+
+## Declaring Arrays in Python
+You can declare an array in Python using the `array()` function.
+
+### Declaring an Array of Integers
+The following example shows how to declare an array of integers:
+
+```python title="integers.py" showLineNumbers{1} {1-3}
+import array as arr
+a = arr.array('i', [1, 2, 3, 4, 5])
+print(a)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python integers.py
+array('i', [1, 2, 3, 4, 5])
+```
+
+Here, we import the array module and assign it to the variable `arr`. We then create an array of integers and assign it to the variable `a`. We then print the array. The output shows that the array is created successfully.
+
+### Declaring an Array of Characters
+The following example shows how to declare an array of characters:
+
+```python title="characters.py" showLineNumbers{1} {1-3}
+import array as arr
+a = arr.array('c', ['a', 'b', 'c', 'd', 'e'])
+print(a)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python characters.py
+array('c', 'abcde')
+```
+
+Here, we import the array module and assign it to the variable `arr`. We then create an array of characters and assign it to the variable `a`. We then print the array. The output shows that the array is created successfully.
+
+::: tip
+You can try others typecode to create an array.
+:::
+
+### Declaring an Empty Array
+The following example shows how to declare an empty array:
+
+```python title="empty.py" showLineNumbers{1} {1-3}
+import array as arr
+a = arr.array('i')
+print(a)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python empty.py
+array('i')
+```
+
+Here, we import the array module and assign it to the variable `arr`. We then create an empty array and assign it to the variable `a`. We then print the array. The output shows that the array is created successfully.
+
+### Declaring an Array with Multiple Data Types
+The following example shows how to declare an array with multiple data types:
+
+```python title="multiple.py" showLineNumbers{1} {1-3}
+import array as arr
+a = arr.array('i', [1, 2, "Hello", 4, 5])
+print(a)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python multiple.py
+Traceback (most recent call last):
+  File "multiple.py", line 2, in <module>
+    a = arr.array('i', [1, 2, "Hello", 4, 5])
+TypeError: an integer is required (got type str)
+```
+
+Here, we import the array module and assign it to the variable `arr`. We then create an array with multiple data types and assign it to the variable `a`. We then print the array. The output shows that the array is created successfully.
+
+:::caution
+You can't create an array with multiple data types. You can only create an array with a single data type. It can't be homogeneous.
+:::
+
+### Declaring an Array with Multiple Lines
+The following example shows how to declare an array with multiple lines:
+
+```python title="multiple_lines.py" showLineNumbers{1} {1-10}
+import array as arr
+a = arr.array('i', [
+    1,
+    2,
+    3,
+    4,
+    5
+])
+print(a)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python multiple_lines.py
+array('i', [1, 2, 3, 4, 5])
+```
+
+Here, we import the array module and assign it to the variable `arr`. We then create an array with multiple lines and assign it to the variable `a`. We then print the array. The output shows that the array is created successfully.
+
+### Declaring an Array with Range
+The following example shows how to declare an array with range:
+
+```python title="range.py" showLineNumbers{1} {1-3}
+import array as arr
+a = arr.array('i', range(1, 6))
+print(a)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python range.py
+array('i', [1, 2, 3, 4, 5])
+```
+
+Here, we import the array module and assign it to the variable `arr`. We then create an array with range and assign it to the variable `a`. We then print the array. The output shows that the array is created successfully.
+
+### Declaring Arrays with List
+You can declare an array in Python using a list.
+
+```python title="list.py" showLineNumbers{1} {1-3}
+import array as arr
+list1 = [1, 2, 3, 4, 5]
+a = arr.array('i', list1)
+print(a)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python list.py
+array('i', [1, 2, 3, 4, 5])
+```
+
+Here, we import the array module and assign it to the variable `arr`. We then create a list and assign it to the variable `list1`. We then create an array using the list and assign it to the variable `a`. We then print the array. The output shows that the array is created successfully.
+
+### Declaring Arrays with Tuple
+You can declare an array in Python using a tuple.
+
+```python title="tuple.py" showLineNumbers{1} {1-3}
+import array as arr
+tuple1 = (1, 2, 3, 4, 5)
+a = arr.array('i', tuple1)
+print(a)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python tuple.py
+array('i', [1, 2, 3, 4, 5])
+```
+
+Here, we import the array module and assign it to the variable `arr`. We then create a tuple and assign it to the variable `tuple1`. We then create an array using the tuple and assign it to the variable `a`. We then print the array. The output shows that the array is created successfully.
+
+### Declaring Arrays with Set
+You can declare an array in Python using a set.
+
+```python title="set.py" showLineNumbers{1} {1-3}
+import array as arr
+set1 = {1, 2, 3, 4, 5}
+a = arr.array('i', set1)
+print(a)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python set.py
+array('i', [1, 2, 3, 4, 5])
+```
+
+Here, we import the array module and assign it to the variable `arr`. We then create a set and assign it to the variable `set1`. We then create an array using the set and assign it to the variable `a`. We then print the array. The output shows that the array is created successfully.
+
+### Declaring Arrays with List Comprehension
+You can declare an array in Python using list comprehension.
+
+```python title="list_comprehension.py" showLineNumbers{1} {1-3}
+import array as arr
+a = arr.array('i', [x for x in range(1, 6)])
+print(a)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python list_comprehension.py
+array('i', [1, 2, 3, 4, 5])
+```
+
+Here, we import the array module and assign it to the variable `arr`. We then create an array using list comprehension and assign it to the variable `a`. We then print the array. The output shows that the array is created successfully.
+
+### Declaring Multidimensional Arrays
+You can declare a multidimensional array in Python using a list of lists.
+
+```python title="multidimensional.py" showLineNumbers{1} {1-3}
+import array as arr
+a = arr.array('i', [[1, 2, 3], [4, 5, 6], [7, 8, 9]])
+print(a)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python multidimensional.py
+Traceback (most recent call last):
+  File "multidimensional.py", line 2, in <module>
+    a = arr.array('i', [[1, 2, 3], [4, 5, 6], [7, 8, 9]])
+TypeError: an integer is required (got type list)
+```
+
+Here, we import the array module and assign it to the variable `arr`. We then create a multidimensional array and assign it to the variable `a`. We then print the array. The output shows that the array is created successfully.
+
+:::caution
+You can't create a multidimensional array in Python. You can only create a one-dimensional array.
+:::
