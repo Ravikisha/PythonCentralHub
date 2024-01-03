@@ -290,6 +290,74 @@ C:\Users\username>python list_with_list_comprehension.py
 
 In this example, we declare a list using a list comprehension and assign it to the variable `list_with_list_comprehension`. We then print the list to the console. The output shows that the list contains five elements.
 
+### Declaring a Multi Dimensional List
+A multi dimensional list can be declared using square brackets `[]` and commas `,` to separate elements:
+
+```python title="multi_dimensional_list.py" showLineNumbers{1-3} {1}
+multi_dimensional_list = [[1, 2, 3], [4, 5, 6]]
+print(multi_dimensional_list)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python multi_dimensional_list.py
+[[1, 2, 3], [4, 5, 6]]
+```
+
+In this example, we declare a multi dimensional list and assign it to the variable `multi_dimensional_list`. We then print the list to the console. The output shows that the list contains two lists as elements. This is also known as a two-dimensional list.
+
+:::note
+If you create multi dimensional list, it is called nested list.
+```python title="multi_dimensional_list.py" showLineNumbers{1-3} {1}
+multi_dimensional_list = [[[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [10, 11, 12]]]
+print(multi_dimensional_list)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python multi_dimensional_list.py
+[[[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [10, 11, 12]]]
+```
+
+In this example, we declare a multi dimensional list and assign it to the variable `multi_dimensional_list`. We then print the list to the console. The output shows that the list contains two lists as elements. This is also known as a three-dimensional list.
+:::
+
+### Declaring a List with a List Comprehension and Nested Lists
+A list with a list comprehension and nested lists can be declared using square brackets `[]` and commas `,` to separate elements:
+
+```python title="list_with_list_comprehension_and_nested_lists.py" showLineNumbers{1-3} {1}
+list_with_list_comprehension_and_nested_lists = [[i for i in range(1, 4)], [i for i in range(4, 7)]]
+print(list_with_list_comprehension_and_nested_lists)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python list_with_list_comprehension_and_nested_lists.py
+[[1, 2, 3], [4, 5, 6]]
+```
+
+In this example, we declare a list with a list comprehension and nested lists and assign it to the variable `list_with_list_comprehension_and_nested_lists`. We then print the list to the console. The output shows that the list contains two lists as elements. This is also known as a two-dimensional list.
+
+### Declaring a List with a List Comprehension and Nested Lists in Reverse Order
+A list with a list comprehension and nested lists in reverse order can be declared using square brackets `[]` and commas `,` to separate elements:
+
+```python title="list_with_list_comprehension_and_nested_lists_in_reverse_order.py" showLineNumbers{1-3} {1}
+list_with_list_comprehension_and_nested_lists_in_reverse_order = [[i for i in range(3, 0, -1)], [i for i in range(6, 3, -1)]]
+print(list_with_list_comprehension_and_nested_lists_in_reverse_order)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python list_with_list_comprehension_and_nested_lists_in_reverse_order.py
+[[3, 2, 1], [6, 5, 4]]
+```
+
+In this example, we declare a list with a list comprehension and nested lists in reverse order and assign it to the variable `list_with_list_comprehension_and_nested_lists_in_reverse_order`. We then print the list to the console. The output shows that the list contains two lists as elements. This is also known as a two-dimensional list.
+
 ## Types of List
 Lists in Python can be categorized into the following types:
 - **Mutable Lists**: Lists whose elements can be modified after creation.
