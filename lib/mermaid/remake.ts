@@ -78,7 +78,7 @@ function plugin() {
           // TODO: put CSS elsewhere
           value: `
           <div class="mermaid-diagram" style="${style}">
-          <p style="text-align: center;color: #222;font-size: 1rem; margin: 1rem 0 1rem 0; font-family: 'Atkinson Hyperlegible', sans-serif;">${
+          <p style="text-align: center;color: #222;font-size: 1rem; margin: 1rem 0 1rem 0; font-family: 'Atkinson Hyperlegible', sans-serif;padding: 0 1rem 0 1rem;">${
             getDesc(node.meta) ?? ""
           }</p>
           <hr style="width: 80%; margin: 0.5rem 0 0.5rem 0; border: 1px solid #c2c2c2;"/>
