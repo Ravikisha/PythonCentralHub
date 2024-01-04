@@ -8,26 +8,6 @@ sidebar:
 ## Navigating Array in Python: A Guide to Accessing Array Items
 In Python, Array are a versatile and commonly used data structure for storing ordered collections of items. Understanding how to access elements within a Array is fundamental to working with this data structure effectively. In this guide, we'll explore the various methods and techniques for accessing Array items in Python.
 
-<!-- ```python title="list_indexing.py" showLineNumbers{1} {1,3-7}
-my_list = ['a', 'b', 'c', 'd', 'e']
-
-print(my_list[0])
-print(my_list[1])
-print(my_list[2])
-print(my_list[3])
-```
-
-Output:
-```cmd title="command" showLineNumbers{1} {2-6}
-C:\Users\username>python list_indexing.py
-a
-b
-c
-d
-```
-
-In the above example, we create a list of five elements and print the first four elements using their indices. Note that the last element is not printed because it has an index of 4, which is out of range for the list. -->
-
 ## Basic Array Access
 The most basic way to access items in a Array is to use the index operator `[]`. The index operator requires one argument: the index of the item to access. The index of the first item in the Array is `0`, the index of the second item is `1`, and so on. The following example demonstrates how to access items in a Array using the index operator:
 
