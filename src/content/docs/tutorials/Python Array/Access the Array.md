@@ -235,5 +235,45 @@ array('i', [5, 3])
 
 In the above example, we create a Array of five elements and print a slice of the Array containing the fifth, fourth, and third elements. We also print a slice of the Array containing the fifth and third elements.
 
+## in Operator
+In Python, you can use the `in` operator to check if a Array contains a specified item. The `in` operator returns `True` if the Array contains the specified item and `False` if it does not. The following example demonstrates how to use the `in` operator to check if a Array contains a specified item:
+
+```python title="array_in.py" showLineNumbers{1} {1,3-5}
+import array as arr
+
+my_array = arr.array('i', [1, 2, 3, 4, 5])
+print(1 in my_array)
+print(6 in my_array)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python array_in.py
+True
+False
+```
+
+In the above example, we create a Array of five elements and check if the Array contains the items `1` and `6`. The Array contains `1` but not `6`, so the first check returns `True` and the second check returns `False`.
+
+## not in Operator
+In Python, you can use the `not in` operator to check if a Array does not contain a specified item. The `not in` operator returns `True` if the Array does not contain the specified item and `False` if it does. The following example demonstrates how to use the `not in` operator to check if a Array does not contain a specified item:
+
+```python title="array_not_in.py" showLineNumbers{1} {1,3-5}
+import array as arr
+
+my_array = arr.array('i', [1, 2, 3, 4, 5])
+print(1 not in my_array)
+print(6 not in my_array)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python array_not_in.py
+False
+True
+```
+
+In the above example, we create a Array of five elements and check if the Array does not contain the items `1` and `6`. The Array contains `1` but not `6`, so the first check returns `False` and the second check returns `True`.
+
 ## Conclusion
 In this guide, we explored the various methods and techniques for accessing Array items in Python. We also explored how to access Array slices in Python. Now that you are familiar with the basics of accessing Array items in Python, you can learn more about Array in Python from the [official documentation](https://docs.python.org/3/library/array.html). For more Python Array tutorials, Check out the Python Central Hub.
