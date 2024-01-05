@@ -1,7 +1,7 @@
-import path from 'node:path';
-import fs from 'node:fs/promises';
-// import { createRequire } from 'module';
-import puppeteer from 'puppeteer';
+// import path from 'node:path';
+// import fs from 'node:fs/promises';
+// // import { createRequire } from 'module';
+// import puppeteer from 'puppeteer';
 /* ·········································································· */
 // import type { Props } from './Props';
 
@@ -15,11 +15,11 @@ import puppeteer from 'puppeteer';
 /**
  * Code from
  * Astro Diagrams (https://code.juliancataldo.com/component/astro-diagram/)
- * 
+ *
  */
 
 export default async function renderDiagram({ config, code }: any) {
-  const browser = await puppeteer.launch({ args: ['--no-sandbox'], headless: "new" });
+  /* const browser = await puppeteer.launch({ args: ['--no-sandbox'], headless: "new" });
   const page = await browser.newPage();
 
   const content = await fs.readFile(
@@ -41,7 +41,6 @@ export default async function renderDiagram({ config, code }: any) {
     const mermaidAPI = window.mermaid.mermaidAPI;
 
       try {
-        /* Render the mermaid diagram */
         const svgCode = await mermaidAPI.render('diagram', codeB);
         return { status: 'success', svgCode: svgCode.svg };
       } catch (error: any) {
@@ -59,4 +58,12 @@ export default async function renderDiagram({ config, code }: any) {
   }
 
   return false;
+  */
+
+  const htmlCode = `
+<pre class="mermaid" style="all: initial; width: 100%;display: flex; flex-direction: column; justify-content: center;align-items: center;">
+  ${code.trimStart()}
+</pre>
+  `;
+  return htmlCode;
 }

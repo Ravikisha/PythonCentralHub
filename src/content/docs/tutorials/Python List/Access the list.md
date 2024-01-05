@@ -331,5 +331,55 @@ C:\Users\username>python list_slice.py
 
 In the above example, we create a list of five elements and print a slice of the list from index -1 to index 3 with a step of -1. This means that the slice will be created in reverse order.
 
+## in Operator
+The `in` operator is used to check if an element is present in a list. It returns `True` if the element is present and `False` otherwise.
+
+**Syntax**:
+```python title="syntax.py" showLineNumbers{1} {1}
+element in list
+```
+
+Example:
+```python title="in_operator.py" showLineNumbers{1} {1,3-4}
+my_list = ['a', 'b', 'c', 'd', 'e']
+
+print('a' in my_list)
+print('f' in my_list)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python in_operator.py
+True
+False
+```
+
+In the above example, we create a list of five elements and check if the elements 'a' and 'f' are present in the list.
+
+## not in Operator
+The `not in` operator is used to check if an element is not present in a list. It returns `True` if the element is not present and `False` otherwise.
+
+**Syntax**:
+```python title="syntax.py" showLineNumbers{1} {1}
+element not in list
+```
+
+Example:
+```python title="not_in_operator.py" showLineNumbers{1} {1,3-4}
+my_list = ['a', 'b', 'c', 'd', 'e']
+
+print('a' not in my_list)
+print('f' not in my_list)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python not_in_operator.py
+False
+True
+```
+
+In the above example, we create a list of five elements and check if the elements 'a' and 'f' are not present in the list.
+
 ## Conclusion
 In this guide, we explored the various methods and techniques for accessing list items in Python. We also learned about list indexing, negative indexing, multidimensional lists, and list slices. Now that you understand how to access list items in Python, you can start working with lists more effectively in your programs. For more information on lists, check out Python's [official documentation](https://docs.python.org/3/tutorial/datastructures.html#more-on-lists).

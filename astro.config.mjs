@@ -3,7 +3,7 @@ import starlight from "@astrojs/starlight";
 import rehypePrettyCode from "rehype-pretty-code";
 import robotsTxt from "astro-robots-txt";
 import remakeMermaid from "./lib/mermaid/remake.ts";
-import markdownIntegration from '@astropub/md'
+import markdownIntegration from "@astropub/md";
 
 const site = "https://python-central-hub.vercel.app";
 
@@ -51,12 +51,8 @@ export default defineConfig({
   markdown: {
     syntaxHighlight: false,
     // Disable syntax built-in syntax hightlighting from astro
-    rehypePlugins: [
-      [rehypePrettyCode, options],
-    ],
-    remarkPlugins: [
-      remakeMermaid,
-    ],
+    rehypePlugins: [[rehypePrettyCode, options]],
+    remarkPlugins: [remakeMermaid],
   },
   integrations: [
     starlight({
@@ -257,7 +253,9 @@ export default defineConfig({
           tag: "script",
           attrs: {
             async: true,
-            src: `https://www.googletagmanager.com/gtag/js?id=${import.meta.env.VITE_GOOGLE_ANALYTICS}`,
+            src: `https://www.googletagmanager.com/gtag/js?id=${
+              import.meta.env.VITE_GOOGLE_ANALYTICS
+            }`,
           },
         },
         {
@@ -271,7 +269,17 @@ export default defineConfig({
           tag: "script",
           attrs: {
             async: true,
-            src: `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${import.meta.env.VITE_GOOGLE_ADSENSE}`,
+            type: "module",
+            src: "/scripts/mermaid.js",
+          },
+        },
+        {
+          tag: "script",
+          attrs: {
+            async: true,
+            src: `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${
+              import.meta.env.VITE_GOOGLE_ADSENSE
+            }`,
             crossorigin: "anonymous",
           },
         },
