@@ -395,3 +395,47 @@ C:\Users\username>python array_sort.py
 
 In the above example, we create an array of five elements and sort the array elements in ascending order using the `sorted()` function.
 
+## Searching Array
+Search the array elements using the `index()` method and `in` operator.
+
+### index() method
+The `index()` method returns the index of the specified element in the array.
+
+```python title="array_search.py" showLineNumbers{1} {1, 3-4}
+import array as arr
+
+my_array = arr.array('i', [1, 2, 3, 4, 5])
+data = my_array.index(3)
+
+print(data)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python array_search.py
+2
+```
+
+In the above example, we create an array of five elements and search the array elements using the `index()` method.
+
+### in operator
+The `in` operator returns `True` if the specified element is present in the array.
+
+```python title="array_search.py" showLineNumbers{1} {1, 3-4}
+import array as arr
+
+my_array = arr.array('i', [1, 2, 3, 4, 5])
+print(3 in my_array)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python array_search.py
+True
+```
+
+In the above example, we create an array of five elements and search the array elements using the `in` operator.
+
+
