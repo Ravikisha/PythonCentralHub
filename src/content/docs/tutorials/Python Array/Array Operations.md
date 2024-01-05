@@ -104,3 +104,111 @@ C:\Users\username>python array_range.py
 
 In the above example, we create an array of five elements and iterate over the array elements using the range() function.
 
+## Copying Array
+You can copy the array elements to another array using the `copy()` method and `deepcopy()` function.
+
+### = operator
+The `=` operator is used to copy the array elements to another array.
+
+```python title="array_copy.py" showLineNumbers{1} {1, 3-4, 10}
+import array as arr
+
+my_array = arr.array('i', [1, 2, 3, 4, 5])
+new_array = my_array
+
+print("Before updating")
+print(my_array)
+print(new_array)
+
+new_array[0] = 6
+
+print("After updating")
+print(my_array)
+print(new_array)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-14}
+C:\Users\username>python array_copy.py
+Before updating
+array('i', [1, 2, 3, 4, 5])
+array('i', [1, 2, 3, 4, 5])
+After updating
+array('i', [6, 2, 3, 4, 5])
+array('i', [6, 2, 3, 4, 5])
+```
+
+In the above example, we create an array of five elements and copy the array elements to another array using the `=` operator. After updating, we change the first element of the new array. The first element of the original array is also changed.
+
+### copy() method
+The `copy()` method returns a shallow copy of the array.
+
+```python title="array_copy.py" showLineNumbers{1} {1, 3-4, 10}
+import array as arr
+
+my_array = arr.array('i', [1, 2, 3, 4, 5])
+new_array = my_array.copy()
+
+print("Before updating")
+print(my_array)
+print(new_array)
+
+new_array[0] = 6
+
+print("After updating")
+print(my_array)
+print(new_array)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-14}
+C:\Users\username>python array_copy.py
+Before updating
+array('i', [1, 2, 3, 4, 5])
+array('i', [1, 2, 3, 4, 5])
+After updating
+array('i', [1, 2, 3, 4, 5])
+array('i', [6, 2, 3, 4, 5])
+```
+
+In the above example, we create an array of five elements and copy the array elements to another array using the `copy()` method. After updating, we change the first element of the new array. The first element of the original array is not changed.
+
+### deepcopy() function
+The `deepcopy()` function returns a deep copy of the array.
+
+```python title="array_deepcopy.py" showLineNumbers{1} {1-2, 4-5, 11}
+import array as arr
+import copy
+
+my_array = arr.array('i', [1, 2, 3, 4, 5])
+new_array = copy.deepcopy(my_array)
+
+print("Before updating")
+print(my_array)
+print(new_array)
+
+new_array[0] = 6
+
+print("After updating")
+print(my_array)
+print(new_array)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-16}
+C:\Users\username>python array_deepcopy.py
+Before updating
+array('i', [1, 2, 3, 4, 5])
+array('i', [1, 2, 3, 4, 5])
+After updating
+array('i', [1, 2, 3, 4, 5])
+array('i', [6, 2, 3, 4, 5])
+```
+
+In the above example, we create an array of five elements and copy the array elements to another array using the `deepcopy()` function. After updating, we change the first element of the new array. The first element of the original array is not changed.
+
+
+
