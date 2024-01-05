@@ -4,25 +4,6 @@ description: Learn how to add and remove elements in an array. We will also lear
 sidebar: 
     order: 72
 ---
-<!-- ```python title="list_indexing.py" showLineNumbers{1} {1,3-7}
-my_list = ['a', 'b', 'c', 'd', 'e']
-
-print(my_list[0])
-print(my_list[1])
-print(my_list[2])
-print(my_list[3])
-```
-
-Output:
-```cmd title="command" showLineNumbers{1} {2-6}
-C:\Users\username>python list_indexing.py
-a
-b
-c
-d
-```
-
-In the above example, we create a list of five elements and print the first four elements using their indices. Note that the last element is not printed because it has an index of 4, which is out of range for the list. -->
 
 ## Add in Array
 In Python, we can add elements to an array. We can add elements to the end of an array using the `append()` method. We can also add elements to the beginning of an array using the `insert()` method.
