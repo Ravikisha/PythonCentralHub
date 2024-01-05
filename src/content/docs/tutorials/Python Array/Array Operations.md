@@ -438,4 +438,101 @@ True
 
 In the above example, we create an array of five elements and search the array elements using the `in` operator.
 
+## Joining Array
+Join the array elements using the `+` operator and `extend()` method.
+
+### + operator
+The `+` operator is used to join the array elements.
+
+```python title="array_join.py" showLineNumbers{1} {1, 3-4, 6}
+import array as arr
+
+my_array1 = arr.array('i', [1, 2, 3, 4, 5])
+my_array2 = arr.array('i', [6, 7, 8, 9, 10])
+
+new_array = my_array1 + my_array2
+
+print(new_array)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-8}
+C:\Users\username>python array_join.py
+array('i', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+```
+
+In the above example, we create two arrays of five elements and join the array elements using the `+` operator.
+
+### extend() method
+The `extend()` method is used to join the array elements.
+
+```python title="array_join.py" showLineNumbers{1} {1, 3-4, 6}
+import array as arr
+
+my_array1 = arr.array('i', [1, 2, 3, 4, 5])
+my_array2 = arr.array('i', [6, 7, 8, 9, 10])
+
+my_array1.extend(my_array2)
+
+print(my_array1)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-8}
+C:\Users\username>python array_join.py
+array('i', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+```
+
+In the above example, we create two arrays of five elements and join the array elements using the `extend()` method.
+
+### Using fromlist() method
+The `fromlist()` method is used to join the array elements.
+
+```python title="array_join.py" showLineNumbers{1} {1, 3-4, 6}
+import array as arr
+
+my_array1 = arr.array('i', [1, 2, 3, 4, 5])
+my_array2 = arr.array('i', [6, 7, 8, 9, 10])
+
+my_array1.fromlist(my_array2.tolist())
+
+print(my_array1)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-8}
+C:\Users\username>python array_join.py
+array('i', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+```
+
+In the above example, we create two arrays of five elements and join the array elements using the `fromlist()` method.
+
+### Using list() function
+The `list()` function is used to join the array elements.
+
+```python title="array_join.py" showLineNumbers{1} {1, 3-4, 6}
+import array as arr
+
+my_array1 = arr.array('i', [1, 2, 3, 4, 5])
+my_array2 = arr.array('i', [6, 7, 8, 9, 10])
+
+my_array1 = arr.array('i', list(my_array1) + list(my_array2))
+
+print(my_array1)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-8}
+C:\Users\username>python array_join.py
+array('i', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+```
+
+In the above example, we create two arrays of five elements and join the array elements using the `list()` function.
+
+## Conclusion
+In this tutorial, you have learned how to perform operations on arrays. how to perform loop, copy, reverse, sort, search, and join operations on arrays. Now you can solve problems on arrays using Python. If you like this tutorial, please share it with others via the social media channel. Thanks for reading. For more tutorials, please visit Python Central Hub.
 
