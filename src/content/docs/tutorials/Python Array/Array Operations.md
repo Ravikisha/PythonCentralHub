@@ -293,3 +293,105 @@ array('i', [5, 4, 3, 2, 1])
 
 In the above example, we create an array of five elements and reverse the array elements using the `reverse()` method.
 
+## Sorting Array
+Sort the array elements in ascending or descending order using the `sort()` method.
+
+### Using Sorting Algorithm (Bubble Sort)
+Bubble sort algorithm is used to sort the array elements in ascending order.
+
+```python title="array_sort.py" showLineNumbers{1} {1, 3, 5-10}
+import array as arr
+
+my_array = arr.array('i', [5, 2, 3, 4, 1])
+
+for i in range(len(my_array)):
+    for j in range(i + 1, len(my_array)):
+        if my_array[i] > my_array[j]:
+            temp = my_array[i]
+            my_array[i] = my_array[j]
+            my_array[j] = temp
+
+print(my_array)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-12}
+C:\Users\username>python array_sort.py
+array('i', [1, 2, 3, 4, 5])
+```
+
+In the above example, we create an array of five elements and sort the array elements in ascending order using the bubble sort algorithm.
+
+### Using Sorting Algorithm (Selection Sort)
+Selection sort algorithm is used to sort the array elements in ascending order.
+
+```python title="array_sort.py" showLineNumbers{1} {1, 3, 5-10}
+import array as arr
+
+my_array = arr.array('i', [5, 2, 3, 4, 1])
+
+for i in range(len(my_array)):
+    min_index = i
+    for j in range(i + 1, len(my_array)):
+        if my_array[min_index] > my_array[j]:
+            min_index = j
+
+    temp = my_array[i]
+    my_array[i] = my_array[min_index]
+    my_array[min_index] = temp
+
+print(my_array)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-14}
+C:\Users\username>python array_sort.py
+array('i', [1, 2, 3, 4, 5])
+```
+
+In the above example, we create an array of five elements and sort the array elements in ascending order using the selection sort algorithm.
+
+### sort() method
+The `sort()` method is used to sort the array elements in ascending order.
+
+```python title="array_sort.py" showLineNumbers{1} {1, 3-4}
+import array as arr
+
+my_array = arr.array('i', [5, 2, 3, 4, 1])
+my_array.sort()
+
+print(my_array)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python array_sort.py
+array('i', [1, 2, 3, 4, 5])
+```
+
+In the above example, we create an array of five elements and sort the array elements in ascending order using the `sort()` method.
+
+### Using Sorted() Function
+The `sorted()` function is used to sort the array elements in ascending order.
+
+```python title="array_sort.py" showLineNumbers{1} {1, 3-4}
+import array as arr
+
+my_array = arr.array('i', [5, 2, 3, 4, 1])
+new_array = sorted(my_array)
+
+print(new_array)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python array_sort.py
+[1, 2, 3, 4, 5]
+```
+
+In the above example, we create an array of five elements and sort the array elements in ascending order using the `sorted()` function.
+
