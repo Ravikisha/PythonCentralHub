@@ -63,6 +63,15 @@ if condition:
     # code to execute if condition is True
 ```
 
+**Diagram**:
+```mermaid title="if statement" desc="Diagram of the if statement in Python"
+graph TD
+    A[Start] --> B{Condition}
+    B -->|True| C[Execute Code]
+    C --> D[End]
+    B ---->|False| E[End]
+```
+
 The `if` statement begins with the `if` keyword, followed by a condition. The condition is followed by a colon (`:`). The code to execute if the condition is `True` is written on the next line, indented by four spaces.
 
 :::tip
@@ -101,6 +110,17 @@ else:
 ```
 
 The `if-else` statement begins with the `if` keyword, followed by a condition. The condition is followed by a colon (`:`). The code to execute if the condition is `True` is written on the next line, indented by four spaces. The code to execute if the condition is `False` is written after the `else` keyword, on the next line, indented by four spaces.
+
+**Diagram**:
+```mermaid title="if-else statement" desc="Diagram of the if-else statement in Python"
+graph TD
+    A[Start] --> B{Condition}
+    B -->|True| C[Execute Code]
+    C --> D[End]
+    B ---->|False| E[Execute Code]
+    E --> F[End]
+```
+
 
 :::tip
 The `else` clause is optional. If the `else` clause is not present, the code to execute if the condition is `False` is not executed.
@@ -142,6 +162,19 @@ else:
 ```
 
 The `if-elif-else` statement begins with the `if` keyword, followed by a condition. The condition is followed by a colon (`:`). The code to execute if the condition is `True` is written on the next line, indented by four spaces. The `elif` keyword is followed by a condition. The condition is followed by a colon (`:`). The code to execute if the condition is `True` is written on the next line, indented by four spaces. The code to execute if the condition is `False` is written after the `else` keyword, on the next line, indented by four spaces.
+
+**Diagram**:
+```mermaid title="if-elif-else statement" desc="Diagram of the if-elif-else statement in Python"
+graph TD
+    A[Start] --> B{Condition1}
+    B -->|True| C[Execute Code]
+    C --> D[End]
+    B ---->|False| E{Condition2}
+    E -->|True| F[Execute Code]
+    F --> G[End]
+    E ---->|False| H[Execute Code]
+    H --> I[End]
+```
 
 :::tip
 The `elif` clause is optional. If the `elif` clause is not present, the code to execute if the condition is `False` is not executed.
@@ -212,6 +245,20 @@ else:
 
 The `nested if-else` statement begins with the `if` keyword, followed by a condition. The condition is followed by a colon (`:`). The code to execute if the condition is `True` is written on the next line, indented by four spaces. The `if` keyword is followed by a condition. The condition is followed by a colon (`:`). The code to execute if the condition is `True` is written on the next line, indented by four spaces. The code to execute if the condition is `False` is written after the `else` keyword, on the next line, indented by four spaces. The code to execute if the condition is `False` is written after the `else` keyword, on the next line, indented by four spaces.
 
+**Diagram**:
+```mermaid title="nested if-else statement" desc="Diagram of the nested if-else statement in Python"
+graph TD
+    A[Start] --> B{Condition1}
+    B -->|True| C[Execute Code]
+    C --> D{Condition2}
+    D -->|True| E[Execute Code]
+    E --> F[End]
+    D ---->|False| G[Execute Code]
+    G --> H[End]
+    B ---->|False| I[Execute Code]
+    I --> J[End]
+```
+
 :::tip
 Nested if-else statements can be nested to any level.
 :::
@@ -250,6 +297,16 @@ condition1 if condition2 else condition3
 ```
 
 The `ternary operator` statement begins with a condition, followed by the `if` keyword. The `if` keyword is followed by a condition. The condition is followed by the `else` keyword. The `else` keyword is followed by a condition.
+
+**Diagram**:
+```mermaid title="ternary operator statement" desc="Diagram of the ternary operator statement in Python"
+graph TD
+    A[Start] --> B{Condition2}
+    B -->|True| C[Execute Code]
+    C --> D[End]
+    B ---->|False| E[Execute Code]
+    E --> F[End]
+```
 
 :::tip
 The `ternary operator` statement is a one-line shorthand for the `if-else` statement.

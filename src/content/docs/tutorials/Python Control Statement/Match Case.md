@@ -29,6 +29,22 @@ match expression:
         # statements
 ```
 
+**Diagram**:
+```mermaid title="Match Case Statement" desc="Diagram of the Match Case Statement in Python"
+graph TD
+    A[Start] --> B{expression}
+    B -- pattern1 --> C[statements]
+    B -- pattern2 --> D[statements]
+    B -- pattern3 --> E[statements]
+    B -- patternN --> F[statements]
+    B -- _ --> G[statements]
+    C --> H[End]
+    D --> H
+    E --> H
+    F --> H
+    G --> H
+```
+
 :::tip
 The `case _:` is optional. It is known as the wildcard pattern. It matches any value.
 :::
