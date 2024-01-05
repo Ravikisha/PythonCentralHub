@@ -210,5 +210,86 @@ array('i', [6, 2, 3, 4, 5])
 
 In the above example, we create an array of five elements and copy the array elements to another array using the `deepcopy()` function. After updating, we change the first element of the new array. The first element of the original array is not changed.
 
+## Reversing Array
+Reverse the order of the items in the array using the `reverse()` method and negative indexing.
 
+### Negative Indexing
+Negative indexing is used to access the array elements from the end of the array.
+
+```python title="array_reverse.py" showLineNumbers{1} {1, 3-4}
+import array as arr
+
+my_array = arr.array('i', [1, 2, 3, 4, 5])
+reverse_array = my_array[::-1]
+
+print("Original array")
+print(my_array)
+print("Reversed array")
+print(reverse_array)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-9}
+C:\Users\username>python array_reverse.py
+Original array
+array('i', [1, 2, 3, 4, 5])
+Reversed array
+array('i', [5, 4, 3, 2, 1])
+```
+
+In the above example, we create an array of five elements and reverse the array elements using negative indexing.
+
+### insert() method
+The `insert()` method is used to insert the array elements at a given index.
+
+```python title="array_reverse.py" showLineNumbers{1} {1, 3-4, 6-7}
+import array as arr
+
+my_array = arr.array('i', [1, 2, 3, 4, 5])
+reverse_array = arr.array('i')
+
+for i in my_array:
+    reverse_array.insert(0, i)
+
+print("Original array")
+print(my_array)
+print("Reversed array")
+print(reverse_array)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-14}
+C:\Users\username>python array_reverse.py
+Original array
+array('i', [1, 2, 3, 4, 5])
+Reversed array
+array('i', [5, 4, 3, 2, 1])
+```
+
+In the above example, we create an array of five elements and reverse the array elements using the `insert()` method.
+
+### reverse() method
+The `reverse()` method is used to reverse the order of the items in the array.
+
+```python title="array_reverse.py" showLineNumbers{1} {1, 3-4}
+import array as arr
+
+my_array = arr.array('i', [1, 2, 3, 4, 5])
+my_array.reverse()
+
+print("Reversed array")
+print(my_array)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-7}
+C:\Users\username>python array_reverse.py
+Reversed array
+array('i', [5, 4, 3, 2, 1])
+```
+
+In the above example, we create an array of five elements and reverse the array elements using the `reverse()` method.
 
