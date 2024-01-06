@@ -11,22 +11,6 @@ In this tutorial, you will learn how to perform operations on arrays. how to per
 ## Looping Array Elements
 You can access the array elements by using the loop statement.
 
-<!-- ```python title="array_append.py" showLineNumbers{1} {1,3-5}
-import array as arr
-
-my_array = arr.array('i', [1, 2, 3, 4, 5])
-my_array.append(6)
-print(my_array)
-```
-
-Output:
-```cmd title="command" showLineNumbers{1} {2-6}
-C:\Users\username>python array_append.py
-array('i', [1, 2, 3, 4, 5, 6])
-```
-
-In the above example, we create an array of five elements and add a sixth element to the end of the array using the `append()` method. -->
-
 ### For Loop
 The for loop is used to iterate over the array elements. The for loop is used to iterate over the array elements.
 
