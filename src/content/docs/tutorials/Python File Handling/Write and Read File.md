@@ -384,7 +384,7 @@ Hello Python
 In the above example, we open a file in write mode using the `open()` function. Then, we write the string `"Hello World"` to the file using the `write()` method. Next, we move the file pointer to the word `"World"` using the `seek()` method. Then, we read the next five characters using the `read()` method. Next, we move the file pointer to the word `"World"` using the `seek()` method. Then, we write the string `"Python"` to the file using the `write()` method. Finally, we move the file pointer to the beginning of the file using the `seek()` method.
 
 ## Reading Files in Python
-We can read a file in Python using the `read()` method. This method reads a string from the file. The string can be a string literal or a variable that contains a string.
+Reading files in Python is a fundamental operation that allows you to retrieve and process data stored in files. Whether you're dealing with text files, binary files, or reading line by line, Python provides versatile methods for file reading. In this comprehensive guide, we'll explore various aspects of reading files in Python.
 
 **Syntax:**
 ```python title="read.py" showLineNumbers{1} {1}
@@ -395,6 +395,30 @@ Here,
 - `file_object` is the file object that we want to read.
 - `size` is an optional numeric argument. When it is provided, it reads that many characters from the file. If the size parameter is not specified, it reads and returns up to the end of the file.
 - The `read()` method returns the specified number of bytes from the file. If we omit the size argument, it returns and displays all the data from the file.
+
+## Opening a File in Write Mode
+We can open a file in write mode using the `open()` function. This function accepts two arguments, the name of the file and the mode in which we want to open the file. The mode can be read mode, write mode, append mode, etc. The default mode is read mode.
+
+**Syntax:**
+```python title="open.py" showLineNumbers{1} {1}
+file_object = open(file_name, [access_mode], [buffering])
+```
+
+Here,
+- `file_name` is the name of the file that we want to access.
+- `access_mode` is the mode in which we want to open the file, i.e., read, write, append, etc.
+- `buffering` is an optional integer used to set the buffering policy.
+- `file_object` is the object that we can use to access the file.
+
+## File Opening Modes
+There are different modes in which we can open a file. These modes are:
+
+|S.No.|Mode|Description|
+|:---:|:---:|:---|
+|1|`r`|Opens a file in read-only mode. The file pointer is placed at the beginning of the file. This is the default mode.|
+|2|`rb`|Opens a file in read-only mode in binary format. The file pointer is placed at the beginning of the file. This is the default mode.|
+|3|`r+`|Opens a file for both reading and writing. The file pointer placed at the beginning of the file.|
+|4|`rb+`|Opens a file for both reading and writing in binary format. The file pointer placed at the beginning of the file.|
 
 **Example: Reading a File**
 There is a file named `file.txt` with the following content:
@@ -606,18 +630,223 @@ b'Hello World\n'
 
 In the above example, we open a file in binary mode using the `with` statement. Then, we read the file using the `read()` method. Finally, we exit the `with` statement, and the file is automatically closed.
 
+## Reading a File Line by Line Using the with Statement
+We can also read a file line by line using the `with` statement. This statement creates a temporary variable (`file_object` in the example below) that we can use to access the file inside the indented block of the `with` statement. When we exit the `with` statement, the file is automatically closed.
+
+**Example: Reading a File Line by Line Using the with Statement**
+There is a file named `file.txt` with the following content:
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+This is a test file
+```
+
+```python title="with.py" showLineNumbers{1} {2-5}
+# Open a file in read mode
+with open("file.txt", "r") as file_object:
+    # Read the file line by line
+    line1 = file_object.readline()
+    line2 = file_object.readline()
+    print(line1)
+    print(line2)
+
+# The file is automatically closed
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python with.py
+Hello World
+This is a test file
+```
+
+In the above example, we open a file in read mode using the `with` statement. Then, we read the file line by line using the `readline()` method. Finally, we exit the `with` statement, and the file is automatically closed.
+
 ## Read Integer from a File
 We can read an integer from a file using the `read()` method. In this example, we read an integer from a file using the `read()` method from bytes data.
 
 **Example: Read Integer from a File**
-There is a file named `file.txt` with the following content:
-```txt title="file.txt" showLineNumbers{1} {1}
-123
-```
-
 ```python title="write.py" showLineNumbers{1} {2,5,8}
 # Open a file in write mode
 file_object = open("file.txt", "wb")
 
 # Write to the file
-file_object.write("123".encode())
+file_object.write(123.to_bytes(2, byteorder="big"))
+
+# Close the file
+file_object.close()
+```
+
+```python title="read.py" showLineNumbers{1} {2,5,8}
+# Open a file in read mode
+file_object = open("file.txt", "rb")
+
+# Read the file
+data = file_object.read()
+
+# Close the file
+file_object.close()
+
+# Print the data
+print(int.from_bytes(data, byteorder="big"))
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1-6}
+C:\Users\username>python write.py
+C:\Users\username>python read.py
+123
+```
+
+In the above example, we open a file in write mode using the `open()` function. Then, we write the integer `123` to the file using the `write()` method. Finally, we close the file using the `close()` method.
+
+## Read Float from a File
+We can read a float from a file using the `read()` method. In this example, we read a float from a file using the `read()` method from bytes data.
+
+**Example: Read Float from a File**
+
+```python title="write.py" showLineNumbers{1} {1,4,7,10}
+import struct
+
+# Open a file in write mode
+file_object = open("file.txt", "wb")
+
+# Write to the file
+file_object.write(struct.pack("f", 123.456))
+
+# Close the file
+file_object.close()
+```
+
+```python title="read.py" showLineNumbers{1} {1,4,7,10}
+import struct
+
+# Open a file in read mode
+file_object = open("file.txt", "rb")
+
+# Read the file
+data = file_object.read()
+
+# Close the file
+file_object.close()
+
+# Print the data
+print(struct.unpack("f", data)[0])
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1-5}
+C:\Users\username>python write.py
+C:\Users\username>python read.py
+123.456
+```
+
+In the above example, we open a file in write mode using the `open()` function. Then, we write the float `123.456` to the file using the `write()` method. Finally, we close the file using the `close()` method.
+
+## Using r+ mode to Read and Write to a File
+We can use the `r+` mode to read and write to a file. This mode opens the file for both reading and writing. It overwrites the existing file if the file exists. If the file does not exist, it creates a new file for reading and writing.
+
+### seek() Method
+We can use the `seek()` method to move the file pointer to a specific position in the file. This method accepts two arguments, the offset and the position. The position is optional and defaults to `0`.
+
+**Syntax:**
+```python title="seek.py" showLineNumbers{1} {1}
+file_object.seek(offset, [position])
+```
+
+Here,
+- `file_object` is the file object that we want to read.
+- `offset` is the number of bytes to be moved.
+- `position` is the reference position from where the bytes are to be moved. It is optional and defaults to `0`.
+- The `seek()` method moves the file pointer to a specific position in the file.
+
+**Example: Using seek() Method**
+There is a file named `file.txt` with the following content:
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+This is a test file
+```
+
+```python title="seek.py" showLineNumbers{1} {2,5,8,11,14-15,18}
+# Open a file in write mode
+file_object = open("file.txt", "r+")
+
+# Move the file pointer to the word "World"
+file_object.seek(6)
+
+# Read the file
+data = file_object.read(5)
+
+# Print the data
+print(data)
+
+# Close the file
+file_object.close()
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1}
+C:\Users\username>python seek.py
+World
+```
+
+In the above example, we open a file in write mode using the `open()` function. Then, we move the file pointer to the word `"World"` using the `seek()` method. Then, we read the next five characters using the `read()` method. Finally, we print the data.
+
+Another example of using the `seek()` method is to move the file pointer to different positions in the file.
+
+**Example: Using seek() Method**
+There is a file named `file.txt` with the following content:
+```txt title="file.txt" showLineNumbers{1} {1}
+My Name is Ravi Kishan
+I am a Software Engineer
+I love to code
+```
+
+```python title="seek.py" showLineNumbers{1} {2,5,8,11,14,17,20,23,26,29}
+# Open a file in write mode
+file_object = open("file.txt", "r+")
+
+# Move the file pointer to get the name "Ravi Kishan"
+file_object.seek(11)
+
+# Read the file
+data = file_object.read(11)
+
+# Print the data
+print(data)
+
+# Move the file pointer to get the name "Software Engineer"
+file_object.seek(34)
+
+# Read the file
+data = file_object.read(18)
+
+# Print the data
+print(data)
+
+# Move the file pointer to get the name "code"
+file_object.seek(55)
+
+# Read the file
+data = file_object.read(4)
+
+# Print the data
+print(data)
+
+# Close the file
+file_object.close()
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1}
+C:\Users\username>python seek.py
+Ravi Kishan
+Software Engineer
+code
+```
+
+In the above example, we open a file in write mode using the `open()` function. Then, we move the file pointer to get the name `"Ravi Kishan"` using the `seek()` method. Then, we read the next eleven characters using the `read()` method. Finally, we print the data. Next, we move the file pointer to get the name `"Software Engineer"` using the `seek()` method. Then, we read the next eighteen characters using the `read()` method. Finally, we print the data. Next, we move the file pointer to get the name `"code"` using the `seek()` method. Then, we read the next four characters using the `read()` method. Finally, we print the data.
