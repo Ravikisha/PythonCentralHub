@@ -850,3 +850,72 @@ code
 ```
 
 In the above example, we open a file in write mode using the `open()` function. Then, we move the file pointer to get the name `"Ravi Kishan"` using the `seek()` method. Then, we read the next eleven characters using the `read()` method. Finally, we print the data. Next, we move the file pointer to get the name `"Software Engineer"` using the `seek()` method. Then, we read the next eighteen characters using the `read()` method. Finally, we print the data. Next, we move the file pointer to get the name `"code"` using the `seek()` method. Then, we read the next four characters using the `read()` method. Finally, we print the data.
+
+## Reading and Writing to a File Simultaneously
+We can read and write to a file simultaneously using the `r+` mode. This mode opens the file for both reading and writing. It overwrites the existing file if the file exists. If the file does not exist, it creates a new file for reading and writing.
+
+```python title="read_write.py" showLineNumbers{1} {2,5,8,11,14,17,20,23,26,29}
+# Open a file in write mode
+file_object = open("file.txt", "r+")
+
+# Write to the file
+file_object.write("Hello World")
+
+# Move the file pointer to the beginning of the file
+file_object.seek(0)
+
+# Read the file
+data = file_object.read()
+
+# Print the data
+print(data)
+
+# Close the file
+file_object.close()
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python read_write.py
+Hello World
+```
+
+In the above example, we open a file in write mode using the `open()` function. Then, we write the string `"Hello World"` to the file using the `write()` method. Next, we move the file pointer to the beginning of the file using the `seek()` method. Then, we read the file using the `read()` method. Finally, we print the data.
+
+## Reading and Writing to a File Using the with Statement
+We can also read and write to a file using the `with` statement. This statement creates a temporary variable (`file_object` in the example below) that we can use to access the file inside the indented block of the `with` statement. When we exit the `with` statement, the file is automatically closed.
+
+**Example: Reading and Writing to a File Using the with Statement**
+
+```python title="with.py" showLineNumbers{1} {2-13}
+# Open a file in read mode
+with open("file.txt", "r+") as file_object:
+    # Write to the file
+    file_object.write("Hello World")
+
+    # Move the file pointer to the beginning of the file
+    file_object.seek(0)
+
+    # Read the file
+    data = file_object.read()
+
+    # Print the data
+    print(data)
+
+# The file is automatically closed
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python with.py
+Hello World
+```
+
+In the above example, we open a file in read mode using the `with` statement. Then, we write the string `"Hello World"` to the file using the `write()` method. Next, we move the file pointer to the beginning of the file using the `seek()` method. Then, we read the file using the `read()` method. Finally, we print the data. Next, we exit the `with` statement, and the file is automatically closed.
+
+:::tip
+You can also use `w+`, `rb+`, and `r+b` modes to read and write to a file. These modes open the file for both reading and writing. They overwrite the existing file if the file exists. If the file does not exist, they create a new file for reading and writing.
+:::
+
