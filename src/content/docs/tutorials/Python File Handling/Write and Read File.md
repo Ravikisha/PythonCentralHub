@@ -1,0 +1,384 @@
+---
+title: Write and Read File
+description: Learn how to write and read files in Python. how to open, close, read, write, and delete files in Python. how to use the with statement to open files. how to use the os module to delete files. how to use the os module to delete files.
+sidebar: 
+    order: 76
+---
+
+<!-- ```python title="append.py" showLineNumbers{1} {1, 3-4}
+import array as arr
+
+my_array = arr.array('i', [1, 2, 3, 4, 5])
+my_array.append(6)
+
+print(my_array)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python append.py
+array('i', [1, 2, 3, 4, 5, 6])
+```
+
+In the above example, we create an array of five elements and append a new element at the end of the array. The new element is added at the end of the array. -->
+
+## Writing Files in Python
+Writing files in Python is a fundamental skill that allows you to store and manipulate data. Whether you're creating new files, appending content to existing ones, or writing binary data, Python provides versatile methods for file writing. In this comprehensive guide, we'll explore various aspects of writing files in Python.
+
+## Opening a File in Write Mode
+We can open a file in write mode using the `open()` function. This function accepts two arguments, the name of the file and the mode in which we want to open the file. The mode can be read mode, write mode, append mode, etc. The default mode is read mode.
+
+**Syntax:**
+```python title="open.py" showLineNumbers{1} {1}
+file_object = open(file_name, [access_mode], [buffering])
+```
+
+Here,
+- `file_name` is the name of the file that we want to access.
+- `access_mode` is the mode in which we want to open the file, i.e., read, write, append, etc.
+- `buffering` is an optional integer used to set the buffering policy.
+- `file_object` is the object that we can use to access the file.
+
+## File Opening Write Modes
+There are different modes in which we can open a file. These modes are:
+
+|S.No.|Mode|Description|
+|:---:|:---:|:---|
+|1|`w`|Opens a file for writing only. Overwrites the file if the file exists. If the file does not exist, creates a new file for writing.|
+|2|`wb`|Opens a file for writing only in binary format. Overwrites the file if the file exists. If the file does not exist, creates a new file for writing.|
+|3|`w+`|Opens a file for both writing and reading. Overwrites the existing file if the file exists. If the file does not exist, creates a new file for reading and writing.|
+|4|`wb+`|Opens a file for both writing and reading in binary format. Overwrites the existing file if the file exists. If the file does not exist, creates a new file for reading and writing.|
+|5|`a`|Opens a file for appending. The file pointer is at the end of the file if the file exists. That is, the file is in the append mode. If the file does not exist, it creates a new file for writing.|
+|6|`ab`|Opens a file for appending in binary format. The file pointer is at the end of the file if the file exists. That is, the file is in the append mode. If the file does not exist, it creates a new file for writing.|
+|7|`a+`|Opens a file for both appending and reading. The file pointer is at the end of the file if the file exists. The file opens in the append mode. If the file does not exist, it creates a new file for reading and writing.|
+|8|`ab+`|Opens a file for both appending and reading in binary format. The file pointer is at the end of the file if the file exists. The file opens in the append mode. If the file does not exist, it creates a new file for reading and writing.|
+
+## Writing to a File in Python
+We can write to a file in Python using the `write()` method. This method writes a string to the file. The string can be a string literal or a variable that contains a string.
+
+**Syntax:**
+```python title="write.py" showLineNumbers{1} {1}
+file_object.write(string)
+```
+
+Here, `string` is the string data that we want to write to the file.
+
+**Example: Writing to a File**
+```python title="write.py" showLineNumbers{1} {2,5,8}
+# Open a file in write mode
+file_object = open("file.txt", "w")
+
+# Write to the file
+file_object.write("Hello World")
+
+# Close the file
+file_object.close()
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1}
+C:\Users\username>python write.py
+```
+
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+```
+
+In the above example, we open a file in write mode using the `open()` function. Then, we write the string `"Hello World"` to the file using the `write()` method. Finally, we close the file using the `close()` method.
+
+## Writing Multiple Lines to a File
+We can write multiple lines to a file using the `write()` method. To do so, we need to add a newline character (`\n`) at the end of each line.
+
+**Example: Writing Multiple Lines to a File**
+```python title="write.py" showLineNumbers{1} {2,5,8,11}
+# Open a file in write mode
+file_object = open("file.txt", "w")
+
+# Write to the file
+file_object.write("Hello World\n")
+
+# Write another line to the file
+file_object.write("This is a test file\n")
+
+# Close the file
+file_object.close()
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1}
+C:\Users\username>python write.py
+```
+
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+This is a test file
+```
+
+In the above example, we write two lines to the file. We add a newline character (`\n`) at the end of each line to write the lines to the file.
+
+## Writing a List to a File
+We can write a list to a file using the `write()` method. To do so, we need to convert the list to a string using the `str()` function.
+
+**Example: Writing a List to a File**
+```python title="write.py" showLineNumbers{1} {2,5,8,11}
+# Open a file in write mode
+file_object = open("file.txt", "w")
+
+# Create a list
+my_list = ["Hello", "World", "This", "is", "a", "test", "file"]
+
+# Write to the file
+file_object.write(str(my_list))
+
+# Close the file
+file_object.close()
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1}
+C:\Users\username>python write.py
+```
+
+```txt title="file.txt" showLineNumbers{1} {1}
+['Hello', 'World', 'This', 'is', 'a', 'test', 'file']
+```
+
+In the above example, we create a list and write it to the file. We convert the list to a string using the `str()` function before writing it to the file.
+
+:::note
+We can also use the `writelines()` method to write a list to a file. This method writes a sequence of strings to the file. It does not add a newline character (`\n`) at the end of each line.
+
+**Example: Writing a List to a File**
+```python title="writelines.py" showLineNumbers{1} {2,5,8,11}
+# Open a file in write mode
+file_object = open("file.txt", "w")
+
+# Create a list
+my_list = ["Hello", "World", "This", "is", "a", "test", "file"]
+
+# Write to the file
+file_object.writelines(my_list)
+
+# Close the file
+file_object.close()
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1}
+C:\Users\username>python writelines.py
+```
+
+```txt title="file.txt" showLineNumbers{1} {1}
+HelloWorldThisisatestfile
+```
+
+In the above example, we create a list and write it to the file using the `writelines()` method. We do not add a newline character (`\n`) at the end of each line.
+:::
+
+:::tip
+You can try other types of sequences, such as tuples, sets, etc., to write to a file by converting them to a string using the `str()` function.
+:::
+
+## Writing to a File Using the with Statement
+We can also write to a file using the `with` statement. This statement creates a temporary variable (`file_object` in the example below) that we can use to access the file inside the indented block of the `with` statement. When we exit the `with` statement, the file is automatically closed.
+
+**Example: Writing to a File Using the with Statement**
+```python title="with.py" showLineNumbers{1} {2-4}
+# Open a file in write mode
+with open("file.txt", "w") as file_object:
+    # Write to the file
+    file_object.write("Hello World")
+
+# The file is automatically closed
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1}
+C:\Users\username>python with.py
+```
+
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+```
+
+In the above example, we open a file in write mode using the `with` statement. Then, we write the string `"Hello World"` to the file using the `write()` method. Finally, we exit the `with` statement, and the file is automatically closed.
+
+## Appending to a File in Python
+We can append to a file in Python using the `write()` method. This method writes a string to the file. The string can be a string literal or a variable that contains a string. We need to use `a` as the mode while opening the file.
+
+**Syntax:**
+```python title="append.py" showLineNumbers{1} {1}
+file_object = open(file_name, "a")
+file_object.write(string)
+```
+
+Here,
+- `file_name` is the name of the file that we want to access.
+- `string` is the string data that we want to write to the file.
+- `file_object` is the object that we can use to access the file.
+- `a` is the mode in which we want to open the file, i.e., append mode.
+
+**Example: Appending to a File**
+There is a file named `file.txt` with the following content:
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+```
+
+```python title="append.py" showLineNumbers{1} {2,5,8}
+# Open a file in append mode
+file_object = open("file.txt", "a")
+
+# Write to the file
+file_object.write("\nThis is a test file")
+
+# Close the file
+file_object.close()
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1}
+C:\Users\username>python append.py
+```
+
+```txt title="file.txt" showLineNumbers{1} {1-3}
+Hello World
+This is a test file
+```
+
+In the above example, we open a file in append mode using the `open()` function. Then, we write the string `"Hello World"` to the file using the `write()` method. Finally, we close the file using the `close()` method.
+
+## Appending Multiple Lines to a File
+We can append multiple lines to a file using the `write()` method. To do so, we need to add a newline character (`\n`) at the end of each line.
+
+**Example: Appending Multiple Lines to a File**
+There is a file named `file.txt` with the following content:
+```txt title="file.txt" showLineNumbers{1} {1}
+This is a head
+```
+
+```python title="append.py" showLineNumbers{1} {2,5,8,11}
+# Open a file in append mode
+file_object = open("file.txt", "a")
+
+# Write to the file
+file_object.write("\nHello World\n")
+
+# Write another line to the file
+file_object.write("This is a test file\n")
+
+# Close the file
+file_object.close()
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1}
+C:\Users\username>python append.py
+```
+
+```txt title="file.txt" showLineNumbers{1} {1-3}
+This is a head
+Hello World
+This is a test file
+```
+
+In the above example, we write two lines to the file. We add a newline character (`\n`) at the end of each line to write the lines to the file.
+
+## Writing in Binary Mode
+We can write to a file in binary mode using the `write()` method. This method writes a string to the file. The string can be a string literal or a variable that contains a string. We need to use `wb` as the mode while opening the file.
+
+**Syntax:**
+```python title="binary.py" showLineNumbers{1} {1}
+file_object = open(file_name, "wb")
+file_object.write(string)
+```
+
+Here,
+- `file_name` is the name of the file that we want to access.
+- `string` is the string data that we want to write to the file.
+- `file_object` is the object that we can use to access the file.
+- `wb` is the mode in which we want to open the file, i.e., binary mode.
+- The `write()` method writes a string to the file.
+
+**Example: Writing in Binary Mode**
+```python title="binary.py" showLineNumbers{1} {2,5,8}
+# Open a file in binary mode
+file_object = open("file.txt", "wb")
+
+# Write to the file
+file_object.write("Hello World".encode())
+
+# Close the file
+file_object.close()
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1}
+C:\Users\username>python binary.py
+```
+
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+```
+
+In the above example, we open a file in binary mode using the `open()` function. Then, we write the string `"Hello World"` to the file using the `write()` method. Finally, we close the file using the `close()` method.
+
+## Using w+ Mode to Write to a File
+We can use the `w+` mode to write to a file. This mode opens the file for both writing and reading. It overwrites the existing file if the file exists. If the file does not exist, it creates a new file for reading and writing.
+
+### seek() Method
+We can use the `seek()` method to move the file pointer to a specific position in the file. This method accepts two arguments, the offset and the position. The position is optional and defaults to `0`.
+
+**Syntax:**
+```python title="seek.py" showLineNumbers{1} {1}
+file_object.seek(offset, [position])
+```
+
+Here,
+- `file_object` is the file object that we want to read.
+- `offset` is the number of bytes to be moved.
+- `position` is the reference position from where the bytes are to be moved. It is optional and defaults to `0`.
+- The `seek()` method moves the file pointer to a specific position in the file.
+- The `tell()` method returns the current position of the file pointer.
+- The `write()` method writes a string to the file.
+
+**Example: Using seek() Method**
+```python title="seek.py" showLineNumbers{1} {2,5,8,11,14-15,18}
+# Open a file in write mode
+file_object = open("file.txt", "w+")
+
+# Write to the file
+file_object.write("Hello World")
+
+# Move the file pointer to the word "World"
+file_object.seek(6)
+
+# Read the file
+data = file_object.read(5)
+
+# Change the word "World" to "Python"
+file_object.seek(6)
+file_object.write("Python")
+
+# Move the file pointer to the beginning of the file
+file_object.seek(0)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1}
+C:\Users\username>python seek.py
+```
+
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello Python
+```
+
+In the above example, we open a file in write mode using the `open()` function. Then, we write the string `"Hello World"` to the file using the `write()` method. Next, we move the file pointer to the word `"World"` using the `seek()` method. Then, we read the next five characters using the `read()` method. Next, we move the file pointer to the word `"World"` using the `seek()` method. Then, we write the string `"Python"` to the file using the `write()` method. Finally, we move the file pointer to the beginning of the file using the `seek()` method.
