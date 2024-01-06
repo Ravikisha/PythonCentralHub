@@ -349,6 +349,46 @@ Here,
 - The `tell()` method returns the current position of the file pointer.
 - The `write()` method writes a string to the file.
 
+:::note
+`position` can have one of the following values:
+- `0` - It is the default value. It sets the reference position to the beginning of the file.
+- `1` - It sets the reference position to the current position of the file pointer.
+- `2` - It sets the reference position to the end of the file.
+:::
+
+
+**Example: Using seek() Method**
+```python title="seek.py" showLineNumbers{1} {2,5,8,11,14-15,18}
+# Open a file in write mode
+file_object = open("file.txt", "w+")
+
+# Write to the file
+file_object.write("Hello World")
+
+# Move the file pointer to the word "World"
+file_object.seek(6, 0) # the second argument is optional and defaults to 0. It uses the absolute file positioning.
+
+# Read the file
+data = file_object.read(5)
+
+# Print the data
+print(data)
+
+# Usage of tell() method
+print(file_object.tell())
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {1}
+C:\Users\username>python seek.py
+World
+11
+```
+
+In the above example, we open a file in write mode using the `open()` function. Then, we write the string `"Hello World"` to the file using the `write()` method. Next, we move the file pointer to the word `"World"` using the `seek()` method. Then, we read the next five characters using the `read()` method. Finally, we print the data and the current position of the file pointer using the `tell()` method.
+:::
+
 **Example: Using seek() Method**
 ```python title="seek.py" showLineNumbers{1} {2,5,8,11,14-15,18}
 # Open a file in write mode
@@ -919,3 +959,5 @@ In the above example, we open a file in read mode using the `with` statement. Th
 You can also use `w+`, `rb+`, and `r+b` modes to read and write to a file. These modes open the file for both reading and writing. They overwrite the existing file if the file exists. If the file does not exist, they create a new file for reading and writing.
 :::
 
+## Conclusion
+In python, we can read and write to a file using the `open()` function. This function accepts two arguments, the name of the file and the mode in which we want to open the file. The mode can be read mode, write mode, append mode, etc. The default mode is read mode. We can also use the `with` statement to read and write to a file. This statement creates a temporary variable (`file_object` in the example below) that we can use to access the file inside the indented block of the `with` statement. When we exit the `with` statement, the file is automatically closed. For more information, check out the [official documentation](https://docs.python.org/3/tutorial/inputoutput.html#reading-and-writing-files). For more tutorials, check out the Python Central Hub.
