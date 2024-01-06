@@ -382,3 +382,242 @@ Hello Python
 ```
 
 In the above example, we open a file in write mode using the `open()` function. Then, we write the string `"Hello World"` to the file using the `write()` method. Next, we move the file pointer to the word `"World"` using the `seek()` method. Then, we read the next five characters using the `read()` method. Next, we move the file pointer to the word `"World"` using the `seek()` method. Then, we write the string `"Python"` to the file using the `write()` method. Finally, we move the file pointer to the beginning of the file using the `seek()` method.
+
+## Reading Files in Python
+We can read a file in Python using the `read()` method. This method reads a string from the file. The string can be a string literal or a variable that contains a string.
+
+**Syntax:**
+```python title="read.py" showLineNumbers{1} {1}
+file_object.read([size])
+```
+
+Here,
+- `file_object` is the file object that we want to read.
+- `size` is an optional numeric argument. When it is provided, it reads that many characters from the file. If the size parameter is not specified, it reads and returns up to the end of the file.
+- The `read()` method returns the specified number of bytes from the file. If we omit the size argument, it returns and displays all the data from the file.
+
+**Example: Reading a File**
+There is a file named `file.txt` with the following content:
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+This is a test file
+```
+
+```python title="read.py" showLineNumbers{1} {2,5,8}
+# Open a file in read mode
+file_object = open("file.txt", "r")
+
+# Read the file
+data = file_object.read()
+
+# Close the file
+file_object.close()
+
+# Print the data
+print(data)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python read.py
+Hello World
+This is a test file
+```
+
+In the above example, we open a file in read mode using the `open()` function. Then, we read the file using the `read()` method. Finally, we close the file using the `close()` method.
+
+## Reading a File Line by Line
+We can read a file line by line using the `readline()` method. This method reads a string from the file. The string can be a string literal or a variable that contains a string.
+
+**Syntax:**
+```python title="readline.py" showLineNumbers{1} {1}
+file_object.readline()
+```
+
+Here,
+- `file_object` is the file object that we want to read.
+- The `readline()` method returns the next line from the file.
+- The `readlines()` method returns a list of all the lines in the file.
+
+**Example: Reading a File Line by Line**
+There is a file named `file.txt` with the following content:
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+This is a test file
+```
+
+```python title="readline.py" showLineNumbers{1} {2,5-6,9}
+# Open a file in read mode
+file_object = open("file.txt", "r")
+
+# Read the file line by line
+line1 = file_object.readline()
+line2 = file_object.readline()
+
+# Close the file
+file_object.close()
+
+# Print the data
+print(line1)
+print(line2)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python readline.py
+Hello World
+This is a test file
+```
+
+In the above example, we open a file in read mode using the `open()` function. Then, we read the file line by line using the `readline()` method. Finally, we close the file using the `close()` method.
+
+**Example: Reading a File Line by Line using readlines() Method**
+There is a file named `file.txt` with the following content:
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+This is a test file
+```
+
+```python title="readlines.py" showLineNumbers{1} {2,5,8}
+# Open a file in read mode
+file_object = open("file.txt", "r")
+
+# Read the file line by line
+lines = file_object.readlines()
+
+# Close the file
+file_object.close()
+
+# Print the data
+print(lines)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python readlines.py
+['Hello World\n', 'This is a test file\n']
+```
+
+In the above example, we open a file in read mode using the `open()` function. Then, we read the file line by line using the `readlines()` method. Finally, we close the file using the `close()` method.
+
+## Reading a File Using the with Statement
+We can also read a file using the `with` statement. This statement creates a temporary variable (`file_object` in the example below) that we can use to access the file inside the indented block of the `with` statement. When we exit the `with` statement, the file is automatically closed.
+
+**Example: Reading a File Using the with Statement**
+There is a file named `file.txt` with the following content:
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+This is a test file
+```
+
+```python title="with.py" showLineNumbers{1} {2-5}
+# Open a file in read mode
+with open("file.txt", "r") as file_object:
+    # Read the file
+    data = file_object.read()
+    print(data)
+
+# The file is automatically closed
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python with.py
+Hello World
+This is a test file
+```
+
+In the above example, we open a file in read mode using the `with` statement. Then, we read the file using the `read()` method. Finally, we exit the `with` statement, and the file is automatically closed.
+
+## Reading in Binary Mode
+We can read a file in binary mode using the `read()` method. This method reads a string from the file. The string can be a string literal or a variable that contains a string. We need to use `rb` as the mode while opening the file.
+
+**Syntax:**
+```python title="binary.py" showLineNumbers{1} {1}
+file_object = open(file_name, "rb")
+file_object.read([size])
+```
+
+Here,
+- `file_object` is the file object that we want to read.
+- `size` is an optional numeric argument. When it is provided, it reads that many characters from the file. If the size parameter is not specified, it reads and returns up to the end of the file.
+- The `read()` method returns the specified number of bytes from the file. If we omit the size argument, it returns and displays all the data from the file.
+- The `write()` method writes a string to the file.
+
+
+**Example: Reading in Binary Mode**
+There is a file named `file.txt` with the following content:
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+```
+
+```python title="binary.py" showLineNumbers{1} {2,5,8}
+# Open a file in binary mode
+file_object = open("file.txt", "rb")
+
+# Read the file
+data = file_object.read()
+
+# Close the file
+file_object.close()
+
+# Print the data
+print(data)
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python binary.py
+b'Hello World\n'
+```
+
+In the above example, we open a file in binary mode using the `open()` function. Then, we read the file using the `read()` method. Finally, we close the file using the `close()` method.
+
+## Reading in Binary Mode Using the with Statement
+We can also read a file in binary mode using the `with` statement. This statement creates a temporary variable (`file_object` in the example below) that we can use to access the file inside the indented block of the `with` statement. When we exit the `with` statement, the file is automatically closed.
+
+**Example: Reading in Binary Mode Using the with Statement**
+There is a file named `file.txt` with the following content:
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+```
+
+```python title="with.py" showLineNumbers{1} {2-5}
+# Open a file in binary mode
+with open("file.txt", "rb") as file_object:
+    # Read the file
+    data = file_object.read()
+    print(data)
+
+# The file is automatically closed
+```
+
+Output:
+
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python with.py
+b'Hello World\n'
+```
+
+In the above example, we open a file in binary mode using the `with` statement. Then, we read the file using the `read()` method. Finally, we exit the `with` statement, and the file is automatically closed.
+
+## Read Integer from a File
+We can read an integer from a file using the `read()` method. In this example, we read an integer from a file using the `read()` method from bytes data.
+
+**Example: Read Integer from a File**
+There is a file named `file.txt` with the following content:
+```txt title="file.txt" showLineNumbers{1} {1}
+123
+```
+
+```python title="write.py" showLineNumbers{1} {2,5,8}
+# Open a file in write mode
+file_object = open("file.txt", "wb")
+
+# Write to the file
+file_object.write("123".encode())
