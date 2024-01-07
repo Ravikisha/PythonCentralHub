@@ -5,23 +5,6 @@ sidebar:
     order: 77
 ---
 
-<!-- ```python title="append.py" showLineNumbers{1} {1, 3-4}
-import array as arr
-
-my_array = arr.array('i', [1, 2, 3, 4, 5])
-my_array.append(6)
-
-print(my_array)
-```
-
-Output:
-```cmd title="command" showLineNumbers{1} {2-6}
-C:\Users\username>python append.py
-array('i', [1, 2, 3, 4, 5, 6])
-```
-
-In the above example, we create an array of five elements and append a new element at the end of the array. The new element is added at the end of the array. -->
-
 ## Create a File
 We are creating a file named `test.txt` using `os` module. The `os` module provides functions for interacting with the operating system. The `os` module comes under Python's standard utility modules. We are using the `os` module to create a file in the current directory.
 
