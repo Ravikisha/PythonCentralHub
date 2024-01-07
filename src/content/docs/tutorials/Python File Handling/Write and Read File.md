@@ -5,23 +5,6 @@ sidebar:
     order: 76
 ---
 
-<!-- ```python title="append.py" showLineNumbers{1} {1, 3-4}
-import array as arr
-
-my_array = arr.array('i', [1, 2, 3, 4, 5])
-my_array.append(6)
-
-print(my_array)
-```
-
-Output:
-```cmd title="command" showLineNumbers{1} {2-6}
-C:\Users\username>python append.py
-array('i', [1, 2, 3, 4, 5, 6])
-```
-
-In the above example, we create an array of five elements and append a new element at the end of the array. The new element is added at the end of the array. -->
-
 ## Writing Files in Python
 Writing files in Python is a fundamental skill that allows you to store and manipulate data. Whether you're creating new files, appending content to existing ones, or writing binary data, Python provides versatile methods for file writing. In this comprehensive guide, we'll explore various aspects of writing files in Python.
 
