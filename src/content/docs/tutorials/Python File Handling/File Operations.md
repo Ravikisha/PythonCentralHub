@@ -410,3 +410,5 @@ usage(total=97676207104, used=97676207104, free=0)
 
 In the above example, we are using the `disk_usage()` function to get the size of a directory. The `disk_usage()` function takes one argument. The argument is the name of the directory whose size is to be obtained.
 
+## Conclusion
+In this tutorial, we learned how to perform file operations in Python. We learned how to create, rename, delete, and move files and directories. We also learned how to list files and directories, check if a file or directory exists, get the current working directory, change the current working directory, and get the size of a file or directory. Now you can perform file operations in Python. For more information, visit the [official documentation](https://docs.python.org/3/library/os.html) of the `os` module and the [official documentation](https://docs.python.org/3/library/shutil.html) of the `shutil` module. For more tutorials, visit our Python Central Hub.
