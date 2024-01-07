@@ -314,3 +314,99 @@ True
 ```
 
 In the above example, we are using the `exists()` function to check if a directory exists. The `exists()` function takes one argument. The argument is the name of the directory whose existence is to be checked.
+
+## Get the Current Working Directory
+We are getting the current working directory using the `os` module. The `os` module provides functions for interacting with the operating system. The `os` module comes under Python's standard utility modules. We are using the `os` module to get the current working directory.
+
+**Syntax:**
+```python title="get_current_working_directory.py" showLineNumbers{1} {1, 3-4}
+os.getcwd()
+```
+
+**Example:**
+
+```python title="get_current_working_directory.py" showLineNumbers{1} {1, 3-4}
+import os
+
+print(os.getcwd())
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {1-2}
+C:\Users\username>python get_current_working_directory.py
+C:\Users\username
+```
+
+In the above example, we are using the `getcwd()` function to get the current working directory. The `getcwd()` function takes no argument.
+
+## Change the Current Working Directory
+We are changing the current working directory to the directory `test` using the `os` module. The `os` module provides functions for interacting with the operating system. The `os` module comes under Python's standard utility modules. We are using the `os` module to change the current working directory.
+
+**Syntax:**
+```python title="change_current_working_directory.py" showLineNumbers{1} {1, 3-4}
+os.chdir(path)
+```
+
+**Example:**
+
+```python title="change_current_working_directory.py" showLineNumbers{1} {1, 3-4}
+import os
+
+os.chdir('test')
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {1}
+C:\Users\username>python change_current_working_directory.py
+```
+
+In the above example, we are using the `chdir()` function to change the current working directory. The `chdir()` function takes one argument. The argument is the name of the directory to which the current working directory is to be changed.
+
+## Get the Size of a File
+We are getting the size of the file `test.txt` using the `os` module. The `os` module provides functions for interacting with the operating system. The `os` module comes under Python's standard utility modules. We are using the `os` module to get the size of a file.
+
+**Syntax:**
+```python title="get_file_size.py" showLineNumbers{1} {1, 3-4}
+os.path.getsize(path)
+```
+
+**Example:**
+
+```python title="get_file_size.py" showLineNumbers{1} {1, 3-4}
+import os
+
+print(os.path.getsize('test.txt'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {1-2}
+C:\Users\username>python get_file_size.py
+0
+```
+
+In the above example, we are using the `getsize()` function to get the size of a file. The `getsize()` function takes one argument. The argument is the name of the file whose size is to be obtained.
+
+## Get the Size of a Directory
+We are getting the size of the directory `test` using the `shutil` module. The `shutil` module provides functions for copying and moving files and directories. The `shutil` module comes under Python's standard utility modules. We are using the `shutil` module to get the size of a directory.
+
+**Syntax:**
+```python title="get_directory_size.py" showLineNumbers{1} {1, 3-4}
+shutil.disk_usage(path)
+```
+
+**Example:**
+
+```python title="get_directory_size.py" showLineNumbers{1} {1, 3-4}
+import shutil
+
+print(shutil.disk_usage('test'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {1-2}
+C:\Users\username>python get_directory_size.py
+usage(total=97676207104, used=97676207104, free=0)
+```
+
+In the above example, we are using the `disk_usage()` function to get the size of a directory. The `disk_usage()` function takes one argument. The argument is the name of the directory whose size is to be obtained.
+
