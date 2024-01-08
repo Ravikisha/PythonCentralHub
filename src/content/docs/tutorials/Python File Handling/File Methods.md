@@ -8,7 +8,7 @@ sidebar:
 ## File  Methods
 This tutorial will cover the different methods that can be used to read and write to files.
 
-## Table of Methods in File Module
+## Table of Methods
 |S.No.|Method|Description|Example|
 |---|---|---|---|
 |1|open()|Opens a file and returns a file object|`file = open("file.txt", "r")`|
