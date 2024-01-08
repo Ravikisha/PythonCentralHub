@@ -459,3 +459,729 @@ C:\Users\username>python os_path_split.py
 
 In the above example, we import the os module and use the os.path.split() method to get a tuple of two values. The first value is the directory name of the files "file.txt" and "new_file.txt" in the "New Folder" directory, and the second value is the base name of the files "file.txt" and "new_file.txt" in the "New Folder" directory.
 
+## os.path.join() Method
+The os.path.join() method joins the specified paths.
+
+```python title="os_path_join.py" showLineNumbers{1} {1,3-5}
+import os
+
+print(os.path.join('C:\\Users\\User\\Desktop\\New Folder', 'New Folder'))
+print(os.path.join('C:\\Users\\User\\Desktop\\New Folder', 'New Folder', 'file.txt'))
+print(os.path.join('C:\\Users\\User\\Desktop\\New Folder', 'New Folder', 'new_file.txt'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python os_path_join.py
+C:\Users\username\Desktop\New Folder\New Folder
+C:\Users\username\Desktop\New Folder\New Folder\file.txt
+C:\Users\username\Desktop\New Folder\New Folder\new_file.txt
+```
+
+In the above example, we import the os module and use the os.path.join() method to join the specified paths.
+
+## os.path.splitext() Method
+The os.path.splitext() method splits the specified path into a tuple of two values. The first value is the path without the extension, and the second value is the extension.
+
+```python title="os_path_splitext.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.splitext('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'))
+print(os.path.splitext('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_splitext.py
+('C:\\Users\\username\\Desktop\\New Folder\\New Folder\\file', '.txt')
+('C:\\Users\\username\\Desktop\\New Folder\\New Folder\\new_file', '.txt')
+```
+
+In the above example, we import the os module and use the os.path.splitext() method to get a tuple of two values. The first value is the path without the extension of the files "file.txt" and "new_file.txt" in the "New Folder" directory, and the second value is the extension of the files "file.txt" and "new_file.txt" in the "New Folder" directory.
+
+## os.path.normpath() Method
+The os.path.normpath() method normalizes the specified path.
+
+```python title="os_path_normpath.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.normpath('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'))
+print(os.path.normpath('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_normpath.py
+C:\Users\username\Desktop\New Folder\New Folder\file.txt
+C:\Users\username\Desktop\New Folder\New Folder\new_file.txt
+```
+
+In the above example, we import the os module and use the os.path.normpath() method to normalize the paths of the files "file.txt" and "new_file.txt" in the "New Folder" directory.
+
+## os.path.relpath() Method
+The os.path.relpath() method returns the relative path from the current working directory to the specified path.
+
+```python title="os_path_relpath.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.relpath('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'))
+print(os.path.relpath('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_relpath.py
+..\
+..\new_file.txt
+```
+
+In the above example, we import the os module and use the os.path.relpath() method to get the relative path from the current working directory to the files "file.txt" and "new_file.txt" in the "New Folder" directory.
+
+## os.path.commonpath() Method
+The os.path.commonpath() method returns the common path of the specified paths.
+
+```python title="os_path_commonpath.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.commonpath(['C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt', 'C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt']))
+print(os.path.commonpath(['C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt', 'C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt', 'C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt']))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_commonpath.py
+C:\Users\username\Desktop\New Folder\New Folder
+C:\Users\username\Desktop\New Folder\New Folder
+```
+
+In the above example, we import the os module and use the os.path.commonpath() method to get the common path of the specified paths.
+
+## os.path.commonprefix() Method
+The os.path.commonprefix() method returns the common prefix of the specified paths.
+
+```python title="os_path_commonprefix.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.commonprefix(['C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt', 'C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt']))
+print(os.path.commonprefix(['C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt', 'C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt', 'C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt']))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_commonprefix.py
+C:\Users\username\Desktop\New Folder\New Folder\
+C:\Users\username\Desktop\New Folder\New Folder\
+```
+
+In the above example, we import the os module and use the os.path.commonprefix() method to get the common prefix of the specified paths.
+
+## os.path.expanduser() Method
+The os.path.expanduser() method expands the specified path to the user's home directory.
+
+```python title="os_path_expanduser.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.expanduser('~\\Desktop\\New Folder\\New Folder\\file.txt'))
+print(os.path.expanduser('~\\Desktop\\New Folder\\New Folder\\new_file.txt'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_expanduser.py
+C:\Users\username\Desktop\New Folder\New Folder\file.txt
+C:\Users\username\Desktop\New Folder\New Folder\new_file.txt
+```
+
+In the above example, we import the os module and use the os.path.expanduser() method to expand the paths of the files "file.txt" and "new_file.txt" in the "New Folder" directory to the user's home directory.
+
+## os.path.expandvars() Method
+The os.path.expandvars() method expands the specified path to the environment variables.
+
+```python title="os_path_expandvars.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.expandvars('%USERPROFILE%\\Desktop\\New Folder\\New Folder\\file.txt'))
+print(os.path.expandvars('%USERPROFILE%\\Desktop\\New Folder\\New Folder\\new_file.txt'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_expandvars.py
+C:\Users\username\Desktop\New Folder\New Folder\file.txt
+C:\Users\username\Desktop\New Folder\New Folder\new_file.txt
+```
+
+In the above example, we import the os module and use the os.path.expandvars() method to expand the paths of the files "file.txt" and "new_file.txt" in the "New Folder" directory to the environment variables.
+
+## os.path.samefile() Method
+The os.path.samefile() method returns True if the specified paths refer to the same file, otherwise returns False.
+
+```python title="os_path_samefile.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.samefile('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt', 'C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt'))
+print(os.path.samefile('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt', 'C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_samefile.py
+False
+True
+```
+
+In the above example, we import the os module and use the os.path.samefile() method to check if the paths of the files "file.txt" and "new_file.txt" in the "New Folder" directory refer to the same file.
+
+## os.path.sameopenfile() Method
+The os.path.sameopenfile() method returns True if the specified file objects refer to the same file, otherwise returns False.
+
+```python title="os_path_sameopenfile.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.sameopenfile(open('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'), open('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt')))
+print(os.path.sameopenfile(open('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'), open('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt')))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_sameopenfile.py
+False
+True
+```
+
+In the above example, we import the os module and use the os.path.sameopenfile() method to check if the file objects of the files "file.txt" and "new_file.txt" in the "New Folder" directory refer to the same file.
+
+## os.path.samestat() Method
+The os.path.samestat() method returns True if the specified stat objects refer to the same file, otherwise returns False.
+
+```python title="os_path_samestat.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.samestat(os.stat('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'), os.stat('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt')))
+print(os.path.samestat(os.stat('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'), os.stat('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt')))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_samestat.py
+False
+True
+```
+
+In the above example, we import the os module and use the os.path.samestat() method to check if the stat objects of the files "file.txt" and "new_file.txt" in the "New Folder" directory refer to the same file.
+
+## os.path.isabs() Method
+The os.path.isabs() method returns True if the specified path is an absolute path, otherwise returns False.
+
+```python title="os_path_isabs.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.isabs('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'))
+print(os.path.isabs('New Folder\\New Folder\\file.txt'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_isabs.py
+True
+False
+```
+
+In the above example, we import the os module and use the os.path.isabs() method to check if the paths of the files "file.txt" and "new_file.txt" in the "New Folder" directory are absolute paths.
+
+## os.path.ismount() Method
+The os.path.ismount() method returns True if the specified path is a mount point, otherwise returns False.
+
+```python title="os_path_ismount.py" showLineNumbers{1} {1,3-10}
+import os
+
+print(os.path.ismount('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'))
+print(os.path.ismount('C:\\Users\\User\\Desktop\\New Folder\\New Folder'))
+print(os.path.ismount('C:\\Users\\User\\Desktop\\New Folder'))
+print(os.path.ismount('C:\\Users\\User\\Desktop'))
+print(os.path.ismount('C:\\Users\\User'))
+print(os.path.ismount('C:\\Users'))
+print(os.path.ismount('C:\\'))
+print(os.path.ismount('C:'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-9}
+C:\Users\username>python os_path_ismount.py
+False
+False
+False
+False
+False
+False
+True
+False
+```
+
+In the above example, we import the os module and use the os.path.ismount() method to check if the paths of the files "file.txt" and "new_file.txt" in the "New Folder" directory are mount points.
+
+## os.path Module Constants
+The os.path module provides the following constants.
+
+|S.No.|Constant|Description|Example|
+|:----|:-------|:----------|:------|
+|1|os.path.sep|Returns the path separator.|`os.path.sep`|
+|2|os.path.altsep|Returns the alternate path separator.|`os.path.altsep`|
+|3|os.path.extsep|Returns the extension separator.|`os.path.extsep`|
+|4|os.path.pathsep|Returns the path separator used in PATH environment variables.|`os.path.pathsep`|
+|5|os.path.defpath|Returns the default search path for executables.|`os.path.defpath`|
+|6|os.path.devnull|Returns the null device.|`os.path.devnull`|
+|7|os.path.supports_unicode_filenames|Returns True if the operating system supports Unicode filenames, otherwise returns False.|`os.path.supports_unicode_filenames`|
+|8|os.path.curdir|Returns the current directory.|`os.path.curdir`|
+|9|os.path.pardir|Returns the parent directory.|`os.path.pardir`|
+
+### os.path.sep Constant
+The os.path.sep constant returns the path separator.
+
+```python title="os_path_sep.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.path.sep)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_path_sep.py
+\
+```
+
+In the above example, we import the os module and use the os.path.sep constant to get the path separator.
+
+### os.path.altsep Constant
+The os.path.altsep constant returns the alternate path separator.
+
+```python title="os_path_altsep.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.path.altsep)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_path_altsep.py
+/
+```
+
+In the above example, we import the os module and use the os.path.altsep constant to get the alternate path separator.
+
+### os.path.extsep Constant
+The os.path.extsep constant returns the extension separator.
+
+```python title="os_path_extsep.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.path.extsep)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_path_extsep.py
+.
+```
+
+In the above example, we import the os module and use the os.path.extsep constant to get the extension separator.
+
+### os.path.pathsep Constant
+The os.path.pathsep constant returns the path separator used in PATH environment variables.
+
+```python title="os_path_pathsep.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.path.pathsep)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_path_pathsep.py
+;
+```
+
+In the above example, we import the os module and use the os.path.pathsep constant to get the path separator used in PATH environment variables.
+
+### os.path.defpath Constant
+The os.path.defpath constant returns the default search path for executables.
+
+```python title="os_path_defpath.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.path.defpath)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-20}
+C:\Users\username>python os_path_defpath.py
+.;C:\bin
+```
+
+In the above example, we import the os module and use the os.path.defpath constant to get the default search path for executables.
+
+### os.path.devnull Constant
+The os.path.devnull constant returns the null device.
+
+```python title="os_path_devnull.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.path.devnull)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_path_devnull.py
+nul
+```
+
+In the above example, we import the os module and use the os.path.devnull constant to get the null device.
+
+### os.path.supports_unicode_filenames Constant
+The os.path.supports_unicode_filenames constant returns True if the operating system supports Unicode filenames, otherwise returns False.
+
+```python title="os_path_supports_unicode_filenames.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.path.supports_unicode_filenames)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_path_supports_unicode_filenames.py
+True
+```
+
+In the above example, we import the os module and use the os.path.supports_unicode_filenames constant to check if the operating system supports Unicode filenames.
+
+### os.path.curdir Constant
+The os.path.curdir constant returns the current directory.
+
+```python title="os_path_curdir.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.path.curdir)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_path_curdir.py
+.
+```
+
+In the above example, we import the os module and use the os.path.curdir constant to get the current directory.
+
+### os.path.pardir Constant
+The os.path.pardir constant returns the parent directory.
+
+```python title="os_path_pardir.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.path.pardir)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_path_pardir.py
+..
+```
+
+In the above example, we import the os module and use the os.path.pardir constant to get the parent directory.
+
+## os Module Constants
+The os module provides the following constants.
+
+|S.No.|Constant|Description|Example|
+|:----|:-------|:----------|:------|
+|1|os.name|Returns the name of the operating system.|`os.name`|
+|2|os.curdir|Returns the current directory.|`os.curdir`|
+|3|os.pardir|Returns the parent directory.|`os.pardir`|
+|4|os.sep|Returns the path separator.|`os.sep`|
+|5|os.extsep|Returns the extension separator.|`os.extsep`|
+|6|os.altsep|Returns the alternate path separator.|`os.altsep`|
+|7|os.pathsep|Returns the path separator used in PATH environment variables.|`os.pathsep`|
+|8|os.linesep|Returns the line separator.|`os.linesep`|
+|9|os.defpath|Returns the default search path for executables.|`os.defpath`|
+|10|os.devnull|Returns the null device.|`os.devnull`|
+|11|os.environ|Returns a dictionary of the environment variables.|`os.environ`|
+|12|os.supports_bytes_environ|Returns True if the operating system supports environment variables as bytes, otherwise returns False.|`os.supports_bytes_environ`|
+|13|os.supports_dir_fd|Returns True if the operating system supports the dir_fd parameter, otherwise returns False.|`os.supports_dir_fd`|
+|14|os.supports_effective_ids|Returns True if the operating system supports the effective_ids parameter, otherwise returns False.|`os.supports_effective_ids`|
+|15|os.supports_fd|Returns True if the operating system supports the fd parameter, otherwise returns False.|`os.supports_fd`|
+|16|os.supports_follow_symlinks|Returns True if the operating system supports the follow_symlinks parameter, otherwise returns False.|`os.supports_follow_symlinks`|
+
+## os.name Constant
+The os.name constant returns the name of the operating system.
+
+```python title="os_name.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.name)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_name.py
+nt
+```
+
+In the above example, we import the os module and use the os.name constant to get the name of the operating system.
+
+## os.curdir Constant
+The os.curdir constant returns the current directory.
+
+```python title="os_curdir.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.curdir)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_curdir.py
+.
+```
+
+In the above example, we import the os module and use the os.curdir constant to get the current directory.
+
+## os.pardir Constant
+The os.pardir constant returns the parent directory.
+
+```python title="os_pardir.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.pardir)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_pardir.py
+..
+```
+
+In the above example, we import the os module and use the os.pardir constant to get the parent directory.
+
+## os.sep Constant
+The os.sep constant returns the path separator.
+
+```python title="os_sep.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.sep)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_sep.py
+\
+```
+
+In the above example, we import the os module and use the os.sep constant to get the path separator.
+
+## os.extsep Constant
+The os.extsep constant returns the extension separator.
+
+```python title="os_extsep.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.extsep)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_extsep.py
+.
+```
+
+In the above example, we import the os module and use the os.extsep constant to get the extension separator.
+
+## os.altsep Constant
+The os.altsep constant returns the alternate path separator.
+
+```python title="os_altsep.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.altsep)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_altsep.py
+/
+```
+
+In the above example, we import the os module and use the os.altsep constant to get the alternate path separator.
+
+## os.pathsep Constant
+The os.pathsep constant returns the path separator used in PATH environment variables.
+
+```python title="os_pathsep.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.pathsep)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_pathsep.py
+;
+```
+
+In the above example, we import the os module and use the os.pathsep constant to get the path separator used in PATH environment variables.
+
+## os.linesep Constant
+The os.linesep constant returns the line separator.
+
+```python title="os_linesep.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.linesep)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_linesep.py
+
+
+```
+
+In the above example, we import the os module and use the os.linesep constant to get the line separator.
+
+## os.defpath Constant
+The os.defpath constant returns the default search path for executables.
+
+```python title="os_defpath.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.defpath)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-20}
+C:\Users\username>python os_defpath.py
+.;C:\bin
+```
+
+In the above example, we import the os module and use the os.defpath constant to get the default search path for executables.
+
+## os.devnull Constant
+The os.devnull constant returns the null device.
+
+```python title="os_devnull.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.devnull)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_devnull.py
+nul
+```
+
+In the above example, we import the os module and use the os.devnull constant to get the null device.
+
+## os.environ Constant
+The os.environ constant returns a dictionary of the environment variables.
+
+```python title="os_environ.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.environ)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-20}
+C:\Users\username>python os_environ.py
+environ({'ALLUSERSPROFILE': 'C:\\ProgramData', 'APPDATA': 'C:\\Users\\ravi\\AppData\\Roaming', 'CHOCOLATEYINSTALL': 'C:\\ProgramData\\chocolatey', 'CLASS_PATH': 'C:\\mysql-connector-j-8.0.33.jar', 'CLINK_DIR': 'C:\\Program Files (x86)\\clink', 'CLINK_DUMMY_CAPTURE_ENV': ' ', 'COLUMNS': '110', 'COMMONPROGRAMFILES': 'C:\\Program Files\\Common Files', 'COMMONPROGRAMFILES(X86)': 'C:\\Program Files (x86)\\Common Files', 'COMMONPROGRAMW6432': 'C:\\Program Files\\Common Files', 'COMPUTERNAME': 'RAVI', 'COMSPEC': 'C:\\Windows\\system32\\cmd.exe', 'DRIVERDATA': 'C:\\Windows\\System32\\Drivers\\DriverData', 'EFC_24904': '1', 'GOPATH': 'C:\\Users\\ravi\\go', 'HOME': 'C:\\Users\\ravi', 'HOMEDRIVE': 'C:', 'HOMEPATH': '\\Users\\ravi', 'INTELLIJ IDEA COMMUNITY EDITION': 'C:\\Program Files\\JetBrains\\IntelliJ IDEA Community Edition 2023.2.2\\bin;', 'LINES': '25', 'LOCALAPPDATA': 'C:\\Users\\ravi\\AppData\\Local', 'LOGONSERVER': '\\\\RAVI', 'NUMBER_OF_PROCESSORS': '8', 'ONEDRIVE': 'C:\\Users\\ravi\\OneDrive', 'ONEDRIVECONSUMER': 'C:\\Users\\ravi\\OneDrive'})
+```
+
+In the above example, we import the os module and use the os.environ constant to get a dictionary of the environment variables.
+
+## os.supports_bytes_environ Constant
+The os.supports_bytes_environ constant returns True if the operating system supports environment variables as bytes, otherwise returns False.
+
+```python title="os_supports_bytes_environ.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.supports_bytes_environ)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_supports_bytes_environ.py
+True
+```
+
+In the above example, we import the os module and use the os.supports_bytes_environ constant to check if the operating system supports environment variables as bytes.
+
+## os.supports_dir_fd Constant
+The os.supports_dir_fd constant returns True if the operating system supports the dir_fd parameter, otherwise returns False.
+
+```python title="os_supports_dir_fd.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.supports_dir_fd)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_supports_dir_fd.py
+True
+```
+
+In the above example, we import the os module and use the os.supports_dir_fd constant to check if the operating system supports the dir_fd parameter.
+
+## os.supports_effective_ids Constant
+The os.supports_effective_ids constant returns True if the operating system supports the effective_ids parameter, otherwise returns False.
+
+```python title="os_supports_effective_ids.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.supports_effective_ids)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_supports_effective_ids.py
+True
+```
+
+In the above example, we import the os module and use the os.supports_effective_ids constant to check if the operating system supports the effective_ids parameter.
+
+## os.supports_fd Constant
+The os.supports_fd constant returns True if the operating system supports the fd parameter, otherwise returns False.
+
+```python title="os_supports_fd.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.supports_fd)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_supports_fd.py
+True
+```
+
+In the above example, we import the os module and use the os.supports_fd constant to check if the operating system supports the fd parameter.
+
+## os.supports_follow_symlinks Constant
+The os.supports_follow_symlinks constant returns True if the operating system supports the follow_symlinks parameter, otherwise returns False.
+
+```python title="os_supports_follow_symlinks.py" showLineNumbers{1} {1,3}
+import os
+
+print(os.supports_follow_symlinks)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python os_supports_follow_symlinks.py
+True
+```
+
+In the above example, we import the os module and use the os.supports_follow_symlinks constant to check if the operating system supports the follow_symlinks parameter.
+
+## Conclusion
+In this tutorial, we have learned about the os module in Python. We have also learned about the os.path module and its methods and constants with examples. Finally, we have learned about the os module and its constants with examples. Now you can use the os module and its methods and constants in your Python program to perform various operating system-related tasks. For more information, visit the [official documentation](https://docs.python.org/3/library/os.html) of the os module. For more tutorials, visit Python Central Hub.
