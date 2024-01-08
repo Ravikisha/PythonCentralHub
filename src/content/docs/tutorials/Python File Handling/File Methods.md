@@ -342,3 +342,137 @@ False
 ```
 
 In the above example, we open a file named "file.txt" in read mode. The file object is stored in the variable file. The isatty() method returns False because the file is not connected to a terminal.
+
+## closed Attribute
+The closed attribute returns True if the file is closed, False otherwise. The following example opens a file named "file.txt" in read mode and prints True if the file is closed, False otherwise.
+
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+```
+
+```python title="closed.py" showLineNumbers{1} {1, 3-5}
+file = open("file.txt", "r")
+
+print(file.closed)
+file.close()
+print(file.closed)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python closed.py
+False
+True
+```
+
+In the above example, we open a file named "file.txt" in read mode. The file object is stored in the variable file. The closed attribute returns False because the file is not closed. The close() method closes the file. The closed attribute returns True because the file is closed.
+
+## encoding Attribute
+The encoding attribute returns the encoding of the file. The following example opens a file named "file.txt" in read mode and prints its encoding.
+
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+```
+
+```python title="encoding.py" showLineNumbers{1} {1, 3-4}
+file = open("file.txt", "r")
+
+print(file.encoding)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python encoding.py
+cp1252
+```
+
+In the above example, we open a file named "file.txt" in read mode. The file object is stored in the variable file. The encoding attribute returns the encoding of the file.
+
+## mode Attribute
+The mode attribute returns the mode of the file. The following example opens a file named "file.txt" in read mode and prints its mode.
+
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+```
+
+```python title="mode.py" showLineNumbers{1} {1, 3-4}
+file = open("file.txt", "r")
+
+print(file.mode)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python mode.py
+r
+```
+
+In the above example, we open a file named "file.txt" in read mode. The file object is stored in the variable file. The mode attribute returns the mode of the file.
+
+## name Attribute
+The name attribute returns the name of the file. The following example opens a file named "file.txt" in read mode and prints its name.
+
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+```
+
+```python title="name.py" showLineNumbers{1} {1, 3-4}
+file = open("file.txt", "r")
+
+print(file.name)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python name.py
+file.txt
+```
+
+In the above example, we open a file named "file.txt" in read mode. The file object is stored in the variable file. The name attribute returns the name of the file.
+
+## newlines Attribute
+The newlines attribute returns a tuple of all the line terminators in the file. The following example opens a file named "file.txt" in read mode and prints its line terminators.
+
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+Hii World
+```
+
+```python title="newlines.py" showLineNumbers{1} {1, 3-4}
+file = open("file.txt", "r")
+
+print(file.newlines)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python newlines.py
+('\r\n', '\r\n')
+```
+
+In the above example, we open a file named "file.txt" in read mode. The file object is stored in the variable file. The newlines attribute returns a tuple of all the line terminators in the file.
+
+## softspace Attribute
+The softspace attribute returns False if space explicitly required with print, True otherwise. The following example opens a file named "file.txt" in read mode and prints False if space explicitly required with print, True otherwise.
+
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+```
+
+```python title="softspace.py" showLineNumbers{1} {1, 3-4}
+file = open("file.txt", "r")
+
+print(file.softspace)
+print("Hello World")
+print(file.softspace)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python softspace.py
+False
+Hello World
+True
+```
+
+In the above example, we open a file named "file.txt" in read mode. The file object is stored in the variable file. The softspace attribute returns False because space explicitly required with print. The print() function prints "Hello World". The softspace attribute returns True because space is not explicitly required with print.
