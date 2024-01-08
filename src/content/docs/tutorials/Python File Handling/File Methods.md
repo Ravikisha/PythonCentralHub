@@ -213,3 +213,132 @@ HelloWorld
 ```
 
 In the above example, we open a file named "file.txt" in write mode. The file object is stored in the variable file. The writelines() method writes a list of strings to the file.
+
+## seek() Method
+The seek() method changes the current position of the file pointer. The following example opens a file named "file.txt" in read mode and changes the current position of the file pointer.
+
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+```
+
+```python title="seek.py" showLineNumbers{1} {1, 3-4}
+file = open("file.txt", "r")
+
+file.seek(6)
+print(file.read())
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python seek.py
+World
+```
+
+In the above example, we open a file named "file.txt" in read mode. The file object is stored in the variable file. The seek() method changes the current position of the file pointer to 6. The read() method reads the content of the file from the current position of the file pointer.
+
+## tell() Method
+The tell() method returns the current position of the file pointer. The following example opens a file named "file.txt" in read mode and prints the current position of the file pointer.
+
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+```
+
+```python title="tell.py" showLineNumbers{1} {1, 3-4}
+file = open("file.txt", "r")
+
+file.seek(6)
+print(file.tell())
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python tell.py
+6
+```
+
+In the above example, we open a file named "file.txt" in read mode. The file object is stored in the variable file. The seek() method changes the current position of the file pointer to 6. The tell() method returns the current position of the file pointer.
+
+## truncate() Method
+The truncate() method truncates the file to the given size. The following example opens a file named "file.txt" in read mode and truncates it to 10 bytes.
+
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+```
+
+```python title="truncate.py" showLineNumbers{1} {1, 3-4}
+file = open("file.txt", "r+")
+
+file.truncate(10)
+print(file.read())
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python truncate.py
+Hello Wor
+```
+
+In the above example, we open a file named "file.txt" in read mode. The file object is stored in the variable file. The truncate() method truncates the file to 10 bytes. The read() method reads the content of the file.
+
+## flush() Method
+The flush() method flushes the internal buffer. The following example opens a file named "file.txt" in write mode and flushes the internal buffer.
+
+```python title="flush.py" showLineNumbers{1} {1, 3-4}
+file = open("file.txt", "w")
+
+file.write("Hello World")
+file.flush()
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python flush.py
+```
+
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+```
+
+In the above example, we open a file named "file.txt" in write mode. The file object is stored in the variable file. The write() method writes a string to the file. The flush() method flushes the internal buffer.
+
+## fileno() Method
+The fileno() method returns the file descriptor. The following example opens a file named "file.txt" in read mode and prints its file descriptor.
+
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+```
+
+```python title="fileno.py" showLineNumbers{1} {1, 3-4}
+file = open("file.txt", "r")
+
+print(file.fileno())
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python fileno.py
+3
+```
+
+In the above example, we open a file named "file.txt" in read mode. The file object is stored in the variable file. The fileno() method returns the file descriptor.
+
+## isatty() Method
+The isatty() method returns True if the file is connected to a terminal, False otherwise. The following example opens a file named "file.txt" in read mode and prints True if the file is connected to a terminal, False otherwise.
+
+```txt title="file.txt" showLineNumbers{1} {1}
+Hello World
+```
+
+```python title="isatty.py" showLineNumbers{1} {1, 3-4}
+file = open("file.txt", "r")
+
+print(file.isatty())
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python isatty.py
+False
+```
+
+In the above example, we open a file named "file.txt" in read mode. The file object is stored in the variable file. The isatty() method returns False because the file is not connected to a terminal.
