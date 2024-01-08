@@ -250,4 +250,212 @@ C:\Users\username\Desktop\New Folder\New Folder
 
 In the above example, we import the os module and use the os.walk() method to get a generator that yields a tuple of three values for each directory in the "New Folder" directory. The first value is the path of the directory, the second value is a list of the names of the subdirectories in the directory, and the third value is a list of the names of the files in the directory.
 
+## os.path.exists() Method
+The os.path.exists() method returns True if the file or directory at the specified path exists, otherwise returns False.
+
+```python title="os_path_exists.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.exists('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'))
+print(os.path.exists('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_exists.py
+True
+False
+```
+
+In the above example, we import the os module and use the os.path.exists() method to check if the files "file.txt" and "new_file.txt" exist in the "New Folder" directory.
+
+## os.path.isfile() Method
+The os.path.isfile() method returns True if the file at the specified path exists, otherwise returns False.
+
+```python title="os_path_isfile.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.isfile('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'))
+print(os.path.isfile('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_isfile.py
+True
+False
+```
+
+In the above example, we import the os module and use the os.path.isfile() method to check if the files "file.txt" and "new_file.txt" exist in the "New Folder" directory.
+
+## os.path.isdir() Method
+The os.path.isdir() method returns True if the directory at the specified path exists, otherwise returns False.
+
+```python title="os_path_isdir.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.isdir('C:\\Users\\User\\Desktop\\New Folder\\New Folder'))
+print(os.path.isdir('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\New Folder'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_isdir.py
+True
+False
+```
+
+In the above example, we import the os module and use the os.path.isdir() method to check if the directories "New Folder" and "New Folder" exist in the "New Folder" directory.
+
+## os.path.getsize() Method
+The os.path.getsize() method returns the size of the file at the specified path in bytes.
+
+```python title="os_path_getsize.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.getsize('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'))
+print(os.path.getsize('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_getsize.py
+11
+0
+```
+
+In the above example, we import the os module and use the os.path.getsize() method to get the size of the files "file.txt" and "new_file.txt" in the "New Folder" directory.
+
+## os.path.getmtime() Method
+The os.path.getmtime() method returns the time of the last modification of the file at the specified path.
+
+```python title="os_path_getmtime.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.getmtime('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'))
+print(os.path.getmtime('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_getmtime.py
+1634178000.0
+1634178000.0
+```
+
+In the above example, we import the os module and use the os.path.getmtime() method to get the time of the last modification of the files "file.txt" and "new_file.txt" in the "New Folder" directory.
+
+## os.path.getctime() Method
+The os.path.getctime() method returns the time of the creation of the file at the specified path.
+
+```python title="os_path_getctime.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.getctime('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'))
+print(os.path.getctime('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_getctime.py
+1634178000.0
+1634178000.0
+```
+
+In the above example, we import the os module and use the os.path.getctime() method to get the time of the creation of the files "file.txt" and "new_file.txt" in the "New Folder" directory.
+
+## os.path.getatime() Method
+The os.path.getatime() method returns the time of the last access of the file at the specified path.
+
+```python title="os_path_getatime.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.getatime('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'))
+print(os.path.getatime('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_getatime.py
+1634178000.0
+1634178000.0
+```
+
+In the above example, we import the os module and use the os.path.getatime() method to get the time of the last access of the files "file.txt" and "new_file.txt" in the "New Folder" directory.
+
+## os.path.abspath() Method
+The os.path.abspath() method returns the absolute path of the file or directory at the specified path.
+
+```python title="os_path_abspath.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.abspath('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'))
+print(os.path.abspath('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_abspath.py
+C:\Users\username\Desktop\New Folder\New Folder\file.txt
+C:\Users\username\Desktop\New Folder\New Folder\new_file.txt
+```
+
+In the above example, we import the os module and use the os.path.abspath() method to get the absolute path of the files "file.txt" and "new_file.txt" in the "New Folder" directory.
+
+## os.path.dirname() Method
+The os.path.dirname() method returns the directory name of the file or directory at the specified path.
+
+```python title="os_path_dirname.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.dirname('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'))
+print(os.path.dirname('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_dirname.py
+C:\Users\username\Desktop\New Folder\New Folder
+C:\Users\username\Desktop\New Folder\New Folder
+```
+
+In the above example, we import the os module and use the os.path.dirname() method to get the directory name of the files "file.txt" and "new_file.txt" in the "New Folder" directory.
+
+## os.path.basename() Method
+The os.path.basename() method returns the base name of the file or directory at the specified path.
+
+```python title="os_path_basename.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.basename('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'))
+print(os.path.basename('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_basename.py
+file.txt
+new_file.txt
+```
+
+In the above example, we import the os module and use the os.path.basename() method to get the base name of the files "file.txt" and "new_file.txt" in the "New Folder" directory.
+
+## os.path.split() Method
+The os.path.split() method returns a tuple of two values. The first value is the directory name of the file or directory at the specified path, and the second value is the base name of the file or directory at the specified path.
+
+```python title="os_path_split.py" showLineNumbers{1} {1,3-4}
+import os
+
+print(os.path.split('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt'))
+print(os.path.split('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\new_file.txt'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python os_path_split.py
+('C:\\Users\\username\\Desktop\\New Folder\\New Folder', 'file.txt')
+('C:\\Users\\username\\Desktop\\New Folder\\New Folder', 'new_file.txt')
+```
+
+In the above example, we import the os module and use the os.path.split() method to get a tuple of two values. The first value is the directory name of the files "file.txt" and "new_file.txt" in the "New Folder" directory, and the second value is the base name of the files "file.txt" and "new_file.txt" in the "New Folder" directory.
 
