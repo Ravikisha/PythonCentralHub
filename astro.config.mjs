@@ -60,9 +60,9 @@ export default defineConfig({
       logo: {
         src: "./src/assets/pythonlogo.png",
       },
-      editLink: {
-        baseUrl: "https://github.com/Ravikisha/PythonCentralHub/edit/main/",
-      },
+      // editLink: {
+      //   baseUrl: "https://github.com/Ravikisha/PythonCentralHub/edit/main/",
+      // },
       favicon: "./src/assets/favicon.ico",
       social: {
         github: "https://github.com/Ravikisha/PythonCentralHub.git",
