@@ -36,7 +36,8 @@ print(type(height))
 ```
 Output:
 
-```cmd title="command" showLineNumbers{1} {4-6}
+```cmd title="command" showLineNumbers{1} {5-7}
+C:\Users\Your Name> python input.py
 Enter your name: John
 Enter your age: 25
 Enter your height in meters: 1.75
@@ -57,7 +58,8 @@ print("Hello, " + user_name + "!")
 
 Output:
 
-```cmd title="command" showLineNumbers{1} {2}
+```cmd title="command" showLineNumbers{1} {3}
+C:\Users\Your Name> python input.py
 Enter your name: John
 Hello, John!
 ```
@@ -74,7 +76,8 @@ print("Hello, " + user_name + "!")
 
 Output:
 
-```cmd title="command" showLineNumbers{1} {2}
+```cmd title="command" showLineNumbers{1} {3}
+C:\Users\Your Name> python input.py
 Enter your name: John
 Hello, John!
 ```
@@ -94,7 +97,8 @@ print(type(height))
 
 Output:
 
-```cmd title="command" showLineNumbers{1} {2}
+```cmd title="command" showLineNumbers{1} {3-4}
+C:\Users\Your Name> python input.py
 Enter your age: 25
 Enter your height in meters: 1.75
 <class 'int'>
@@ -121,7 +125,8 @@ while True:
 
 Output:
 
-```cmd title="command" showLineNumbers{1} {2}
+```cmd title="command" showLineNumbers{1} {3}
+C:\Users\Your Name> python input.py
 Enter your age: -5
 Please enter a non-negative age.
 Enter your age: 25
