@@ -47,20 +47,6 @@ This tutorial will teach you how to use the OS module to handle files and direct
 |34|os.path.isabs(path)|Returns True if the specified path is an absolute path, otherwise returns False.|`os.path.isabs('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt')`|
 |35|os.path.ismount(path)|Returns True if the specified path is a mount point, otherwise returns False.|`os.path.ismount('C:\\Users\\User\\Desktop\\New Folder\\New Folder\\file.txt')`|
 
-<!-- ```python title="open.py" showLineNumbers{1} {1, 3-4}
-file = open("file.txt", "r")
-
-print(file.read())
-```
-
-Output:
-```cmd title="command" showLineNumbers{1} {2-6}
-C:\Users\username>python open.py
-Hello World
-```
-
-In the above example, we open a file named "file.txt" in read mode. The file object is stored in the variable file. The read() method reads the entire content of the file and returns it as a string. -->
-
 ## os.getcwd() Method
 The os.getcwd() method returns the current working directory.
 
