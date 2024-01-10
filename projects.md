@@ -46,8 +46,8 @@ Certainly! Here's a list of 150 Python project ideas across different skill leve
 42. [ ] Simple Timer App
 43. [ ] Basic Text Editor
 44. [x] Reverse a String
-45. [ ] Fibonacci Sequence Generator
-46. [ ] Binary to Decimal Converter
+45. [x] Fibonacci Sequence Generator
+46. [x] Binary to Decimal Converter
 47. [ ] Simple Blog System
 48. [ ] Movie Recommendation System (Basic)
 49. [ ] Basic Calendar App
