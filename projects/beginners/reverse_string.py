@@ -46,3 +46,13 @@ def reverse_string_generator_expression(string):
     return ''.join(i for i in reversed(string))
 
 
+# Test the functions
+string = 'Reverse this string'
+print('Original string:', string)
+print('For loop:', reverse_string_for_loop(string))
+print('While loop:', reverse_string_while_loop(string))
+print('Recursion:', reverse_string_recursion(string))
+print('Extended slice:', reverse_string_extended_slice(string))
+print('Stack:', reverse_string_stack(string))
+print('List comprehension:', reverse_string_list_comprehension(string))
+print('Generator expression:', reverse_string_generator_expression(string))
