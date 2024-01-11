@@ -16,21 +16,6 @@ A programming paradigm is a way of thinking about and approaching problems. It i
 - **Functional Programming**
 - **Object-Oriented Programming**
 
-<!-- ```python title="os_chdir.py" showLineNumbers{1} {1,3}
-import os
-
-os.chdir('C:\\Users\\User\\Desktop')
-print(os.getcwd())
-```
-
-Output:
-```cmd title="command" showLineNumbers{1} {2}
-C:\Users\username>python os_chdir.py
-C:\Users\username\Desktop
-```
-
-In the above example, we import the os module and use the os.chdir() method to change the current working directory to the Desktop directory. -->
-
 
 ## Procedural Programming
 Procedural programming is a programming paradigm that revolves around the concept of procedures, which are also known as routines, subroutines, or functions. A procedure is a set of instructions that perform a specific task. Procedural programming is a programming paradigm that revolves around the concept of procedures, which are also known as routines, subroutines, or functions. A procedure is a set of instructions that perform a specific task. Procedural programming is a programming paradigm that revolves around the concept of procedures, which are also known as routines, subroutines, or functions. A procedure is a set of instructions that perform a specific task.
