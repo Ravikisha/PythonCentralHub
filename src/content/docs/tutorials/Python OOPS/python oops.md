@@ -84,3 +84,89 @@ Functional programming is a programming paradigm that revolves around the concep
 
 ## What is Object-Oriented Programming (OOP)?
 Object-Oriented Programming (OOP) is a programming paradigm that revolves around the concept of objects, which encapsulate data and behavior. An object is an instance of a class. A class is a blueprint for an object. In other words, a class is a template for creating objects. A class defines the properties and behavior of an object. An object is an instance of a class. An object is an entity that has state and behavior. For example, a car is an object. It has a state (color, model, etc.) and behavior (braking, accelerating, etc.). A class is a blueprint for creating objects.
+
+### Properties
+
+1. **Encapsulation:**
+   - **Description:** Encapsulation is the bundling of data (attributes) and methods that operate on that data into a single unit (a class).
+   - **Advantage:** It hides the internal details of how an object operates, promoting information hiding and reducing complexity.
+   - **Disadvantage:** Overuse of encapsulation can make code less transparent and harder to understand.
+
+2. **Inheritance:**
+   - **Description:** Inheritance allows a class (subclass/child) to inherit attributes and methods from another class (superclass/parent).
+   - **Advantage:** Promotes code reuse, facilitates the creation of a hierarchy of classes, and supports the extension of existing classes.
+   - **Disadvantage:** Can lead to a complex class hierarchy if not managed properly, making the code harder to maintain.
+
+3. **Polymorphism:**
+   - **Description:** Polymorphism allows objects of different classes to be treated as objects of a common base class.
+   - **Advantage:** Enhances flexibility and code readability, supporting dynamic method invocation.
+   - **Disadvantage:** Requires a clear understanding of class relationships, and misuse can lead to unexpected behavior.
+
+4. **Abstraction:**
+   - **Description:** Abstraction involves simplifying complex systems by modeling classes based on essential properties and behaviors.
+   - **Advantage:** Enables modeling of real-world entities, reducing system complexity and promoting a focus on essential features.
+   - **Disadvantage:** Abstract classes may introduce an additional layer of complexity if not used judiciously.
+
+5. **Modularity:**
+   - **Description:** OOP promotes modularity by breaking down a system into smaller, manageable components (classes).
+   - **Advantage:** Enhances code organization, reusability, and maintainability.
+   - **Disadvantage:** Poorly designed class interfaces can lead to tight coupling, reducing modularity.
+
+6. **Message Passing:**
+   - **Description:** Objects communicate by sending messages to each other, invoking methods and exchanging information.
+   - **Advantage:** Facilitates interactions between objects, promoting flexibility in the design.
+   - **Disadvantage:** Complex communication patterns can lead to challenges in understanding program flow.
+
+7. **Constructor and Destructor:**
+   - **Description:** Constructors initialize objects when they are created, and destructors perform cleanup when an object is destroyed.
+   - **Advantage:** Ensures proper initialization and cleanup of objects.
+   - **Disadvantage:** Improper use or lack of destructors can lead to memory leaks or resource issues.
+
+8. **Dynamic Binding:**
+   - **Description:** Dynamic binding allows the selection of a method to be executed during runtime rather than compile time.
+   - **Advantage:** Supports polymorphism, making it possible to decide the appropriate method implementation dynamically.
+   - **Disadvantage:** May introduce a slight runtime overhead due to dynamic method resolution.
+
+9. **Association:**
+   - **Description:** Association represents a relationship between two or more classes, indicating how they are connected.
+   - **Advantage:** Models complex relationships between classes, promoting a clearer representation of system interactions.
+   - **Disadvantage:** Overuse of association can lead to overly interconnected classes, complicating the system.
+
+10. **Reusability:**
+   - **Description:** OOP promotes the reuse of existing classes and components in the development of new software.
+   - **Advantage:** Saves development time, encourages the creation of robust and tested components.
+   - **Disadvantage:** Reusable components may not always fit perfectly into new scenarios, requiring adaptations.
+
+
+#### Diagram
+
+```mermaid title="OOP Diagram" desc="Properties of OOP"
+mindmap
+  root((OOPS))
+    Encapsulation((Encapsulation))
+    Inheritance((Inheritance))
+    Polymorphism((Polymorphism))
+    Abstraction((Abstraction))
+    Class((Class))
+    Object((Object))
+```
+    
+## Class
+In object-oriented programming (OOP), a class is a blueprint or template for creating objects. It defines a set of attributes (data members) and methods (functions) that characterize any object instantiated from that class. A class encapsulates the common properties and behaviors that its objects share. It serves as a blueprint for creating instances or objects, providing a way to model and organize code in a modular and reusable fashion.
+
+**Syntax:**
+
+```python title="class_syntex.py" showLineNumbers{1} {1,3}
+class ClassName:
+    pass
+```
+
+## Object:
+An object is an instance of a class in object-oriented programming. It is a tangible entity created from a class, embodying the characteristics and behaviors defined by the class. Objects have attributes (data members) that represent their state and methods (functions) that define their behavior. When a class is instantiated, it creates an object, and multiple objects can be created from the same class. Each object has its own unique state, but they all share the structure and behavior defined by the class.
+
+**Syntax:**
+
+```python title="object_syntex.py" showLineNumbers{1} {1,3}
+object_name = ClassName()
+```
+
