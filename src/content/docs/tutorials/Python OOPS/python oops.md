@@ -170,3 +170,40 @@ An object is an instance of a class in object-oriented programming. It is a tang
 object_name = ClassName()
 ```
 
+### Example:
+We are creating a class named `Employee` and creating an object of that class named `emp1`. We are also creating another object named `emp2`. and we also create a class method named `fullname` and we are passing `self` as a parameter in that method. `self` is a reference to the current instance of the class, and is used to access variables that belongs to the class. It does not have to be named self , you can call it whatever you like, but it has to be the first parameter of any function in the class.
+
+**Syntax:**
+
+```mermaid title="Employee Class" desc="Employee Class"
+classDiagram
+    class Employee{
+        - name
+        - age
+        - salary
+        + fullname()
+    }
+```
+
+```python title="class_object.py" showLineNumbers{1} {1-10}
+class Employee:
+    def __init__(self):
+        self.name = "John"
+        self.age = 23
+        self.salary = 25000
+    def fullname(self):
+        print("This is a class method")
+
+emp1 = Employee()
+emp2 = Employee()
+emp1.fullname()
+emp2.fullname()
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python class_object.py
+This is a class method
+This is a class method
+```
+
