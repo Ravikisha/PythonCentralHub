@@ -72,6 +72,95 @@ C:\Users\username>python class.py
 
 In the above example, we have created an object of the `Person` class. We have assigned the object to the `person` variable. We have printed the `person` variable. The output shows the memory address of the object.
 
+:::note
+**Instance**: An individual object of a certain class. An object obj that belongs to a class Circle, for example, is an instance of the class Circle.
+
+**Instantiation**: The creation of an instance of a class.
+
+**Object**: A unique instance of a data structure that's defined by its class. An object comprises both data members (class variables and instance variables) and methods.
+
+```mermaid title="Class, Object, and Instance" desc="Person is a class. person1 and person2 are objects. person1 and person2 are instances of the Person class."
+classDiagram
+    class Person {
+        - name: String
+        - age: int
+        + say_hi(): void
+    }
+    class person1{
+        - name: "John"
+        - age: 20
+        + say_hi(): void
+    }
+    class person2{
+        - name: "Bob"
+        - age: 30
+        + say_hi(): void
+    }
+    Person --|> person1 : instance/object
+    Person --|> person2 : instance/object
+```
+
+In the above example, we have created a class named `Person`. The `Person` class has two data members `name` and `age` and one method `say_hi()`. We have created two objects `person1` and `person2` of the `Person` class. The `person1` and `person2` objects have the same data members and methods as the `Person` class. The `person1` and `person2` objects are instances of the `Person` class.
+
+:::
+
+## Instance Variables
+In Python, an instance variable is a variable that is defined inside a method and belongs only to the current instance of a class. Instance variables are not shared by all instances of a class. Each instance variable is unique to the object. They are defined inside the constructor method `__init__(self)`.
+
+## Example: Instance variables in Python
+```python title="class.py" showLineNumbers{1} {1-6}
+class Person:
+    '''This is a Person class'''
+    def __init__(self, name):
+        self.name = name
+    def say_hi(self):
+        print('Hello, my name is', self.name)
+
+person1 = Person('John')
+person2 = Person('Bob')
+print(person1.name)
+print(person2.name)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-3}
+C:\Users\username>python class.py
+John
+Bob
+```
+
+In the above example, we have created an instance variable named `name`. We have initialized the `name` variable to the `name` parameter of the `__init__()` method. We have printed the `name` variable using the `person1` and `person2` objects. The output shows that the `name` variable is unique to the object.
+
+Another example of instance variables:
+```python title="class.py" showLineNumbers{1} {1-10}
+class Employee:
+    '''This is an Employee class'''
+    name # Optional
+    salary # Optional
+    def __init__(self, name, salary):
+        self.name = name
+        self.salary = salary
+    def display(self):
+        print('Name:', self.name)
+        print('Salary:', self.salary)
+
+employee1 = Employee('John', 10000)
+employee2 = Employee('Bob', 20000)
+employee1.display()
+employee2.display()
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-7}
+C:\Users\username>python class.py
+Name: John
+Salary: 10000
+Name: Bob
+Salary: 20000
+```
+
+In the above example, we have created two instance variables named `name` and `salary`. We have initialized the `name` and `salary` variables to the `name` and `salary` parameters of the `__init__()` method. We have printed the `name` and `salary` variables using the `employee1` and `employee2` objects. The output shows that the `name` and `salary` variables are unique to the object.
+
 ## Class attributes
 Every python class have the following built-in attributes:
 - `__name__`: It returns the name of the class.
@@ -215,3 +304,4 @@ C:\Users\username>python class.py
 
 In the above example, we have printed the `count` variable using the `Person` class name. The output shows that the `count` variable is shared by all objects of the `Person` class.
 :::
+
