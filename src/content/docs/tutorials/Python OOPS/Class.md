@@ -107,6 +107,14 @@ In the above example, we have created a class named `Person`. The `Person` class
 ## Instance Variables
 In Python, an instance variable is a variable that is defined inside a method and belongs only to the current instance of a class. Instance variables are not shared by all instances of a class. Each instance variable is unique to the object. They are defined inside the constructor method `__init__(self)`.
 
+#### Properties of instance variables:
+- Instance variables are owned by objects of the class.
+- Instance variables are not shared by all objects of the class. Each object has its own copy of the instance variable.
+- Instance variables are defined inside the constructor method `__init__(self)`.
+- Instance variables are initialized using the `self` keyword.
+- Instance variables can be accessed using the dot `.` operator with the object.
+- Instance variables can be accessed outside the class using the object name.
+
 ## Example: Instance variables in Python
 ```python title="class.py" showLineNumbers{1} {1-6}
 class Person:
@@ -160,6 +168,73 @@ Salary: 20000
 ```
 
 In the above example, we have created two instance variables named `name` and `salary`. We have initialized the `name` and `salary` variables to the `name` and `salary` parameters of the `__init__()` method. We have printed the `name` and `salary` variables using the `employee1` and `employee2` objects. The output shows that the `name` and `salary` variables are unique to the object.
+
+## Class Variables
+In Python, a class variable is a variable that is shared by all objects of a class. Class variables are defined within the class construction. Because class variables are owned by the class itself, they are shared by all instances of the class. They therefore will generally have the same value for every instance unless you are using the class variable to initialize a variable.
+
+#### Properties of class variables:
+- Class variables are owned by the class itself.
+- Class variables are shared by all objects of the class.
+- Class variables are defined within the class construction.
+- Class variables are initialized using the class name.
+- Class variables can be accessed using the dot `.` operator with the class name.
+- Class variables can be accessed outside the class using the class name.
+- Class variables can be accessed outside the class using the object name.
+
+## Example: Class variables in Python
+```python title="class.py" showLineNumbers{1} {3}
+class Person:
+    '''This is a Person class'''
+    count = 0
+    def __init__(self, name):
+        self.name = name
+        Person.count += 1
+    def say_hi(self):
+        print('Hello, my name is', self.name)
+
+person1 = Person('John')
+person2 = Person('Bob')
+print(person1.count)
+print(person2.count)
+print(Person.count)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python class.py
+2
+2
+2
+```
+
+In the above example, we have created a class variable named `count`. We have initialized the `count` variable to `0`. We have incremented the `count` variable by `1` in the `__init__()` method. We have printed the `count` variable using the `person1`, `person2`, and `Person` objects. The output shows that the `count` variable is shared by all objects of the `Person` class. 
+
+:::tip
+You can access the class variable using the class name.
+
+```python title="class.py" showLineNumbers{1} {12}
+class Person:
+    '''This is a Person class'''
+    count = 0
+    def __init__(self, name):
+        self.name = name
+        Person.count += 1
+    def say_hi(self):
+        print('Hello, my name is', self.name)
+
+person1 = Person('John')
+person2 = Person('Bob')
+print(Person.count)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python class.py
+2
+```
+
+In the above example, we have printed the `count` variable using the `Person` class name. The output shows that the `count` variable is shared by all objects of the `Person` class.
+:::
 
 ## Class attributes
 Every python class have the following built-in attributes:
@@ -245,63 +320,3 @@ class Person(builtins.object)
 
 In the above example, we have printed the docstring of the `Person` class. We have used the `help()` function to print the docstring of the `Person` class.
 :::
-
-
-## Class Variables
-In Python, a class variable is a variable that is shared by all objects of a class. Class variables are defined within the class construction. Because class variables are owned by the class itself, they are shared by all instances of the class. They therefore will generally have the same value for every instance unless you are using the class variable to initialize a variable.
-
-## Example: Class variables in Python
-```python title="class.py" showLineNumbers{1} {3}
-class Person:
-    '''This is a Person class'''
-    count = 0
-    def __init__(self, name):
-        self.name = name
-        Person.count += 1
-    def say_hi(self):
-        print('Hello, my name is', self.name)
-
-person1 = Person('John')
-person2 = Person('Bob')
-print(person1.count)
-print(person2.count)
-print(Person.count)
-```
-
-Output:
-```cmd title="command" showLineNumbers{1} {2-5}
-C:\Users\username>python class.py
-2
-2
-2
-```
-
-In the above example, we have created a class variable named `count`. We have initialized the `count` variable to `0`. We have incremented the `count` variable by `1` in the `__init__()` method. We have printed the `count` variable using the `person1`, `person2`, and `Person` objects. The output shows that the `count` variable is shared by all objects of the `Person` class. 
-
-:::tip
-You can access the class variable using the class name.
-
-```python title="class.py" showLineNumbers{1} {12}
-class Person:
-    '''This is a Person class'''
-    count = 0
-    def __init__(self, name):
-        self.name = name
-        Person.count += 1
-    def say_hi(self):
-        print('Hello, my name is', self.name)
-
-person1 = Person('John')
-person2 = Person('Bob')
-print(Person.count)
-```
-
-Output:
-```cmd title="command" showLineNumbers{1} {2}
-C:\Users\username>python class.py
-2
-```
-
-In the above example, we have printed the `count` variable using the `Person` class name. The output shows that the `count` variable is shared by all objects of the `Person` class.
-:::
-
