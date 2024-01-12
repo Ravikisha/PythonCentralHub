@@ -192,6 +192,26 @@ This is a class method
 This is a class method
 ```
 
+## Objects in Python
+In Python, everything is an object. This means that every value in Python has a corresponding type object. For example, the value 1 is an object of type int, and the value "Hello" is an object of type str. Even functions and classes are objects. This means that every value in Python has a corresponding type object. For example, the value 1 is an object of type int, and the value "Hello" is an object of type str. Even functions and classes are objects.
+
+### Example:
+```python title="objects.py" showLineNumbers{1} {1-3}
+print(type(1))
+print(type("Hello"))
+print(type([1, 2, 3]))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-4}
+C:\Users\username>python objects.py
+<class 'int'>
+<class 'str'>
+<class 'list'>
+```
+
+In the above example, we are printing the type of the value. We are using the `type()` function to get the type of the value. We are passing the value as a parameter in the `type()` function. The `type()` function returns the type of the value.
+
 ### Conclusion
 
 Object-Oriented Programming provides a powerful paradigm for designing and organizing code, promoting principles that enhance code readability, reusability, and maintainability. While its advantages are substantial, effective application requires a solid understanding of OOP principles and careful consideration of design choices. Overuse or misuse of certain features can lead to code that is hard to understand and maintain. For more information on OOP in Python, check out the official documentation. For more tutorials on Python, check out Python Central Hub.
