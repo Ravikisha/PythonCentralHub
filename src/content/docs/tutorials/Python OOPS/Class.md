@@ -81,7 +81,7 @@ Every python class have the following built-in attributes:
 - `__bases__`: It returns a tuple containing the base classes, in the order of their occurrence in the base class list.
 
 ## Example: Class attributes in Python
-```python title="class.py" showLineNumbers{1} {1-5}
+```python title="class.py" showLineNumbers{1} {8-13}
 class Person:
     '''This is a Person class'''
     def __init__(self, name):
@@ -105,3 +105,113 @@ __main__
 This is a Person class
 (<class 'object'>,)
 ```
+
+In the above example, we have printed the class attributes. We have used the `__name__`, `__module__`, `__dict__`, `__doc__`, and `__bases__` attributes to print the class attributes.
+
+:::note
+Python Documentation Strings (or docstrings) provide a convenient way of associating documentation with Python modules, functions, classes, and methods. It's specified in source code that is used, like a comment, to document a specific segment of code. Unlike conventional source code comments, the docstring should describe what the function does, not how.
+
+The docstring is declared using triple quotes `'''` or `"""` at the top of the class. The docstring is available in the `__doc__` attribute of the class.
+
+```python title="class.py" showLineNumbers{1} {2}
+class Person:
+    '''This is a Person class'''
+    pass
+
+print(Person.__doc__)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python class.py
+This is a Person class
+```
+
+In the above example, we have printed the docstring of the `Person` class. We have used the `__doc__` attribute to print the docstring of the `Person` class.
+
+Another way to read the docstring is to use the `help()` function.
+
+```python title="class.py" showLineNumbers{1} {2}
+class Person:
+    '''This is a Person class'''
+    pass
+
+help(Person)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {3}
+C:\Users\username>python class.py
+class Person(builtins.object)
+ |  This is a Person class
+ |
+ |  Data descriptors defined here:
+ |
+ |  __dict__
+ |      dictionary for instance variables (if defined)
+ |
+ |  __weakref__
+ |      list of weak references to the object (if defined)
+```
+
+In the above example, we have printed the docstring of the `Person` class. We have used the `help()` function to print the docstring of the `Person` class.
+:::
+
+
+## Class Variables
+In Python, a class variable is a variable that is shared by all objects of a class. Class variables are defined within the class construction. Because class variables are owned by the class itself, they are shared by all instances of the class. They therefore will generally have the same value for every instance unless you are using the class variable to initialize a variable.
+
+## Example: Class variables in Python
+```python title="class.py" showLineNumbers{1} {3}
+class Person:
+    '''This is a Person class'''
+    count = 0
+    def __init__(self, name):
+        self.name = name
+        Person.count += 1
+    def say_hi(self):
+        print('Hello, my name is', self.name)
+
+person1 = Person('John')
+person2 = Person('Bob')
+print(person1.count)
+print(person2.count)
+print(Person.count)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python class.py
+2
+2
+2
+```
+
+In the above example, we have created a class variable named `count`. We have initialized the `count` variable to `0`. We have incremented the `count` variable by `1` in the `__init__()` method. We have printed the `count` variable using the `person1`, `person2`, and `Person` objects. The output shows that the `count` variable is shared by all objects of the `Person` class. 
+
+:::tip
+You can access the class variable using the class name.
+
+```python title="class.py" showLineNumbers{1} {12}
+class Person:
+    '''This is a Person class'''
+    count = 0
+    def __init__(self, name):
+        self.name = name
+        Person.count += 1
+    def say_hi(self):
+        print('Hello, my name is', self.name)
+
+person1 = Person('John')
+person2 = Person('Bob')
+print(Person.count)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2}
+C:\Users\username>python class.py
+2
+```
+
+In the above example, we have printed the `count` variable using the `Person` class name. The output shows that the `count` variable is shared by all objects of the `Person` class.
+:::
