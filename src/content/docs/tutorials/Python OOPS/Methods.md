@@ -80,36 +80,6 @@ In Python, methods are functions defined within a class. They encapsulate behavi
 - **Class Methods**
 - **Static Methods**
 - **Getter and Setter Methods**
-- **Magic Methods**
-
-<!-- ```python title="class.py" showLineNumbers{1} {1-10}
-class Employee:
-    '''This is an Employee class'''
-    name # Optional
-    salary # Optional
-    def __init__(self, name, salary):
-        self.name = name
-        self.salary = salary
-    def display(self):
-        print('Name:', self.name)
-        print('Salary:', self.salary)
-
-employee1 = Employee('John', 10000)
-employee2 = Employee('Bob', 20000)
-employee1.display()
-employee2.display()
-```
-
-Output:
-```cmd title="command" showLineNumbers{1} {2-7}
-C:\Users\username>python class.py
-Name: John
-Salary: 10000
-Name: Bob
-Salary: 20000
-```
-
-In the above example, we have created two instance variables named `name` and `salary`. We have initialized the `name` and `salary` variables to the `name` and `salary` parameters of the `__init__()` method. We have printed the `name` and `salary` variables using the `employee1` and `employee2` objects. The output shows that the `name` and `salary` variables are unique to the object. -->
 
 ## Instance Methods
 Instance methods are the most common type of methods in Python classes. They are defined within a class and are accessible only through an instance of the class. Instance methods have access to the instance's state through the `self` parameter. They can also access the class's attributes and other methods using the `self` parameter.
@@ -438,3 +408,6 @@ Student Age: 30
 ```
 
 In the above example, we have created two instance variables named `name` and `age`. We have initialized the `name` and `age` variables to the `name` and `age` parameters of the `__init__()` method. We have printed the `name` and `age` variables using the `student1` object. The output shows that the `name` and `age` variables are unique to the object. We have created getter and setter methods for the `name` and `age` variables. We have called the getter and setter methods using the `student1` object. The output shows that the getter and setter methods are accessible through the `student1` object. We have printed the `name` and `age` variables using the getter methods. The output shows that the getter methods are accessible through the `student1` object. In the above example, we have used the setter method to validate the `age` variable that it must be greater than 18. If the `age` variable is less than 18, then it will print the message `Age must be greater than 18`. Otherwise, it will set the `age` variable to the `age` parameter of the `set_age()` method.
+
+## Conclusion
+In this tutorial, you have learned about methods in Python classes. Methods are functions defined within a class. They encapsulate behavior that is specific to instances of the class. Understanding methods is essential for effective object-oriented programming. Let's delve into the properties, advantages, and potential disadvantages of methods in Python classes. You have also learned about different types of methods in Python classes Like Instance Methods, Class Methods, Static Methods, Getter and Setter Methods. You have also learned about the properties, advantages, and potential disadvantages of methods in Python classes. For more information, visit the [Python Classes](https://docs.python.org/3/tutorial/classes.html) page. For more tutorials like this, visit the Python Central Hub.
