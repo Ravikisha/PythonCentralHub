@@ -33,14 +33,14 @@ object_name = ClassName()
 In the above example, we have created an object of the `ClassName` class. We have assigned the object to the `object_name` variable.
 
 ## Example: Create a class and object in Python
-```python title="class.py" {1-5}
+```python title="class.py" showLineNumbers{1} {1-5}
 class Person:
     pass
 ```
 
 In the above example, we have created a class named `Person`. The class body is empty. We have used the `pass` keyword to avoid getting an error. The `pass` keyword is used as a placeholder for future code.
 
-```python title="class.py" {4-5}
+```python title="class.py" showLineNumbers{1} {4-5}
 class Person:
     pass
 
