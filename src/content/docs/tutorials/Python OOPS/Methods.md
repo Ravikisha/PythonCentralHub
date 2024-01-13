@@ -79,9 +79,8 @@ In Python, methods are functions defined within a class. They encapsulate behavi
 - **Instance Methods**
 - **Class Methods**
 - **Static Methods**
-- **Abstract Methods**
-- **Magic Methods**
 - **Getter and Setter Methods**
+- **Magic Methods**
 
 <!-- ```python title="class.py" showLineNumbers{1} {1-10}
 class Employee:
@@ -342,3 +341,100 @@ C:\Users\username>python static_method.py
 
 In the above example, we have created four static methods named `add()`, `subtract()`, `multiply()`, and `divide()`. We have called the `add()`, `subtract()`, `multiply()`, and `divide()` methods using the `Calculator` class. The output shows that the `add()`, `subtract()`, `multiply()`, and `divide()` methods are accessible through the `Calculator` class.
 
+## Getter and Setter Methods
+Getter and setter methods are methods that are used to access and modify the state of an object. They are commonly used to control access to an object's attributes. Getter methods are used to access an object's attributes, while setter methods are used to modify an object's attributes. Getter and setter methods are also known as accessor and mutator methods.
+
+### Syntax of Getter and Setter Methods in Python Classes:
+```python title="Syntax" showLineNumbers{1} {1-3}
+class ClassName:
+    def get_attribute(self):
+        # Method body
+    def set_attribute(self, value):
+        # Method body
+```
+
+### Example of Getter and Setter Methods in Python Classes:
+```python title="getter_setter_method.py" showLineNumbers{1} {8-15, 17-27}
+class Employee:
+    def __init__(self, name, salary):
+        self.name = name
+        self.salary = salary
+    def display(self):
+        print('Name:', self.name)
+        print('Salary:', self.salary)
+    def get_name(self):
+        return self.name
+    def set_name(self, name):
+        self.name = name
+    def get_salary(self):
+        return self.salary
+    def set_salary(self, salary):
+        self.salary = salary
+
+employee1 = Employee('John', 10000)
+employee1.display()
+employee1.set_name('Bob')
+employee1.set_salary(20000)
+employee1.display()
+print("Employee Name:", employee1.get_name())
+print("Employee Salary:", employee1.get_salary())
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-9}
+C:\Users\username>python getter_setter_method.py
+Name: John
+Salary: 10000
+Name: Bob
+Salary: 20000
+Employee Name: Bob
+Employee Salary: 20000
+```
+
+In the above example, we have created two instance variables named `name` and `salary`. We have initialized the `name` and `salary` variables to the `name` and `salary` parameters of the `__init__()` method. We have printed the `name` and `salary` variables using the `employee1` object. The output shows that the `name` and `salary` variables are unique to the object. We have created getter and setter methods for the `name` and `salary` variables. We have called the getter and setter methods using the `employee1` object. The output shows that the getter and setter methods are accessible through the `employee1` object. We have printed the `name` and `salary` variables using the getter methods. The output shows that the getter methods are accessible through the `employee1` object.
+
+Another Example of Getter and Setter Methods in Python Classes:
+
+```python title="getter_setter_method.py" showLineNumbers{1} {8-15, 17-27}
+class Student:
+    def __init__(self, name, roll):
+        self.name = name
+        self.age = age
+    def display(self):
+        print('Name:', self.name)
+        print('Age:', self.age)
+    def get_name(self):
+        return self.name
+    def set_name(self, name):
+        self.name = name
+    def get_age(self):
+        return self.age
+    def set_age(self, age):
+        if age > 18:
+            self.age = age
+        else:
+            print('Age must be greater than 18')
+
+student1 = Student('John', 20)
+student1.display()
+student1.set_name('Bob')
+student1.set_age(15)
+student1.set_age(30)
+student1.display()
+print("Student Name:", student1.get_name())
+print("Student Age:", student1.get_age())
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-9}
+C:\Users\username>python getter_setter_method.py
+Name: John
+Age: 20
+Age must be greater than 18
+Name: Bob
+Age: 30
+Student Name: Bob
+Student Age: 30
+```
+
+In the above example, we have created two instance variables named `name` and `age`. We have initialized the `name` and `age` variables to the `name` and `age` parameters of the `__init__()` method. We have printed the `name` and `age` variables using the `student1` object. The output shows that the `name` and `age` variables are unique to the object. We have created getter and setter methods for the `name` and `age` variables. We have called the getter and setter methods using the `student1` object. The output shows that the getter and setter methods are accessible through the `student1` object. We have printed the `name` and `age` variables using the getter methods. The output shows that the getter methods are accessible through the `student1` object. In the above example, we have used the setter method to validate the `age` variable that it must be greater than 18. If the `age` variable is less than 18, then it will print the message `Age must be greater than 18`. Otherwise, it will set the `age` variable to the `age` parameter of the `set_age()` method.
