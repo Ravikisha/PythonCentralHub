@@ -174,3 +174,94 @@ Roll: 1
 ```
 
 In the above example, we have created two instance variables named `name` and `roll`. We have initialized the `name` and `roll` variables to the `name` and `roll` parameters of the `register()` method. We have printed the `name` and `roll` variables using the `student1` object. The output shows that the `name` and `roll` variables are unique to the object.
+
+## Class Methods
+Class methods are methods that are bound to a class rather than its instances. They are defined using the `@classmethod` decorator and have access to the class's state through the `cls` parameter. Class methods can be used to create factory methods, which are methods that return an instance of the class. They can also be used to modify a class's state that applies across all instances of the class. Class methods are commonly used as alternative constructors.
+
+
+### Syntax of Class Methods in Python Classes:
+```python title="Syntax" showLineNumbers{1} {1-3}
+class ClassName:
+    @classmethod
+    def method_name(cls, parameters):
+        # Method body
+```
+
+### Example of Class Methods in Python Classes:
+```python title="class_method.py" showLineNumbers{1} {8-11, 14}
+class Employee:
+    def __init__(self, name, salary):
+        self.name = name
+        self.salary = salary
+    def display(self):
+        print('Name:', self.name)
+        print('Salary:', self.salary)
+    @classmethod
+    def from_string(cls, emp_str):
+        name, salary = emp_str.split('-')
+        return cls(name, salary)
+
+employee1 = Employee('John', 10000)
+employee2 = Employee.from_string('Bob-20000')
+employee1.display()
+employee2.display()
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-7}
+C:\Users\username>python class_method.py
+Name: John
+Salary: 10000
+Name: Bob
+Salary: 20000
+```
+
+In the above example, we have created two instance variables named `name` and `salary`. We have initialized the `name` and `salary` variables to the `name` and `salary` parameters of the `__init__()` method. We have printed the `name` and `salary` variables using the `employee1` and `employee2` objects. The output shows that the `name` and `salary` variables are unique to the object.
+
+Another Example of Class Methods in Python Classes:
+
+```python title="class_method.py" showLineNumbers{1} {16-24, 26-29}
+class IronMan:
+    def suitUp(self):
+        print('Suiting up...')
+    def startEngine(self):
+        print('Starting engine...')
+    def workingJarvis(self):
+        print('Working Jarvis...')
+    def fly(self):
+        print('Flying...')
+    def land(self):
+        print('Landing...')
+    def suitDown(self):
+        print('Suiting down...')
+    def journey(self, location):
+        print('Journey started to ' + location)
+    @classmethod
+    def goToMars(cls):
+        cls().suitUp()
+        cls().startEngine()
+        cls().workingJarvis()
+        cls().fly()
+        cls().journey('Mars')
+        cls().land()
+        cls().suitDown()
+
+IronMan.goToMars()
+mark1 = IronMan()
+mark1.goToMars()
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-9}
+C:\Users\username>python class_method.py
+Suiting up...
+Starting engine...
+Working Jarvis...
+Flying...
+Journey started to Mars
+Landing...
+Suiting down...
+```
+
+In the above example, we have created seven instance variables named `suitUp`, `startEngine`, `workingJarvis`, `fly`, `land`, `suitDown`, and `journey`. We have initialized the `suitUp`, `startEngine`, `workingJarvis`, `fly`, `land`, `suitDown`, and `journey` variables to the `suitUp`, `startEngine`, `workingJarvis`, `fly`, `land`, `suitDown`, and `journey` parameters of the `__init__()` method. We have printed the `suitUp`, `startEngine`, `workingJarvis`, `fly`, `land`, `suitDown`, and `journey` variables using the `IronMan` class. The output shows that the `suitUp`, `startEngine`, `workingJarvis`, `fly`, `land`, `suitDown`, and `journey` variables are unique to the class.
+
