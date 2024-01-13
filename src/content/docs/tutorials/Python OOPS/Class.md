@@ -304,3 +304,6 @@ class Person(builtins.object)
 
 In the above example, we have printed the docstring of the `Person` class. We have used the `help()` function to print the docstring of the `Person` class.
 :::
+
+## Conclusion
+In this tutorial, you learned about class in Python. You learned how to create a class in Python. You learned how to create an object of a class in Python. You learned about instance variables and class variables. You learned about class attributes. You also learned how to read the docstring of a class. Now you can create a class and object in Python. You can also create instance variables and class variables in Python. You can also read the docstring of a class in Python. For more information, visit the [Python Classes and Objects](https://docs.python.org/3/tutorial/classes.html) documentation page. For more tutorials, visit our Python Central Hub.
