@@ -216,7 +216,7 @@ Name: Bob
 Salary: 20000
 ```
 
-In the above example, we have created two instance variables named `name` and `salary`. We have initialized the `name` and `salary` variables to the `name` and `salary` parameters of the `__init__()` method. We have printed the `name` and `salary` variables using the `employee1` and `employee2` objects. The output shows that the `name` and `salary` variables are unique to the object.
+In the above example, we have created two instance variables named `name` and `salary`. We have initialized the `name` and `salary` variables to the `name` and `salary` parameters of the `__init__()` method. We have printed the `name` and `salary` variables using the `employee1` and `employee2` objects. The output shows that the `name` and `salary` variables are unique to the object. We have created a class method named `from_string()` using the `@classmethod` decorator. We have called the `from_string()` method using the `Employee` class and `employee2` object. The output shows that the `from_string()` method is accessible through both the `Employee` class and `employee2` object.
 
 Another Example of Class Methods in Python Classes:
 
@@ -263,5 +263,82 @@ Landing...
 Suiting down...
 ```
 
-In the above example, we have created seven instance variables named `suitUp`, `startEngine`, `workingJarvis`, `fly`, `land`, `suitDown`, and `journey`. We have initialized the `suitUp`, `startEngine`, `workingJarvis`, `fly`, `land`, `suitDown`, and `journey` variables to the `suitUp`, `startEngine`, `workingJarvis`, `fly`, `land`, `suitDown`, and `journey` parameters of the `__init__()` method. We have printed the `suitUp`, `startEngine`, `workingJarvis`, `fly`, `land`, `suitDown`, and `journey` variables using the `IronMan` class. The output shows that the `suitUp`, `startEngine`, `workingJarvis`, `fly`, `land`, `suitDown`, and `journey` variables are unique to the class.
+In the above example, we have created seven instance methods named `suitUp()`, `startEngine()`, `workingJarvis()`, `fly()`, `land()`, `suitDown()`, and `journey()`. We have created a class method named `goToMars()` using the `@classmethod` decorator. We have called the `goToMars()` method using the `IronMan` class and `mark1` object. The output shows that the `goToMars()` method is accessible through both the `IronMan` class and `mark1` object.
+
+## Static Methods
+Static methods are methods that are bound to a class rather than its instances. They are defined using the `@staticmethod` decorator and do not have access to the class's state. Static methods are commonly used to create utility functions that do not require access to the class's state. They can also be used to group related functionality within a class. Static methods are similar to class methods, but they do not receive the class as an implicit first argument.
+
+### Syntax of Static Methods in Python Classes:
+```python title="Syntax" showLineNumbers{1} {1-3}
+class ClassName:
+    @staticmethod
+    def method_name(parameters):
+        # Method body
+```
+
+### Example of Static Methods in Python Classes:
+```python title="static_method.py" showLineNumbers{1} {8-11, 15-16}
+class Employee:
+    def __init__(self, name, salary):
+        self.name = name
+        self.salary = salary
+    def display(self):
+        print('Name:', self.name)
+        print('Salary:', self.salary)
+    @staticmethod
+    def is_valid_salary(salary):
+        if salary > 0:
+            return True
+        else:
+            return False
+
+employee1 = Employee('John', 10000)
+employee2 = Employee('Bob', 20000)
+print(Employee.is_valid_salary(10000))
+print(Employee.is_valid_salary(-10000))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-7}
+C:\Users\username>python static_method.py
+True
+False
+```
+
+In the above example, we have created two instance variables named `name` and `salary`. We have initialized the `name` and `salary` variables to the `name` and `salary` parameters of the `__init__()` method. We have printed the `name` and `salary` variables using the `employee1` and `employee2` objects. The output shows that the `name` and `salary` variables are unique to the object. We have created a static method named `is_valid_salary()` using the `@staticmethod` decorator. We have called the `is_valid_salary()` method using the `Employee` class. The output shows that the `is_valid_salary()` method is accessible through the `Employee` class.
+
+
+Another Example of Static Methods in Python Classes:
+
+```python title="static_method.py" showLineNumbers{1} {2-13, 15-18}
+class Calculator:
+    @staticmethod
+    def add(a, b):
+        return a + b
+    @staticmethod
+    def subtract(a, b):
+        return a - b
+    @staticmethod
+    def multiply(a, b):
+        return a * b
+    @staticmethod
+    def divide(a, b):
+        return a / b
+
+print(Calculator.add(10, 20))
+print(Calculator.subtract(10, 20))
+print(Calculator.multiply(10, 20))
+print(Calculator.divide(10, 20))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-7}
+C:\Users\username>python static_method.py
+30
+-10
+200
+0.5
+```
+
+In the above example, we have created four static methods named `add()`, `subtract()`, `multiply()`, and `divide()`. We have called the `add()`, `subtract()`, `multiply()`, and `divide()` methods using the `Calculator` class. The output shows that the `add()`, `subtract()`, `multiply()`, and `divide()` methods are accessible through the `Calculator` class.
 
