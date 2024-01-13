@@ -8,22 +8,6 @@ sidebar:
 ## Class in Python
 In object-oriented programming (OOP), a class is a blueprint or template for creating objects. It defines a set of attributes (data members) and methods (functions) that characterize any object instantiated from that class. A class encapsulates the common properties and behaviors that its objects share. It serves as a blueprint for creating instances or objects, providing a way to model and organize code in a modular and reusable fashion.
 
-<!-- ```python title="objects.py" showLineNumbers{1} {1-3}
-print(type(1))
-print(type("Hello"))
-print(type([1, 2, 3]))
-```
-
-Output:
-```cmd title="command" showLineNumbers{1} {2-4}
-C:\Users\username>python objects.py
-<class 'int'>
-<class 'str'>
-<class 'list'>
-```
-
-In the above example, we are printing the type of the value. We are using the `type()` function to get the type of the value. We are passing the value as a parameter in the `type()` function. The `type()` function returns the type of the value. -->
-
 ## How to create a class in Python
 You can create a class in Python using the `class` keyword followed by the name of the class and a colon `:`. The class body is indented and contains class attributes (data members) and methods (functions).
 
