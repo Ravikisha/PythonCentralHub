@@ -434,3 +434,35 @@ Constructor 3
 ```
 
 In the above example, we have created four constructors. We have initialized the `name`, `roll`, `age`, and `department` variables to the `name`, `roll`, `age`, and `department` parameters of the `__init__()` method. We have printed the `name`, `roll`, `age`, and `department` variables using the `student1`, `student2`, `student3`, and `student4` objects. The output shows that the `name`, `roll`, `age`, and `department` variables are unique to the object. In this example, we have created four constructors with different parameters. You can create more than one constructor in a class. You can create a constructor with default parameters and parameters but constructor signature must be different. 
+
+## Constructor Chaining in Python
+Constructor chaining is a technique in which a constructor calls another constructor of the same class. It is used to initialize the instance variables of an object to the values passed to the constructor.
+
+```python title="constructor_chaining.py" showLineNumbers{1} {2-6}
+class Student:
+    def __init__(self, name, roll, age):
+        self.name = name
+        self.roll = roll
+        self.age = age
+    def __init__(self, name, roll, age, department):
+        self(name, roll, age)
+        self.department = department
+
+student1 = Student('John', 1, 20, 'IT')
+print('Name:', student1.name)
+print('Roll:', student1.roll)
+print('Age:', student1.age)
+print('Department:', student1.department)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python constructor_chaining.py
+Name: John
+Roll: 1
+Age: 20
+Department: IT
+```
+
+In the above example, we have created two instance variables named `name`, `roll`, `age`, and `department`. We have initialized the `name`, `roll`, `age`, and `department` variables to the `name`, `roll`, `age`, and `department` parameters of the `__init__()` method. We have printed the `name`, `roll`, `age`, and `department` variables using the `student1` object. The output shows that the `name`, `roll`, `age`, and `department` variables are unique to the object. In this example, we have created two constructors. We have initialized the `name`, `roll`, and `age` variables to the `name`, `roll`, and `age` parameters of the `__init__()` method. We have initialized the `department` variable to the `department` parameter of the `__init__()` method. We have called the first constructor from the second constructor using the `self()` method. We have passed the required parameters to the first constructor. We have passed the required parameters to the second constructor. We have printed the `name`, `roll`, `age`, and `department` variables using the `student1` object. The output shows that the `name`, `roll`, `age`, and `department` variables are unique to the object.
+
