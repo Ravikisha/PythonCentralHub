@@ -8,30 +8,6 @@ sidebar:
 ## Constructors in Python: Initializing Objects with Purpose
 In object-oriented programming, a constructor is a special method used for initializing instances of a class. In Python, the constructor method is named __init__, and it is automatically called when an object is created from a class. Constructors play a crucial role in setting up the initial state of objects, allowing for proper initialization and configuration. Let's explore the key aspects of constructors in Python.
 
-<!-- ```python title="instance_method.py" showLineNumbers{1} {5-7, 11-12}
-class Student:
-    def register(self, name, roll):
-        self.name = name
-        self.roll = roll
-
-    def display(self):
-        print('Name:', self.name)
-        print('Roll:', self.roll)
-
-student1 = Student()
-student1.register('John', 1)
-student1.display()
-```
-
-Output:
-```cmd title="command" showLineNumbers{1} {2-7}
-C:\Users\username>python instance_method.py
-Name: John
-Roll: 1
-```
-
-In the above example, we have created two instance variables named `name` and `roll`. We have initialized the `name` and `roll` variables to the `name` and `roll` parameters of the `register()` method. We have printed the `name` and `roll` variables using the `student1` object. The output shows that the `name` and `roll` variables are unique to the object. -->
-
 ## What is a Constructor in Python?
 A constructor is a special method of a class or structure in object-oriented programming that initializes a newly created object of that type. Whenever an object is created, the constructor is automatically called. It is used to initialize the object's state. Constructors can also be used to perform any required initialization of the object before it is used. Constructors are not mandatory in Python, but they are used to initialize the state of an object.
 
