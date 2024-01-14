@@ -191,3 +191,246 @@ Roll: 1
 
 In the above example, we have created two instance variables named `name` and `roll`. We have initialized the `name` and `roll` variables to the `name` and `roll` values of the `student1` object. We have printed the `name` and `roll` variables using the `student1` object. The output shows that the `name` and `roll` variables are unique to the object.
 
+### Parameterized Constructor in Python
+A parameterized constructor is a constructor that takes one or more parameters. It is used to initialize the instance variables of an object to the values passed to the constructor. It is automatically called when an object is created from a class. It is used to initialize the state of an object. It is called the parameterized constructor because it is called when an object is created with parameters.
+
+```python title="parameterized_constructor.py" showLineNumbers{1} {2-5}
+class Student:
+    def __init__(self, name, roll):
+        self.name = name
+        self.roll = roll
+
+student1 = Student('John', 1)
+print('Name:', student1.name)
+print('Roll:', student1.roll)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python parameterized_constructor.py
+Name: John
+Roll: 1
+```
+
+In the above example, we have created two instance variables named `name` and `roll`. We have initialized the `name` and `roll` variables to the `name` and `roll` parameters of the `__init__()` method. We have printed the `name` and `roll` variables using the `student1` object. The output shows that the `name` and `roll` variables are unique to the object.
+
+Another example of a parameterized constructor:
+```python title="parameterized_constructor.py" showLineNumbers{1} {2-6}
+class Employee:
+    def __init__(self, name, salary, department):
+        self.name = name
+        self.salary = salary
+        self.department = department
+
+employee1 = Employee('John', 10000, 'IT')
+print('Name:', employee1.name)
+print('Salary:', employee1.salary)
+print('Department:', employee1.department)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python parameterized_constructor.py
+Name: John
+Salary: 10000
+Department: IT
+```
+
+In the above example, we have created three instance variables named `name`, `salary`, and `department`. We have initialized the `name`, `salary`, and `department` variables to the `name`, `salary`, and `department` parameters of the `__init__()` method. We have printed the `name`, `salary`, and `department` variables using the `employee1` object. The output shows that the `name`, `salary`, and `department` variables are unique to the object.
+
+### Constructor with Default Parameters in Python
+A constructor with default parameters is a constructor that takes one or more parameters with default values. It is used to initialize the instance variables of an object to the values passed to the constructor. It is automatically called when an object is created from a class. It is used to initialize the state of an object. It is called the constructor with default parameters because it is called when an object is created with default parameters.
+
+```python title="constructor_with_default_parameters.py" showLineNumbers{1} {2-5}
+class Student:
+    def __init__(self, name='John', roll=1):
+        self.name = name
+        self.roll = roll
+
+student1 = Student()
+print('Name:', student1.name)
+print('Roll:', student1.roll)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python constructor_with_default_parameters.py
+Name: John
+Roll: 1
+```
+
+In the above example, we have created two instance variables named `name` and `roll`. We have initialized the `name` and `roll` variables to the `name` and `roll` parameters of the `__init__()` method. We have printed the `name` and `roll` variables using the `student1` object. The output shows that the `name` and `roll` variables are unique to the object.
+
+Another example of a constructor with default parameters:
+```python title="constructor_with_default_parameters.py" showLineNumbers{1} {2-5}
+class Employee:
+    def __init__(self, name='John', salary=10000, department='IT'):
+        self.name = name
+        self.salary = salary
+        self.department = department
+
+employee1 = Employee()
+print('Name:', employee1.name)
+print('Salary:', employee1.salary)
+print('Department:', employee1.department)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python constructor_with_default_parameters.py
+Name: John
+Salary: 10000
+Department: IT
+```
+
+In the above example, we have created three instance variables named `name`, `salary`, and `department`. We have initialized the `name`, `salary`, and `department` variables to the `name`, `salary`, and `department` parameters of the `__init__()` method. We have printed the `name`, `salary`, and `department` variables using the `employee1` object. The output shows that the `name`, `salary`, and `department` variables are unique to the object.
+
+### Constructor with Default Parameters and Parameters in Python
+A constructor with default parameters and parameters is a constructor that takes one or more parameters with default values and one or more parameters without default values. It is used to initialize the instance variables of an object to the values passed to the constructor. It is automatically called when an object is created from a class. It is used to initialize the state of an object. It is called the constructor with default parameters and parameters because it is called when an object is created with default parameters and parameters.
+
+```python title="constructor_with_default_parameters_and_parameters.py" showLineNumbers{1} {2-6}
+class Student:
+    def __init__(self, name, roll, age=20):
+        self.name = name
+        self.roll = roll
+        self.age = age
+
+student1 = Student('John', 1)
+print('Name:', student1.name)
+print('Roll:', student1.roll)
+print('Age:', student1.age)
+```
+
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python constructor_with_default_parameters_and_parameters.py
+Name: John
+Roll: 1
+Age: 20
+```
+
+In the above example, we have created three instance variables named `name`, `roll`, and `age`. We have initialized the `name`, `roll`, and `age` variables to the `name`, `roll`, and `age` parameters of the `__init__()` method. We have printed the `name`, `roll`, and `age` variables using the `student1` object. The output shows that the `name`, `roll`, and `age` variables are unique to the object.
+
+:::danger
+If you are using a constructor with default parameters and parameters, then you need to pass the required parameters to the constructor except the parameters with default values.
+
+```python title="constructor.py" showLineNumbers{1} {2-6}
+class Student:
+    def __init__(self, name, roll, age=20):
+        self.name = name
+        self.roll = roll
+        self.age = age
+
+student1 = Student('John')
+print('Name:', student1.name)
+print('Roll:', student1.roll)
+print('Age:', student1.age)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python constructor.py
+Traceback (most recent call last):
+  File "constructor.py", line 7, in <module>
+    student1 = Student('John')
+TypeError: __init__() missing 1 required positional argument: 'roll'
+```
+
+In the above example, we have created three instance variables named `name`, `roll`, and `age`. We have initialized the `name`, `roll`, and `age` variables to the `name`, `roll`, and `age` parameters of the `__init__()` method. We have printed the `name`, `roll`, and `age` variables using the `student1` object. The output shows that the `name`, `roll`, and `age` variables are unique to the object.
+:::
+
+:::caution
+If you are passing the required parameters to the constructor, then you need to pass the required parameters to the constructor except the parameters with default values in the same order. If you not pass the required parameters to the constructor in the same order, then you will get a bug about assigning the wrong values to the instance variables.
+
+```python title="constructor.py" showLineNumbers{1} {2-6}
+class Student:
+    def __init__(self, name, roll, age=20):
+        self.name = name
+        self.roll = roll
+        self.age = age
+
+student1 = Student(1, 'John')
+print('Name:', student1.name)
+print('Roll:', student1.roll)
+print('Age:', student1.age)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python constructor.py
+Name: 1
+Roll: John
+Age: 20
+```
+
+In the above example, we have created three instance variables named `name`, `roll`, and `age`. We have initialized the `name`, `roll`, and `age` variables to the `name`, `roll`, and `age` parameters of the `__init__()` method. We have printed the `name`, `roll`, and `age` variables using the `student1` object. The output shows that the `name`, `roll`, and `age` variables are unique to the object.
+:::
+
+## Constructor with keyword arguments in Python
+A constructor with keyword arguments is a constructor that takes one or more parameters with default values and one or more parameters without default values. It is used to initialize the instance variables of an object to the values passed to the constructor. It is automatically called when an object is created from a class. It is used to initialize the state of an object. It is called the constructor with keyword arguments because it is called when an object is created with keyword arguments.
+
+```python title="constructor_keyword_arguments.py" showLineNumbers{1} {2-6}
+class Student:
+    def __init__(self, name, roll, age=20):
+        self.name = name
+        self.roll = roll
+        self.age = age
+
+student1 = Student(name='John', roll=1)
+print('Name:', student1.name)
+print('Roll:', student1.roll)
+print('Age:', student1.age)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python constructor_keyword_arguments.py
+Name: John
+Roll: 1
+Age: 20
+```
+
+In the above example, we have created three instance variables named `name`, `roll`, and `age`. We have initialized the `name`, `roll`, and `age` variables to the `name`, `roll`, and `age` parameters of the `__init__()` method. We have printed the `name`, `roll`, and `age` variables using the `student1` object. The output shows that the `name`, `roll`, and `age` variables are unique to the object.
+
+## Constructor Overloading in Python
+Constructor overloading is a technique in which a class can have more than one constructor. It is used to initialize the instance variables of an object to the values passed to the constructor. It is automatically called when an object is created from a class. It is used to initialize the state of an object. It is called the constructor overloading because it is called when an object is created with different parameters. You can create more than one constructor in a class. You can create a constructor with default parameters and parameters but constructor signature must be different.
+
+```python title="constructor_overloading.py" showLineNumbers{1} {2-6}
+class Student:
+    def __init__(self):
+        self.name = 'John'
+        self.roll = 1
+        print('Default Constructor')
+    def __init__(self, name, roll):
+        self.name = name
+        self.roll = roll
+        print('Constructor 1')
+    def __init__(self, name, roll, age):
+        self.name = name
+        self.roll = roll
+        self.age = age
+        print('Constructor 2')
+    def __init__(self, name, roll, age, department):
+        self.name = name
+        self.roll = roll
+        self.age = age
+        self.department = department
+        print('Constructor 3')
+
+student1 = Student()
+student2 = Student('John', 1)
+student3 = Student('John', 1, 20)
+student4 = Student('John', 1, 20, 'IT')
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python constructor_overloading.py
+Default Constructor
+Constructor 1
+Constructor 2
+Constructor 3
+```
+
+In the above example, we have created four constructors. We have initialized the `name`, `roll`, `age`, and `department` variables to the `name`, `roll`, `age`, and `department` parameters of the `__init__()` method. We have printed the `name`, `roll`, `age`, and `department` variables using the `student1`, `student2`, `student3`, and `student4` objects. The output shows that the `name`, `roll`, `age`, and `department` variables are unique to the object. In this example, we have created four constructors with different parameters. You can create more than one constructor in a class. You can create a constructor with default parameters and parameters but constructor signature must be different. 
