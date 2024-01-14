@@ -466,3 +466,126 @@ Department: IT
 
 In the above example, we have created two instance variables named `name`, `roll`, `age`, and `department`. We have initialized the `name`, `roll`, `age`, and `department` variables to the `name`, `roll`, `age`, and `department` parameters of the `__init__()` method. We have printed the `name`, `roll`, `age`, and `department` variables using the `student1` object. The output shows that the `name`, `roll`, `age`, and `department` variables are unique to the object. In this example, we have created two constructors. We have initialized the `name`, `roll`, and `age` variables to the `name`, `roll`, and `age` parameters of the `__init__()` method. We have initialized the `department` variable to the `department` parameter of the `__init__()` method. We have called the first constructor from the second constructor using the `self()` method. We have passed the required parameters to the first constructor. We have passed the required parameters to the second constructor. We have printed the `name`, `roll`, `age`, and `department` variables using the `student1` object. The output shows that the `name`, `roll`, `age`, and `department` variables are unique to the object.
 
+## Built-In Instance Methods in Python
+There are many built-in instance methods in Python. The following table lists some of the most commonly used built-in instance methods in Python.
+
+|S.No.|Method|Description|
+|-----|------|-----------|
+|1|`getattr()`|Returns the value of the specified attribute of an object.|
+|2|`setattr()`|Sets the value of the specified attribute of an object.|
+|3|`delattr()`|Deletes the specified attribute of an object.|
+|4|`hasattr()`|Returns `True` if the specified attribute of an object exists, otherwise returns `False`.|
+
+### `getattr()` Method in Python
+The `getattr()` method returns the value of the specified attribute of an object. It takes two parameters:
+- `object`: The object whose attribute value you want to get.
+- `name`: The name of the attribute whose value you want to get.
+
+```python title="getattr.py" showLineNumbers{1} {7-8}
+class Student:
+    def __init__(self, name, roll):
+        self.name = name
+        self.roll = roll
+
+student1 = Student('John', 1)
+print('Name:', getattr(student1, 'name'))
+print('Roll:', getattr(student1, 'roll'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-8}
+C:\Users\username>python getattr.py
+Name: John
+Roll: 1
+```
+
+In the above example, we have created two instance variables named `name` and `roll`. We have initialized the `name` and `roll` variables to the `name` and `roll` parameters of the `__init__()` method. We have printed the `name` and `roll` variables using the `getattr()` method. The output shows that the `name` and `roll` variables are unique to the object.
+
+### `setattr()` Method in Python
+The `setattr()` method sets the value of the specified attribute of an object. It takes three parameters:
+- `object`: The object whose attribute value you want to set.
+- `name`: The name of the attribute whose value you want to set.
+- `value`: The value of the attribute you want to set.
+
+```python title="setattr.py" showLineNumbers{1} {7-8}
+class Student:
+    def __init__(self, name, roll):
+        self.name = name
+        self.roll = roll
+
+student1 = Student('John', 1)
+setattr(student1, 'name', 'John Doe')
+setattr(student1, 'roll', 2)
+print('Name:', student1.name)
+print('Roll:', student1.roll)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-8}
+C:\Users\username>python setattr.py
+Name: John Doe
+Roll: 2
+```
+
+In the above example, we have created two instance variables named `name` and `roll`. We have initialized the `name` and `roll` variables to the `name` and `roll` parameters of the `__init__()` method. We have set the `name` and `roll` variables using the `setattr()` method. We have printed the `name` and `roll` variables using the `student1` object. The output shows that the `name` and `roll` variables are unique to the object.
+
+### `delattr()` Method in Python
+The `delattr()` method deletes the specified attribute of an object. It takes two parameters:
+- `object`: The object whose attribute you want to delete.
+- `name`: The name of the attribute you want to delete.
+
+```python title="delattr.py" showLineNumbers{1} {7-8}
+class Student:
+    def __init__(self, name, roll):
+        self.name = name
+        self.roll = roll
+
+student1 = Student('John', 1)
+delattr(student1, 'name')
+delattr(student1, 'roll')
+print('Name:', getattr(student1, 'name'))
+print('Roll:', getattr(student1, 'roll'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-8}
+C:\Users\username>python delattr.py
+Traceback (most recent call last):
+  File "delattr.py", line 9, in <module>
+    print('Name:', getattr(student1, 'name'))
+AttributeError: 'Student' object has no attribute 'name'
+```
+
+In the above example, we have created two instance variables named `name` and `roll`. We have initialized the `name` and `roll` variables to the `name` and `roll` parameters of the `__init__()` method. We have deleted the `name` and `roll` variables using the `delattr()` method. We have printed the `name` and `roll` variables using the `student1` object. The output shows that the `name` and `roll` variables are unique to the object.
+
+### `hasattr()` Method in Python
+The `hasattr()` method returns `True` if the specified attribute of an object exists, otherwise returns `False`. It takes two parameters:
+- `object`: The object whose attribute you want to check.
+- `name`: The name of the attribute you want to check.
+
+```python title="hasattr.py" showLineNumbers{1} {7-10}
+class Student:
+    def __init__(self, name, roll):
+        self.name = name
+        self.roll = roll
+
+student1 = Student('John', 1)
+print('Name:', hasattr(student1, 'name'))
+print('Roll:', hasattr(student1, 'roll'))
+print('Age:', hasattr(student1, 'age'))
+print('Department:', hasattr(student1, 'department'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-8}
+C:\Users\username>python hasattr.py
+Name: True
+Roll: True
+Age: False
+Department: False
+```
+
+In the above example, we have created two instance variables named `name` and `roll`. We have initialized the `name` and `roll` variables to the `name` and `roll` parameters of the `__init__()` method. We have checked the `name` and `roll` variables using the `hasattr()` method. We have printed the `name` and `roll` variables using the `student1` object. The output shows that the `name` and `roll` variables are unique to the object.
+
+## Conclusion
+In this tutorial, we have learned about constructors in Python. We have learned how to create a constructor in Python. We have learned what is the use of a constructor in Python. We have learned how to use a constructor in Python. We have learned how to create a constructor with parameters in Python. We have learned how to create a constructor without parameters in Python. We have learned how to create a default constructor in Python. We have learned how to create a parameterized constructor in Python. We have learned how to create a constructor with default parameters in Python. We have learned how to create a constructor with default parameters and parameters in Python. We have learned how to create a constructor with keyword arguments in Python. We have learned how to create constructor overloading in Python. We have learned how to create constructor chaining in Python. We have learned about built-in instance methods in Python. For more information on constructors in Python, see the [official documentation](https://docs.python.org/3/tutorial/classes.html#class-initialization). For more tutorials like this, check out Python Central Hub.
