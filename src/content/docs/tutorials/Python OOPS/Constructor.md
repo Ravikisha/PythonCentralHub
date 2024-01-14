@@ -1,5 +1,5 @@
 ---
-title: Constructor in Python
+title: Constructor & Destructor in Python
 description: Learn about Constructor in Python. How to create a constructor in Python. What is the use of a constructor in Python. How to use a constructor in Python. How to create a constructor with parameters in Python. How to create a constructor without parameters in Python. How to create a default constructor in Python. How to create a parameterized constructor in Python. How to create a constructor with default parameters in Python.
 sidebar: 
     order: 83
@@ -586,6 +586,38 @@ Department: False
 ```
 
 In the above example, we have created two instance variables named `name` and `roll`. We have initialized the `name` and `roll` variables to the `name` and `roll` parameters of the `__init__()` method. We have checked the `name` and `roll` variables using the `hasattr()` method. We have printed the `name` and `roll` variables using the `student1` object. The output shows that the `name` and `roll` variables are unique to the object.
+
+## Destructor in Python
+In object-oriented programming, a destructor is a special method used for destroying instances of a class. In Python, the destructor method is named `__del__`, and it is automatically called when an object is destroyed. Destructors play a crucial role in cleaning up the resources used by an object, allowing for proper cleanup and disposal. Let's explore the key aspects of destructors in Python.
+
+```python title="destructor.py" showLineNumbers{1} {6-7}
+class Student:
+    def __init__(self, name, roll):
+        self.name = name
+        self.roll = roll
+    def __del__(self):
+        print('Destructor called')
+
+student1 = Student('John', 1)
+print('Name:', student1.name)
+print('Roll:', student1.roll)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-7}
+C:\Users\username>python destructor.py
+Name: John
+Roll: 1
+Destructor called
+```
+
+In the above example, we have created two instance variables named `name` and `roll`. We have initialized the `name` and `roll` variables to the `name` and `roll` parameters of the `__init__()` method. We have printed the `name` and `roll` variables using the `student1` object. We have created a destructor named `__del__`. We have printed the `Destructor called` message using the `__del__` method. The output shows that the `name` and `roll` variables are unique to the object. The output also shows that the `Destructor called` message is printed when the object is destroyed.
+
+### Usage of Destructors in Python
+- Destructors are used to destroy instances of a class.
+- Destructors are used to clean up the resources used by an object.
+- Destructors are used to perform any required cleanup before an object is destroyed.
+
 
 ## Conclusion
 In this tutorial, we have learned about constructors in Python. We have learned how to create a constructor in Python. We have learned what is the use of a constructor in Python. We have learned how to use a constructor in Python. We have learned how to create a constructor with parameters in Python. We have learned how to create a constructor without parameters in Python. We have learned how to create a default constructor in Python. We have learned how to create a parameterized constructor in Python. We have learned how to create a constructor with default parameters in Python. We have learned how to create a constructor with default parameters and parameters in Python. We have learned how to create a constructor with keyword arguments in Python. We have learned how to create constructor overloading in Python. We have learned how to create constructor chaining in Python. We have learned about built-in instance methods in Python. For more information on constructors in Python, see the [official documentation](https://docs.python.org/3/tutorial/classes.html#class-initialization). For more tutorials like this, check out Python Central Hub.
