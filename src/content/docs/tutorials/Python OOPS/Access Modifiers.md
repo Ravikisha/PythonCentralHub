@@ -255,3 +255,48 @@ Age: 21
 
 In the above example, we have created three instance variables named `name`, `_roll`, and `__age`. We have initialized the `name`, `_roll`, and `__age` variables to the `name`, `roll`, and `20` parameters of the `__init__()` method. We have created two methods named `get_age()` and `set_age()` to get and set the value of the `__age` variable. We have created a property object named `age` using the `property()` function. We have passed the `get_age()` and `set_age()` methods as arguments to the `property()` function. We have printed the `name`, `_roll`, and `age` variables using the `student1` object. We have set the value of the `age` variable using the `student1` object. The output shows that we can use the property object to set and get the value of a property.
 
+:::tip
+We can use the `property()` function to create a property object. We can use the property object to set and get the value of a property. We can pass the getter, setter, deleter, and docstring functions as arguments to the `property()` function. We can also use the `@property` decorator to create a property object.
+
+```python title="property_decorator.py" showLineNumbers{1} {2-5}
+@property
+def age(self):
+    return self.__age
+```
+
+Example:
+```python title="property_object.py" showLineNumbers{1} {2-13}
+class Student:
+    def __init__(self, name, roll):
+        self.name = name
+        self._roll = roll
+        self.__age = 20
+
+    @property
+    def age(self):
+        return self.__age
+
+    @age.setter
+    def age(self, age):
+        self.__age = age
+
+student1 = Student('John', 1)
+print('Name:', student1.name)
+print('Roll:', student1._roll)
+print('Age:', student1.age)
+student1.age = 21
+print('Age:', student1.age)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python property_object.py
+Name: John
+Roll: 1
+Age: 20
+Age: 21
+```
+
+In the above example, we have created three instance variables named `name`, `_roll`, and `__age`. We have initialized the `name`, `_roll`, and `__age` variables to the `name`, `roll`, and `20` parameters of the `__init__()` method. We have created two methods named `get_age()` and `set_age()` to get and set the value of the `__age` variable. We have created a property object named `age` using the `property()` function. We have passed the `get_age()` and `set_age()` methods as arguments to the `property()` function. We have printed the `name`, `_roll`, and `age` variables using the `student1` object. We have set the value of the `age` variable using the `student1` object. The output shows that we can use the property object to set and get the value of a property.
+
+:::
