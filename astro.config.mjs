@@ -47,6 +47,7 @@ export default defineConfig({
   image: {
     domains: ["yt3.googleusercontent.com"],
   },
+  
   site,
   markdown: {
     syntaxHighlight: false,
@@ -59,6 +60,11 @@ export default defineConfig({
       title: "Python Central Hub",
       logo: {
         src: "./src/assets/pythonlogo.png",
+      },
+      components: {
+        // // Override the default `SocialIcons` component.
+        // SocialIcons: './src/components/EmailLink.astro',
+        Footer: './src/components/Footer.astro',
       },
       // editLink: {
       //   baseUrl: "https://github.com/Ravikisha/PythonCentralHub/edit/main/",
