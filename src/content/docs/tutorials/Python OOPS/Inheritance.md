@@ -568,3 +568,5 @@ In this example, we have created four classes named `Vehicle`, `Car`, `SportsCar
 4. **Immobility:** Inheritance is used to make a single class that can be used for different purposes. This is useful when we want to create a class that can be used for different purposes.
 5. **Impermanence:** Inheritance is used to make a single class that can be used for different purposes. This is useful when we want to create a class that can be used for different purposes.
 
+## Conclusion
+In this tutorial, we have learned about Inheritance in Python. Inheritance is a way of creating a new class for using details of an existing class without modifying it. In this tutorial, we have learned about Inheritance in Python with examples. We have also learned about the types of Inheritance in Python. In the next tutorial, we will learn about Polymorphism in Python. For more information on Inheritance, you can refer to the [official documentation](https://docs.python.org/3/tutorial/classes.html#inheritance). For more tutorials on Python, you can visit Python Central Hub.
