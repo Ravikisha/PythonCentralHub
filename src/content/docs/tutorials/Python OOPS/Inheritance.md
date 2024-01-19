@@ -292,3 +292,98 @@ classDiagram
     Mother : +void get_kind()
     Child : +void get_details()
 ```
+
+```python title="multiple_inheritance.py" showLineNumbers{1} {2-6, 8-13, 15-22, 25}
+class Father:
+    def __init__(self, nature):
+        self.nature = nature
+
+    def get_nature(self):
+        print('Nature:', self.nature)
+
+class Mother:
+    def __init__(self, kind):
+        self.kind = kind
+
+    def get_kind(self):
+        print('Kind:', self.kind)
+
+class Child(Father, Mother):
+    def __init__(self, nature, kind):
+        Father.__init__(self, nature)
+        Mother.__init__(self, kind)
+
+    def get_details(self):
+        self.get_nature()
+        self.get_kind()
+
+child1 = Child('Good', 'Good')
+child1.get_details()
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python multiple_inheritance.py
+Nature: Good
+Kind: Good
+```
+
+In the above example, we have created three classes named `Father`, `Mother`, and `Child`. The `Child` class is derived from the `Father` and `Mother` classes. The `Father` and `Mother` classes are the superclasses and the `Child` class is the subclass. The `Child` class inherits the features of the `Father` and `Mother` classes. The `Father` class has an instance variable named `nature`. The `Mother` class has an instance variable named `kind`. The `Father` class has a method named `get_nature()` that prints the `nature` variable. The `Mother` class has a method named `get_kind()` that prints the `kind` variable. The `Child` class has a method named `get_details()` that calls the `get_nature()` and `get_kind()` methods of the `Father` and `Mother` classes respectively. The `Child` class has a constructor that takes two parameters `nature` and `kind`. The `Father.__init__(self, nature)` statement is used to call the constructor of the `Father` class. The `Mother.__init__(self, kind)` statement is used to call the constructor of the `Mother` class.
+
+### Multilevel Inheritance
+In multilevel inheritance, a class is allowed to inherit from a derived class. It is the process of deriving a new class from already derived class. Let's see an example of multilevel inheritance.
+
+#### Diagrammatic Representation of Multilevel Inheritance
+```mermaid title="Multilevel Inheritance" desc="Multilevel Inheritance in Python"
+classDiagram
+    Father <|-- Child
+    Child <|-- GrandChild
+    Father : +string nature
+    Child : +string kind
+    GrandChild : +string behavior
+    Father : +void get_nature()
+    Child : +void get_kind()
+    GrandChild : +void get_behavior()
+```
+
+```python title="multilevel_inheritance.py" showLineNumbers{1} {2-6, 8-14, 16-22, 25-27}
+class Father:
+    def __init__(self, nature):
+        self.nature = nature
+
+    def get_nature(self):
+        print('Nature:', self.nature)
+
+class Child(Father):
+    def __init__(self, nature, kind):
+        super().__init__(nature)
+        self.kind = kind
+
+    def get_kind(self):
+        print('Kind:', self.kind)
+
+class GrandChild(Child):
+    def __init__(self, nature, kind, behavior):
+        super().__init__(nature, kind)
+        self.behavior = behavior
+
+    def get_behavior(self):
+        print('Behavior:', self.behavior)
+
+grandchild1 = GrandChild('Good', 'Good', 'Good')
+grandchild1.get_nature()
+grandchild1.get_kind()
+grandchild1.get_behavior()
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python multilevel_inheritance.py
+Nature: Good
+Kind: Good
+Behavior: Good
+```
+
+In the above example, we have created three classes named `Father`, `Child`, and `GrandChild`. The `Child` class is derived from the `Father` class. The `GrandChild` class is derived from the `Child` class. The `Father` class is the superclass of the `Child` class. The `Child` class is the superclass of the `GrandChild` class. The `GrandChild` class inherits the features of the `Father` and `Child` classes. The `Father` class has an instance variable named `nature`. The `Child` class has an instance variable named `kind`. The `GrandChild` class has an instance variable named `behavior`. The `Father` class has a method named `get_nature()` that prints the `nature` variable. The `Child` class has a method named `get_kind()` that prints the `kind` variable. The `GrandChild` class has a method named `get_behavior()` that prints the `behavior` variable. The `Child` class has a constructor that takes two parameters `nature` and `kind`. The `GrandChild` class has a constructor that takes three parameters `nature`, `kind`, and `behavior`. The `super().__init__(nature)` statement is used to call the constructor of the `Father` class. The `super().__init__(nature, kind)` statement is used to call the constructor of the `Child` class.
+
+### Hierarchical Inheritance
