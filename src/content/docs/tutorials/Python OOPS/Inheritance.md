@@ -33,11 +33,11 @@ Inheritance is a fundamental concept in object-oriented programming (OOP) that a
 Inheritance is a way of creating a new class for using details of an existing class without modifying it. The newly formed class is a derived class (or child class). Similarly, the existing class is a base class (or parent class). The derived class inherits all the features from the base class and can have additional features of its own. Inheritance is one of the most important aspects of OOP. It provides code reusability to the program because we do not have to write the same code again and again. We can just inherit the properties of one class into another class. Let's see how to implement inheritance in Python.
 
 ## Terminologies related to Inheritance
-### Super Class:
+#### Super Class
 The class whose features are inherited is known as a superclass(or a base class or a parent class).
-### Sub Class:
+#### Sub Class
 The class that inherits the other class is known as a subclass(or a derived class, extended class, or child class). The subclass can add its own fields and methods in addition to the superclass fields and methods.
-### Reusability:
+#### Reusability
 Inheritance supports the concept of “reusability”, i.e. when we want to create a new class and there is already a class that includes some of the code that we want, we can derive our new class from the existing class. By doing this, we are reusing the fields and methods of the existing class.
 
 ## Diagrammatic Representation of Inheritance
@@ -548,4 +548,23 @@ Using
 ```
 
 In this example, we have created four classes named `Vehicle`, `Car`, `SportsCar`, and `Ferrari`. The `Car` and `SportsCar` classes are derived from the `Vehicle` class. The `Ferrari` class is derived from the `Car` and `SportsCar` classes. The `Vehicle` class is the superclass of the `Car` and `SportsCar` classes. The `Car` class is the superclass of the `Ferrari` class. The `SportsCar` class is the superclass of the `Ferrari` class. The `Vehicle` class has a method named `run()` that prints `Running`. The `Car` class has a method named `drive()` that prints `Driving`. The `SportsCar` class has a method named `race()` that prints `Racing`. The `Ferrari` class has a method named `use()` that prints `Using`. The `ferrari1` object is created using the `Ferrari` class. The `ferrari1.run()` statement calls the `run()` method of the `Vehicle` class. The `ferrari1.drive()` statement calls the `drive()` method of the `Car` class. The `ferrari1.use()` statement calls the `use()` method of the `Ferrari` class.
+
+## Advantages of Inheritance
+1. **Code Reusability:** Inheritance supports the concept of “reusability”, i.e. when we want to create a new class and there is already a class that includes some of the code that we want, we can derive our new class from the existing class. By doing this, we are reusing the fields and methods of the existing class.
+2. **Extensibility:** Inheritance is used to add new features to an existing class without modifying it. This is useful when we have to add new features to an existing application that we don’t want to modify.
+3. **Data Hiding:** Inheritance is used to hide the data of a class from other classes. This is useful when we want to hide the internal representation of an object from the outside world.
+4. **Overriding Methods:** Inheritance is used to override the methods of the superclass in the subclass. This is useful when we want to change the behavior of a method in the subclass.
+5. **Polymorphism:** Inheritance is used to achieve polymorphism. Polymorphism means the ability to take various forms. In Python, we can use the same method name in the child class as defined in the parent class. This is useful when we want to perform a single action in different ways.
+6. **Flexibility:** Inheritance is used to make a single class that can be used for different purposes. This is useful when we want to create a class that can be used for different purposes.
+7. **Simplicity:** Inheritance is used to make a single class that can be used for different purposes. This is useful when we want to create a class that can be used for different purposes.
+8. **Modularity:** Inheritance is used to make a single class that can be used for different purposes. This is useful when we want to create a class that can be used for different purposes.
+9. **Modifiability:** Inheritance is used to make a single class that can be used for different purposes. This is useful when we want to create a class that can be used for different purposes.
+10. **Maintainability:** Inheritance is used to make a single class that can be used for different purposes. This is useful when we want to create a class that can be used for different purposes.
+
+## Disadvantages of Inheritance
+1. **Complexity:** Inheritance is used to make a single class that can be used for different purposes. This is useful when we want to create a class that can be used for different purposes.
+2. **Tight Coupling:** Inheritance is used to make a single class that can be used for different purposes. This is useful when we want to create a class that can be used for different purposes.
+3. **Fragility:** Inheritance is used to make a single class that can be used for different purposes. This is useful when we want to create a class that can be used for different purposes.
+4. **Immobility:** Inheritance is used to make a single class that can be used for different purposes. This is useful when we want to create a class that can be used for different purposes.
+5. **Impermanence:** Inheritance is used to make a single class that can be used for different purposes. This is useful when we want to create a class that can be used for different purposes.
 
