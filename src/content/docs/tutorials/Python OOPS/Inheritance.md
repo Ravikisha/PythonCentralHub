@@ -387,3 +387,118 @@ Behavior: Good
 In the above example, we have created three classes named `Father`, `Child`, and `GrandChild`. The `Child` class is derived from the `Father` class. The `GrandChild` class is derived from the `Child` class. The `Father` class is the superclass of the `Child` class. The `Child` class is the superclass of the `GrandChild` class. The `GrandChild` class inherits the features of the `Father` and `Child` classes. The `Father` class has an instance variable named `nature`. The `Child` class has an instance variable named `kind`. The `GrandChild` class has an instance variable named `behavior`. The `Father` class has a method named `get_nature()` that prints the `nature` variable. The `Child` class has a method named `get_kind()` that prints the `kind` variable. The `GrandChild` class has a method named `get_behavior()` that prints the `behavior` variable. The `Child` class has a constructor that takes two parameters `nature` and `kind`. The `GrandChild` class has a constructor that takes three parameters `nature`, `kind`, and `behavior`. The `super().__init__(nature)` statement is used to call the constructor of the `Father` class. The `super().__init__(nature, kind)` statement is used to call the constructor of the `Child` class.
 
 ### Hierarchical Inheritance
+In hierarchical inheritance, a class is allowed to inherit from more than one derived class. It is the process of deriving a new class from already derived class. Let's see an example of hierarchical inheritance.
+
+<!-- classDiagram
+    class Animal {
+        +speak(): void
+    }
+
+    class Mammal {
+        +giveBirth(): void
+    }
+
+    class Bird {
+        +fly(): void
+    }
+
+    class Dog extends Animal, Mammal {
+        +bark(): void
+    }
+
+    class Bat extends Animal, Mammal, Bird {
+        +sonar(): void
+    }
+
+    class BabyDog extends Dog {
+        +crawl(): void
+    }
+
+    class Parrot extends Animal, Bird {
+        +talk(): void
+    }
+
+    Animal <|-- Mammal
+    Animal <|-- Bird
+    Animal <|-- Dog
+    Animal <|-- Bat
+    Dog <|-- BabyDog
+    Bird <|-- Parrot -->
+
+
+#### Diagrammatic Representation of Hierarchical Inheritance
+```mermaid title="Hierarchical Inheritance" desc="Hierarchical Inheritance in Python"
+classDiagram
+    Animal <|-- Manmal
+    Animal <|-- Bird
+    Animal <|-- Dog
+    Animal <|-- Bat
+    Dog <|-- BabyDog
+    Bird <|-- Parrot
+    Animal : +void speak()
+    Manmal : +void giveBirth()
+    Bird : +void fly()
+    Dog : +void bark()
+    Bat : +void sonar()
+    BabyDog : +void crawl()
+    Parrot : +void talk()
+```
+
+```python title="hierarchical_inheritance.py" showLineNumbers{1} {5,9,13,17,21,25,29-39}
+class Animal:
+    def speak(self):
+        print('Speaking')
+
+class Mammal(Animal):
+    def giveBirth(self):
+        print('Giving Birth')
+
+class Bird(Animal):
+    def fly(self):
+        print('Flying')
+
+class Dog(Animal):
+    def bark(self):
+        print('Barking')
+
+class Bat(Animal):
+    def sonar(self):
+        print('Using Sonar')
+
+class BabyDog(Dog):
+    def crawl(self):
+        print('Crawling')
+
+class Parrot(Bird):
+    def talk(self):
+        print('Talking')
+
+dog1 = Dog()
+dog1.speak()
+dog1.bark()
+babydog1 = BabyDog()
+babydog1.speak()
+babydog1.bark()
+babydog1.crawl()
+parrot1 = Parrot()
+parrot1.speak()
+parrot1.fly()
+parrot1.talk()
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-10}
+C:\Users\username>python hierarchical_inheritance.py
+Speaking
+Barking
+Speaking
+Barking
+Crawling
+Speaking
+Flying
+Talking
+```
+
+In this example, we have created seven classes named `Animal`, `Mammal`, `Bird`, `Dog`, `Bat`, `BabyDog`, and `Parrot`. The `Mammal`, `Bird`, `Dog`, `Bat`, `BabyDog`, and `Parrot` classes are derived from the `Animal` class. The `Animal` class is the superclass of the `Mammal`, `Bird`, `Dog`, `Bat`, `BabyDog`, and `Parrot` classes. The `Mammal` class is the superclass of the `Dog` and `Bat` classes. The `Bird` class is the superclass of the `Parrot` class. The `Dog` class is the superclass of the `BabyDog` class. The `Mammal` class has a method named `giveBirth()` that prints `Giving Birth`. The `Bird` class has a method named `fly()` that prints `Flying`. The `Dog` class has a method named `bark()` that prints `Barking`. The `Bat` class has a method named `sonar()` that prints `Using Sonar`. The `BabyDog` class has a method named `crawl()` that prints `Crawling`. The `Parrot` class has a method named `talk()` that prints `Talking`. The `Animal` class has a method named `speak()` that prints `Speaking`. The `Dog` class has a constructor that takes no parameters. The `BabyDog` class has a constructor that takes no parameters. The `Parrot` class has a constructor that takes no parameters. The `dog1` object is created using the `Dog` class. The `dog1.speak()` statement calls the `speak()` method of the `Animal` class. The `dog1.bark()` statement calls the `bark()` method of the `Dog` class. The `babydog1` object is created using the `BabyDog` class. The `babydog1.speak()` statement calls the `speak()` method of the `Animal` class. The `babydog1.bark()` statement calls the `bark()` method of the `Dog` class. The `babydog1.crawl()` statement calls the `crawl()` method of the `BabyDog` class. The `parrot1` object is created using the `Parrot` class. The `parrot1.speak()`
+
+### Hybrid Inheritance
