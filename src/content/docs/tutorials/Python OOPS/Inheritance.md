@@ -389,43 +389,6 @@ In the above example, we have created three classes named `Father`, `Child`, and
 ### Hierarchical Inheritance
 In hierarchical inheritance, a class is allowed to inherit from more than one derived class. It is the process of deriving a new class from already derived class. Let's see an example of hierarchical inheritance.
 
-<!-- classDiagram
-    class Animal {
-        +speak(): void
-    }
-
-    class Mammal {
-        +giveBirth(): void
-    }
-
-    class Bird {
-        +fly(): void
-    }
-
-    class Dog extends Animal, Mammal {
-        +bark(): void
-    }
-
-    class Bat extends Animal, Mammal, Bird {
-        +sonar(): void
-    }
-
-    class BabyDog extends Dog {
-        +crawl(): void
-    }
-
-    class Parrot extends Animal, Bird {
-        +talk(): void
-    }
-
-    Animal <|-- Mammal
-    Animal <|-- Bird
-    Animal <|-- Dog
-    Animal <|-- Bat
-    Dog <|-- BabyDog
-    Bird <|-- Parrot -->
-
-
 #### Diagrammatic Representation of Hierarchical Inheritance
 ```mermaid title="Hierarchical Inheritance" desc="Hierarchical Inheritance in Python"
 classDiagram
@@ -502,3 +465,87 @@ Talking
 In this example, we have created seven classes named `Animal`, `Mammal`, `Bird`, `Dog`, `Bat`, `BabyDog`, and `Parrot`. The `Mammal`, `Bird`, `Dog`, `Bat`, `BabyDog`, and `Parrot` classes are derived from the `Animal` class. The `Animal` class is the superclass of the `Mammal`, `Bird`, `Dog`, `Bat`, `BabyDog`, and `Parrot` classes. The `Mammal` class is the superclass of the `Dog` and `Bat` classes. The `Bird` class is the superclass of the `Parrot` class. The `Dog` class is the superclass of the `BabyDog` class. The `Mammal` class has a method named `giveBirth()` that prints `Giving Birth`. The `Bird` class has a method named `fly()` that prints `Flying`. The `Dog` class has a method named `bark()` that prints `Barking`. The `Bat` class has a method named `sonar()` that prints `Using Sonar`. The `BabyDog` class has a method named `crawl()` that prints `Crawling`. The `Parrot` class has a method named `talk()` that prints `Talking`. The `Animal` class has a method named `speak()` that prints `Speaking`. The `Dog` class has a constructor that takes no parameters. The `BabyDog` class has a constructor that takes no parameters. The `Parrot` class has a constructor that takes no parameters. The `dog1` object is created using the `Dog` class. The `dog1.speak()` statement calls the `speak()` method of the `Animal` class. The `dog1.bark()` statement calls the `bark()` method of the `Dog` class. The `babydog1` object is created using the `BabyDog` class. The `babydog1.speak()` statement calls the `speak()` method of the `Animal` class. The `babydog1.bark()` statement calls the `bark()` method of the `Dog` class. The `babydog1.crawl()` statement calls the `crawl()` method of the `BabyDog` class. The `parrot1` object is created using the `Parrot` class. The `parrot1.speak()`
 
 ### Hybrid Inheritance
+In hybrid inheritance, when multiple types of inheritance are combined together. It is the process of deriving a new class from already derived class. Let's see an example of hybrid inheritance.
+
+<!-- classDiagram
+    class Animal {
+        +speak(): void
+    }
+
+    class Mammal {
+        +giveBirth(): void
+    }
+
+    class Bird {
+        +fly(): void
+    }
+
+    class Dog extends Animal, Mammal {
+        +bark(): void
+    }
+
+    class Bat extends Animal, Mammal, Bird {
+        +sonar(): void
+    }
+
+    class BabyDog extends Dog {
+        +crawl(): void
+    }
+
+    class Parrot extends Animal, Bird {
+        +talk(): void
+    }
+
+    Animal <|-- Mammal
+    Animal <|-- Bird
+    Animal <|-- Dog
+    Animal <|-- Bat
+    Dog <|-- BabyDog
+    Bird <|-- Parrot -->
+
+
+#### Diagrammatic Representation of Hybrid Inheritance
+```mermaid title="Hybrid Inheritance" desc="Hybrid Inheritance in Python"
+classDiagram
+    Car --|> Vehicle
+    Car --|> SportsCar
+    SportsCar --|> Ferrari
+    Car : +void drive()
+    Vehicle : +void run()
+    Ferrari : +void use()
+    SportsCar : +void race()
+```
+
+```python title="hybrid_inheritance.py" showLineNumbers{1} {2-6, 8-14, 16-22, 24-30, 32-38}
+class Vehicle:
+    def run(self):
+        print('Running')
+
+class Car(Vehicle):
+    def drive(self):
+        print('Driving')
+
+class SportsCar(Vehicle):
+    def race(self):
+        print('Racing')
+
+class Ferrari(Car, SportsCar):
+    def use(self):
+        print('Using')
+
+ferrari1 = Ferrari()
+ferrari1.run()
+ferrari1.drive()
+ferrari1.use()
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python hybrid_inheritance.py
+Running
+Driving
+Using
+```
+
+In this example, we have created four classes named `Vehicle`, `Car`, `SportsCar`, and `Ferrari`. The `Car` and `SportsCar` classes are derived from the `Vehicle` class. The `Ferrari` class is derived from the `Car` and `SportsCar` classes. The `Vehicle` class is the superclass of the `Car` and `SportsCar` classes. The `Car` class is the superclass of the `Ferrari` class. The `SportsCar` class is the superclass of the `Ferrari` class. The `Vehicle` class has a method named `run()` that prints `Running`. The `Car` class has a method named `drive()` that prints `Driving`. The `SportsCar` class has a method named `race()` that prints `Racing`. The `Ferrari` class has a method named `use()` that prints `Using`. The `ferrari1` object is created using the `Ferrari` class. The `ferrari1.run()` statement calls the `run()` method of the `Vehicle` class. The `ferrari1.drive()` statement calls the `drive()` method of the `Car` class. The `ferrari1.use()` statement calls the `use()` method of the `Ferrari` class.
+
