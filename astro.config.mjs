@@ -62,8 +62,6 @@ export default defineConfig({
         src: "./src/assets/pythonlogo.png",
       },
       components: {
-        // // Override the default `SocialIcons` component.
-        // SocialIcons: './src/components/EmailLink.astro',
         Footer: './src/components/Footer.astro',
       },
       // editLink: {
