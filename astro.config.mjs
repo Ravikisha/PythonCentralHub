@@ -47,7 +47,7 @@ export default defineConfig({
   image: {
     domains: ["yt3.googleusercontent.com"],
   },
-  
+
   site,
   markdown: {
     syntaxHighlight: false,
@@ -62,7 +62,7 @@ export default defineConfig({
         src: "./src/assets/pythonlogo.png",
       },
       components: {
-        Footer: './src/components/Footer.astro',
+        Footer: "./src/components/Footer.astro",
       },
       // editLink: {
       //   baseUrl: "https://github.com/Ravikisha/PythonCentralHub/edit/main/",
