@@ -178,3 +178,6 @@ dlroW olleH
 ```
 
 In the above example, we have sliced the string from the start to the end with a step size of -1. This means that we have sliced the string from the start to the end, but in reverse order.
+
+## Conclusion
+In this tutorial, we learned how to slice strings in Python. We also learned how to reverse a string using slicing, and how to use negative indices to slice a string. Now you can use string slicing to extract parts of a string in Python. For more information, check out the [official documentation for string slicing](https://docs.python.org/3/library/stdtypes.html#text-sequence-type-str). For more tutroials, visit Python Central Hub.
