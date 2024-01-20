@@ -204,3 +204,6 @@ Output:
 C:\Users\Your Name> python strings.py
 True
 ```
+
+## Conclusion
+In this tutorial, we learned how to create strings, assign strings to variables, and access string characters using indexing and slicing. We also learned how to get the length of a string, iterate through a string using a loop, and check if a string contains a certain phrase or character. In the next tutorial, we'll learn how to format strings in Python. For more information on strings, check out the [official Python documentation](https://docs.python.org/3/library/stdtypes.html#text-sequence-type-str). For more tutorials, Visit Python Central Hub.
