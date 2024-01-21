@@ -142,3 +142,46 @@ TypeError: display() missing 1 required positional argument: 'age'
 ```
 
 In the above example, we have defined two `display()` methods in the `Student` class. The first `display()` method takes one argument, and the second `display()` method takes two arguments. We have created an object named `student1` of the `Student` class. We have called the `display()` method of the `student1` object with one argument. The output shows that the `display()` method is called with one argument. We have called the `display()` method of the `student1` object with two arguments. The output shows that the `display()` method is called with two arguments. In Python, function overloading is achieved by using default arguments and variable-length arguments. Let's see how to achieve function overloading in Python using default arguments and variable-length arguments.
+
+### Operator Overloading
+Operator overloading is a feature of a programming language that allows an operator to be defined more than once. The operator is defined with the same name but with different parameters. The operator is called based on the number of parameters passed to it. Operator overloading is a type of compile-time polymorphism. It is achieved by defining multiple operators with the same name but with different parameters. The operator is called based on the number of parameters passed to it. Operator overloading is not supported in Python. However, it can be achieved by using magic methods. Let's see how to achieve operator overloading in Python.
+
+```python title="operator_overloading.py" showLineNumbers{1} {1-3, 5-7, 9-11}
+class Complex:
+    def __init__(self, real, imag):
+        self.real = real
+        self.imag = imag
+
+    def __add__(self, other):
+        return Complex(self.real + other.real, self.imag + other.imag)
+
+    def __sub__(self, other):
+        return Complex(self.real - other.real, self.imag - other.imag)
+
+    def __mul__(self, other):
+        return Complex(self.real * other.real, self.imag * other.imag)
+
+    def __truediv__(self, other):
+        return Complex(self.real / other.real, self.imag / other.imag)
+
+    def __str__(self):
+        return f'{self.real} + {self.imag}j'
+
+c1 = Complex(1, 2)
+c2 = Complex(3, 4)
+print(c1 + c2)
+print(c1 - c2)
+print(c1 * c2)
+print(c1 / c2)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python operator_overloading.py
+4 + 6j
+-2 + -2j
+3 + 8j
+0.3333333333333333 + 0.5j
+```
+
+In the above example, we have defined four magic methods named `__add__()`, `__sub__()`, `__mul__()`, and `__truediv__()`. The `__add__()` method is called when the `+` operator is used with two `Complex` objects. The `__sub__()` method is called when the `-` operator is used with two `Complex` objects. The `__mul__()` method is called when the `*` operator is used with two `Complex` objects. The `__truediv__()` method is called when the `/` operator is used with two `Complex` objects. We have created two `Complex` objects named `c1` and `c2`. We have added, subtracted, multiplied, and divided the `c1` and `c2` objects. The output shows that the `__add__()`, `__sub__()`, `__mul__()`, and `__truediv__()` methods are called when the `+`, `-`, `*`, and `/` operators are used with two `Complex` objects.
