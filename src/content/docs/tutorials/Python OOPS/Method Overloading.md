@@ -390,3 +390,207 @@ C:\Users\username>python sub.py
 ```
 
 In the above example, we have defined the `__sub__()` method in the `Complex` class. The `__sub__()` method returns a `Complex` object. We have created two `Complex` objects named `c1` and `c2`. We have subtracted the `c1` and `c2` objects using the `-` operator. The output shows that the `__sub__()` method is called when the `-` operator is used with two `Complex` objects.
+
+### `__mul__()` Method
+The `__mul__()` method is called when the `*` operator is used with two objects. It is used to multiply two objects. Let's see how to use the `__mul__()` method in Python.
+
+```python title="mul.py" showLineNumbers{1} {6-8}
+class Complex:
+    def __init__(self, real, imag):
+        self.real = real
+        self.imag = imag
+
+    def __mul__(self, other):
+        return Complex(self.real * other.real, self.imag * other.imag)
+
+c1 = Complex(1, 2)
+c2 = Complex(3, 4)
+c3 = c1 * c2
+print(f'{c1.real} + {c1.imag}j * {c2.real} + {c2.imag}j = {c3.real} + {c3.imag}j')
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python mul.py
+1 + 2j * 3 + 4j = 3 + 8j
+```
+
+In the above example, we have defined the `__mul__()` method in the `Complex` class. The `__mul__()` method returns a `Complex` object. We have created two `Complex` objects named `c1` and `c2`. We have multiplied the `c1` and `c2` objects using the `*` operator. The output shows that the `__mul__()` method is called when the `*` operator is used with two `Complex` objects.
+
+### `__truediv__()` Method
+The `__truediv__()` method is called when the `/` operator is used with two objects. It is used to divide two objects. Let's see how to use the `__truediv__()` method in Python.
+
+```python title="truediv.py" showLineNumbers{1} {6-8}
+class Complex:
+    def __init__(self, real, imag):
+        self.real = real
+        self.imag = imag
+
+    def __truediv__(self, other):
+        return Complex(self.real / other.real, self.imag / other.imag)
+
+c1 = Complex(1, 2)
+c2 = Complex(3, 4)
+c3 = c1 / c2
+print(f'{c1.real} + {c1.imag}j / {c2.real} + {c2.imag}j = {c3.real} + {c3.imag}j')
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python truediv.py
+1 + 2j / 3 + 4j = 0.3333333333333333 + 0.5j
+```
+
+In the above example, we have defined the `__truediv__()` method in the `Complex` class. The `__truediv__()` method returns a `Complex` object. We have created two `Complex` objects named `c1` and `c2`. We have divided the `c1` and `c2` objects using the `/` operator. The output shows that the `__truediv__()` method is called when the `/` operator is used with two `Complex` objects.
+
+### `__floordiv__()` Method
+The `__floordiv__()` method is called when the `//` operator is used with two objects. It is used to divide two objects. Let's see how to use the `__floordiv__()` method in Python.
+
+```python title="floordiv.py" showLineNumbers{1} {6-8}
+class Complex:
+    def __init__(self, real, imag):
+        self.real = real
+        self.imag = imag
+
+    def __floordiv__(self, other):
+        return Complex(self.real // other.real, self.imag // other.imag)
+
+c1 = Complex(1, 2)
+c2 = Complex(3, 4)
+c3 = c1 // c2
+print(f'{c1.real} + {c1.imag}j // {c2.real} + {c2.imag}j = {c3.real} + {c3.imag}j')
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python floordiv.py
+1 + 2j // 3 + 4j = 0 + 0j
+```
+
+In the above example, we have defined the `__floordiv__()` method in the `Complex` class. The `__floordiv__()` method returns a `Complex` object. We have created two `Complex` objects named `c1` and `c2`. We have divided the `c1` and `c2` objects using the `//` operator. The output shows that the `__floordiv__()` method is called when the `//` operator is used with two `Complex` objects.
+
+### `__mod__()` Method
+The `__mod__()` method is called when the `%` operator is used with two objects. It is used to find the remainder of two objects. Let's see how to use the `__mod__()` method in Python.
+
+```python title="mod.py" showLineNumbers{1} {6-8}
+class Complex:
+    def __init__(self, real, imag):
+        self.real = real
+        self.imag = imag
+
+    def __mod__(self, other):
+        return Complex(self.real % other.real, self.imag % other.imag)
+
+c1 = Complex(1, 2)
+c2 = Complex(3, 4)
+c3 = c1 % c2
+print(f'{c1.real} + {c1.imag}j % {c2.real} + {c2.imag}j = {c3.real} + {c3.imag}j')
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python mod.py
+1 + 2j % 3 + 4j = 1 + 2j
+```
+
+In the above example, we have defined the `__mod__()` method in the `Complex` class. The `__mod__()` method returns a `Complex` object. We have created two `Complex` objects named `c1` and `c2`. We have found the remainder of the `c1` and `c2` objects using the `%` operator. The output shows that the `__mod__()` method is called when the `%` operator is used with two `Complex` objects.
+
+### `__pow__()` Method
+The `__pow__()` method is called when the `**` operator is used with two objects. It is used to find the power of two objects. Let's see how to use the `__pow__()` method in Python.
+
+```python title="pow.py" showLineNumbers{1} {6-8}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __pow__(self, other):
+        return Number(self.num ** other.num)
+
+n1 = Number(2)
+n2 = Number(3)
+n3 = n1 ** n2
+print(f'{n1.num} ** {n2.num} = {n3.num}')
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python pow.py
+2 ** 3 = 8
+```
+
+In the above example, we have defined the `__pow__()` method in the `Number` class. The `__pow__()` method returns a `Number` object. We have created two `Number` objects named `n1` and `n2`. We have found the power of the `n1` and `n2` objects using the `**` operator. The output shows that the `__pow__()` method is called when the `**` operator is used with two `Number` objects.
+
+### `__and__()` Method
+The `__and__()` method is called when the `&` operator is used with two objects. It is used to perform the bitwise AND operation on two objects. Let's see how to use the `__and__()` method in Python.
+
+```python title="and.py" showLineNumbers{1} {6-8}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __and__(self, other):
+        return Number(self.num & other.num)
+
+n1 = Number(2)
+n2 = Number(3)
+n3 = n1 & n2
+print(f'{n1.num} & {n2.num} = {n3.num}')
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python and.py
+2 & 3 = 2
+```
+
+In the above example, we have defined the `__and__()` method in the `Number` class. The `__and__()` method returns a `Number` object. We have created two `Number` objects named `n1` and `n2`. We have performed the bitwise AND operation on the `n1` and `n2` objects using the `&` operator. The output shows that the `__and__()` method is called when the `&` operator is used with two `Number` objects.
+
+### `__or__()` Method
+The `__or__()` method is called when the `|` operator is used with two objects. It is used to perform the bitwise OR operation on two objects. Let's see how to use the `__or__()` method in Python.
+
+```python title="or.py" showLineNumbers{1} {6-8}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __or__(self, other):
+        return Number(self.num | other.num)
+
+n1 = Number(2)
+n2 = Number(3)
+n3 = n1 | n2
+print(f'{n1.num} | {n2.num} = {n3.num}')
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python or.py
+2 | 3 = 3
+```
+
+In the above example, we have defined the `__or__()` method in the `Number` class. The `__or__()` method returns a `Number` object. We have created two `Number` objects named `n1` and `n2`. We have performed the bitwise OR operation on the `n1` and `n2` objects using the `|` operator. The output shows that the `__or__()` method is called when the `|` operator is used with two `Number` objects.
+
+### `__xor__()` Method
+The `__xor__()` method is called when the `^` operator is used with two objects. It is used to perform the bitwise XOR operation on two objects. Let's see how to use the `__xor__()` method in Python.
+
+```python title="xor.py" showLineNumbers{1} {6-8}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __xor__(self, other):
+        return Number(self.num ^ other.num)
+
+n1 = Number(2)
+n2 = Number(3)
+n3 = n1 ^ n2
+print(f'{n1.num} ^ {n2.num} = {n3.num}')
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python xor.py
+2 ^ 3 = 1
+```
+
+In the above example, we have defined the `__xor__()` method in the `Number` class. The `__xor__()` method returns a `Number` object. We have created two `Number` objects named `n1` and `n2`. We have performed the bitwise XOR operation on the `n1` and `n2` objects using the `^` operator. The output shows that the `__xor__()` method is called when the `^` operator is used with two `Number` objects.
