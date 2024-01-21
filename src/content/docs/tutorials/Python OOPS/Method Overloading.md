@@ -498,7 +498,7 @@ In the above example, we have defined the `__mod__()` method in the `Complex` cl
 ### `__pow__()` Method
 The `__pow__()` method is called when the `**` operator is used with two objects. It is used to find the power of two objects. Let's see how to use the `__pow__()` method in Python.
 
-```python title="pow.py" showLineNumbers{1} {6-8}
+```python title="pow.py" showLineNumbers{1} {5-6}
 class Number:
     def __init__(self, num):
         self.num = num
@@ -523,7 +523,7 @@ In the above example, we have defined the `__pow__()` method in the `Number` cla
 ### `__and__()` Method
 The `__and__()` method is called when the `&` operator is used with two objects. It is used to perform the bitwise AND operation on two objects. Let's see how to use the `__and__()` method in Python.
 
-```python title="and.py" showLineNumbers{1} {6-8}
+```python title="and.py" showLineNumbers{1} {5-6}
 class Number:
     def __init__(self, num):
         self.num = num
@@ -548,7 +548,7 @@ In the above example, we have defined the `__and__()` method in the `Number` cla
 ### `__or__()` Method
 The `__or__()` method is called when the `|` operator is used with two objects. It is used to perform the bitwise OR operation on two objects. Let's see how to use the `__or__()` method in Python.
 
-```python title="or.py" showLineNumbers{1} {6-8}
+```python title="or.py" showLineNumbers{1} {5-6}
 class Number:
     def __init__(self, num):
         self.num = num
@@ -573,7 +573,7 @@ In the above example, we have defined the `__or__()` method in the `Number` clas
 ### `__xor__()` Method
 The `__xor__()` method is called when the `^` operator is used with two objects. It is used to perform the bitwise XOR operation on two objects. Let's see how to use the `__xor__()` method in Python.
 
-```python title="xor.py" showLineNumbers{1} {6-8}
+```python title="xor.py" showLineNumbers{1} {5-6}
 class Number:
     def __init__(self, num):
         self.num = num
@@ -594,3 +594,141 @@ C:\Users\username>python xor.py
 ```
 
 In the above example, we have defined the `__xor__()` method in the `Number` class. The `__xor__()` method returns a `Number` object. We have created two `Number` objects named `n1` and `n2`. We have performed the bitwise XOR operation on the `n1` and `n2` objects using the `^` operator. The output shows that the `__xor__()` method is called when the `^` operator is used with two `Number` objects.
+
+### `__lt__()` Method
+The `__lt__()` method is called when the `<` operator is used with two objects. It is used to compare two objects. It returns `True` if the first object is less than the second object. Otherwise, it returns `False`. Let's see how to use the `__lt__()` method in Python.
+
+```python title="lt.py" showLineNumbers{1} {5-6}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __lt__(self, other):
+        return self.num < other.num
+
+n1 = Number(2)
+n2 = Number(3)
+print(f'{n1.num} < {n2.num} = {n1 < n2}')
+print(f'{n2.num} < {n1.num} = {n2 < n1}')
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-7}
+C:\Users\username>python lt.py
+2 < 3 = True
+3 < 2 = False
+```
+
+In the above example, we have defined the `__lt__()` method in the `Number` class. The `__lt__()` method returns `True` if the first object is less than the second object. Otherwise, it returns `False`. We have created two `Number` objects named `n1` and `n2`. We have compared the `n1` and `n2` objects using the `<` operator. The output shows that the `__lt__()` method is called when the `<` operator is used with two `Number` objects.
+
+### `__le__()` Method
+The `__le__()` method is called when the `<=` operator is used with two objects. It is used to compare two objects. It returns `True` if the first object is less than or equal to the second object. Otherwise, it returns `False`. Let's see how to use the `__le__()` method in Python.
+
+```python title="le.py" showLineNumbers{1} {5-6}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __le__(self, other):
+        return self.num <= other.num
+
+n1 = Number(2)
+n2 = Number(3)
+print(f'{n1.num} <= {n2.num} = {n1 <= n2}')
+print(f'{n2.num} <= {n1.num} = {n2 <= n1}')
+print(f'{n1.num} <= {n1.num} = {n1 <= n1}')
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-9}
+C:\Users\username>python le.py
+2 <= 3 = True
+3 <= 2 = False
+2 <= 2 = True
+```
+
+In the above example, we have defined the `__le__()` method in the `Number` class. The `__le__()` method returns `True` if the first object is less than or equal to the second object. Otherwise, it returns `False`. We have created two `Number` objects named `n1` and `n2`. We have compared the `n1` and `n2` objects using the `<=` operator. The output shows that the `__le__()` method is called when the `<=` operator is used with two `Number` objects.
+
+### `__eq__()` Method
+The `__eq__()` method is called when the `==` operator is used with two objects. It is used to compare two objects. It returns `True` if the first object is equal to the second object. Otherwise, it returns `False`. Let's see how to use the `__eq__()` method in Python.
+
+```python title="eq.py" showLineNumbers{1} {5-6}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __eq__(self, other):
+        return self.num == other.num
+
+n1 = Number(2)
+n2 = Number(3)
+print(f'{n1.num} == {n2.num} = {n1 == n2}')
+print(f'{n2.num} == {n1.num} = {n2 == n1}')
+print(f'{n1.num} == {n1.num} = {n1 == n1}')
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-9}
+C:\Users\username>python eq.py
+2 == 3 = False
+3 == 2 = False
+2 == 2 = True
+```
+
+In the above example, we have defined the `__eq__()` method in the `Number` class. The `__eq__()` method returns `True` if the first object is equal to the second object. Otherwise, it returns `False`. We have created two `Number` objects named `n1` and `n2`. We have compared the `n1` and `n2` objects using the `==` operator. The output shows that the `__eq__()` method is called when the `==` operator is used with two `Number` objects.
+
+### `__ne__()` Method
+The `__ne__()` method is called when the `!=` operator is used with two objects. It is used to compare two objects. It returns `True` if the first object is not equal to the second object. Otherwise, it returns `False`. Let's see how to use the `__ne__()` method in Python.
+
+```python title="ne.py" showLineNumbers{1} {5-6}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __ne__(self, other):
+        return self.num != other.num
+
+n1 = Number(2)
+n2 = Number(3)
+print(f'{n1.num} != {n2.num} = {n1 != n2}')
+print(f'{n2.num} != {n1.num} = {n2 != n1}')
+print(f'{n1.num} != {n1.num} = {n1 != n1}')
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-9}
+C:\Users\username>python ne.py
+2 != 3 = True
+3 != 2 = True
+2 != 2 = False
+```
+
+In the above example, we have defined the `__ne__()` method in the `Number` class. The `__ne__()` method returns `True` if the first object is not equal to the second object. Otherwise, it returns `False`. We have created two `Number` objects named `n1` and `n2`. We have compared the `n1` and `n2` objects using the `!=` operator. The output shows that the `__ne__()` method is called when the `!=` operator is used with two `Number` objects.
+
+### `__gt__()` Method
+The `__gt__()` method is called when the `>` operator is used with two objects. It is used to compare two objects. It returns `True` if the first object is greater than the second object. Otherwise, it returns `False`. Let's see how to use the `__gt__()` method in Python.
+
+```python title="gt.py" showLineNumbers{1} {5-6}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __gt__(self, other):
+        return self.num > other.num
+
+n1 = Number(2)
+n2 = Number(3)
+print(f'{n1.num} > {n2.num} = {n1 > n2}')
+print(f'{n2.num} > {n1.num} = {n2 > n1}')
+print(f'{n1.num} > {n1.num} = {n1 > n1}')
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-9}
+C:\Users\username>python gt.py
+2 > 3 = False
+3 > 2 = True
+2 > 2 = False
+```
+
+In the above example, we have defined the `__gt__()` method in the `Number` class. The `__gt__()` method returns `True` if the first object is greater than the second object. Otherwise, it returns `False`. We have created two `Number` objects named `n1` and `n2`. We have compared the `n1` and `n2` objects using the `>` operator. The output shows that the `__gt__()` method is called when the `>` operator is used with two `Number` objects.
