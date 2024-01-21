@@ -5,26 +5,6 @@ sidebar:
     order: 85
 ---
 
-<!-- ```python title="constructor.py" showLineNumbers{1} {2-5}
-class Student:
-    def __init__(self, name, roll):
-        self.name = name
-        self.roll = roll
-
-student1 = Student('John', 1)
-print('Name:', student1.name)
-print('Roll:', student1.roll)
-```
-
-Output:
-```cmd title="command" showLineNumbers{1} {2-5}
-C:\Users\username>python constructor.py
-Name: John
-Roll: 1
-```
-
-In the above example, we have created two instance variables named `name` and `roll`. We have initialized the `name` and `roll` variables to the `name` and `roll` parameters of the `__init__()` method. We have printed the `name` and `roll` variables using the `student1` object. The output shows that the `name` and `roll` variables are unique to the object. -->
-
 
 ## Inheritance in Python: Building on Foundations
 Inheritance is a fundamental concept in object-oriented programming (OOP) that allows a new class (subclass or derived class) to inherit attributes and behaviors from an existing class (superclass or base class). This mechanism promotes code reuse, extensibility, and the creation of a hierarchical structure among classes. In Python, inheritance is implemented with a straightforward syntax, emphasizing simplicity and flexibility.
@@ -466,42 +446,6 @@ In this example, we have created seven classes named `Animal`, `Mammal`, `Bird`,
 
 ### Hybrid Inheritance
 In hybrid inheritance, when multiple types of inheritance are combined together. It is the process of deriving a new class from already derived class. Let's see an example of hybrid inheritance.
-
-<!-- classDiagram
-    class Animal {
-        +speak(): void
-    }
-
-    class Mammal {
-        +giveBirth(): void
-    }
-
-    class Bird {
-        +fly(): void
-    }
-
-    class Dog extends Animal, Mammal {
-        +bark(): void
-    }
-
-    class Bat extends Animal, Mammal, Bird {
-        +sonar(): void
-    }
-
-    class BabyDog extends Dog {
-        +crawl(): void
-    }
-
-    class Parrot extends Animal, Bird {
-        +talk(): void
-    }
-
-    Animal <|-- Mammal
-    Animal <|-- Bird
-    Animal <|-- Dog
-    Animal <|-- Bat
-    Dog <|-- BabyDog
-    Bird <|-- Parrot -->
 
 
 #### Diagrammatic Representation of Hybrid Inheritance
