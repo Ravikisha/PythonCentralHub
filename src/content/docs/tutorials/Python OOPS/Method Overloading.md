@@ -185,3 +185,208 @@ C:\Users\username>python operator_overloading.py
 ```
 
 In the above example, we have defined four magic methods named `__add__()`, `__sub__()`, `__mul__()`, and `__truediv__()`. The `__add__()` method is called when the `+` operator is used with two `Complex` objects. The `__sub__()` method is called when the `-` operator is used with two `Complex` objects. The `__mul__()` method is called when the `*` operator is used with two `Complex` objects. The `__truediv__()` method is called when the `/` operator is used with two `Complex` objects. We have created two `Complex` objects named `c1` and `c2`. We have added, subtracted, multiplied, and divided the `c1` and `c2` objects. The output shows that the `__add__()`, `__sub__()`, `__mul__()`, and `__truediv__()` methods are called when the `+`, `-`, `*`, and `/` operators are used with two `Complex` objects.
+
+## Magic Methods
+Magic methods are special methods that are used to perform some special operations. They are also known as **dunder methods**. They are always surrounded by double underscores. They are called automatically when certain operations are performed on objects. For example, the `__init__()` method is called automatically when an object is created. Magic methods are also known as dunder methods because they are surrounded by double underscores. Let's see how to use magic methods in Python.
+
+#### List of Magic Methods
+|S.No.|Magic Method|Description|Example|
+|:---:|:---|:---|:---|
+|1|`__init__()`|Called when an object is created.|`__init__(self, name, roll)`|
+|2|`__str__()`|Called when the `str()` function is called on an object.|`__str__(self)`|
+|3|`__repr__()`|Called when the `repr()` function is called on an object.|`__repr__(self)`|
+|4|`__len__()`|Called when the `len()` function is called on an object.|`__len__(self)`|
+|5|`__add__()`|Called when the `+` operator is used with two objects.|`__add__(self, other)`|
+|6|`__sub__()`|Called when the `-` operator is used with two objects.|`__sub__(self, other)`|
+|7|`__mul__()`|Called when the `*` operator is used with two objects.|`__mul__(self, other)`|
+|8|`__truediv__()`|Called when the `/` operator is used with two objects.|`__truediv__(self, other)`|
+|9|`__floordiv__()`|Called when the `//` operator is used with two objects.|`__floordiv__(self, other)`|
+|10|`__mod__()`|Called when the `%` operator is used with two objects.|`__mod__(self, other)`|
+|11|`__pow__()`|Called when the `**` operator is used with two objects.|`__pow__(self, other)`|
+|12|`__and__()`|Called when the `&` operator is used with two objects.|`__and__(self, other)`|
+|13|`__or__()`|Called when the `|` operator is used with two objects.|`__or__(self, other)`|
+|14|`__xor__()`|Called when the `^` operator is used with two objects.|`__xor__(self, other)`|
+|15|`__lt__()`|Called when the `<` operator is used with two objects.|`__lt__(self, other)`|
+|16|`__le__()`|Called when the `<=` operator is used with two objects.|`__le__(self, other)`|
+|17|`__eq__()`|Called when the `==` operator is used with two objects.|`__eq__(self, other)`|
+|18|`__ne__()`|Called when the `!=` operator is used with two objects.|`__ne__(self, other)`|
+|19|`__gt__()`|Called when the `>` operator is used with two objects.|`__gt__(self, other)`|
+|20|`__ge__()`|Called when the `>=` operator is used with two objects.|`__ge__(self, other)`|
+|21|`__getitem__()`|Called when an item is accessed using the `[]` operator.|`__getitem__(self, key)`|
+|22|`__setitem__()`|Called when an item is assigned using the `[]` operator.|`__setitem__(self, key, value)`|
+|23|`__delitem__()`|Called when an item is deleted using the `[]` operator.|`__delitem__(self, key)`|
+|24|`__contains__()`|Called when the `in` operator is used with an object.|`__contains__(self, item)`|
+|25|`__call__()`|Called when an object is called as a function.|`__call__(self, *args, **kwargs)`|
+|26|`__enter__()`|Called when the `with` statement is used with an object.|`__enter__(self)`|
+|27|`__exit__()`|Called when the `with` statement is used with an object.|`__exit__(self, exc_type, exc_value, traceback)`|
+|28|`__iter__()`|Called when an object is iterated.|`__iter__(self)`|
+|29|`__next__()`|Called when the `next()` function is called on an object.|`__next__(self)`|
+|30|`__reversed__()`|Called when the `reversed()` function is called on an object.|`__reversed__(self)`|
+|31|`__hash__()`|Called when the `hash()` function is called on an object.|`__hash__(self)`|
+|32|`__copy__()`|Called when the `copy()` function is called on an object.|`__copy__(self)`|
+|33|`__deepcopy__()`|Called when the `deepcopy()` function is called on an object.|`__deepcopy__(self)`|
+|34|`__bool__()`|Called when the `bool()` function is called on an object.|`__bool__(self)`|
+|35|`__format__()`|Called when the `format()` function is called on an object.|`__format__(self, format_spec)`|
+|36|`__index__()`|Called when an object is used as an index.|`__index__(self)`|
+|37|`__int__()`|Called when the `int()` function is called on an object.|`__int__(self)`|
+|38|`__float__()`|Called when the `float()` function is called on an object.|`__float__(self)`|
+|39|`__complex__()`|Called when the `complex()` function is called on an object.|`__complex__(self)`|
+|40|`__round__()`|Called when the `round()` function is called on an object.|`__round__(self, n)`|
+|41|`__floor__()`|Called when the `math.floor()` function is called on an object.|`__floor__(self)`|
+|42|`__ceil__()`|Called when the `math.ceil()` function is called on an object.|`__ceil__(self)`|
+|43|`__trunc__()`|Called when the `math.trunc()` function is called on an object.|`__trunc__(self)`|
+|44|`__pos__()`|Called when the `+` operator is used with an object.|`__pos__(self)`|
+|45|`__neg__()`|Called when the `-` operator is used with an object.|`__neg__(self)`|
+|46|`__abs__()`|Called when the `abs()` function is called on an object.|`__abs__(self)`|
+|47|`__invert__()`|Called when the `~` operator is used with an object.|`__invert__(self)`|
+
+### `__init__()` Method
+The `__init__()` method is called automatically when an object is created. It is used to initialize the instance variables of an object. It is also known as the **constructor** method. Let's see how to use the `__init__()` method in Python.
+
+```python title="init.py" showLineNumbers{1} {2-4}
+class Student:
+    def __init__(self, name, roll):
+        self.name = name
+        self.roll = roll
+
+student1 = Student('John', 1)
+print('Name:', student1.name)
+print('Roll:', student1.roll)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python init.py
+Name: John
+Roll: 1
+```
+
+In the above example, we have created two instance variables named `name` and `roll`. We have initialized the `name` and `roll` variables to the `name` and `roll` parameters of the `__init__()` method. We have printed the `name` and `roll` variables using the `student1` object. The output shows that the `name` and `roll` variables are unique to the object.
+
+### `__str__()` Method
+The `__str__()` method is called when the `str()` function is called on an object. It is used to return a string representation of an object. Let's see how to use the `__str__()` method in Python. It also called when the `print()` function is called on an object.
+
+```python title="str.py" showLineNumbers{1} {6-7}
+class Student:
+    def __init__(self, name, roll):
+        self.name = name
+        self.roll = roll
+
+    def __str__(self):
+        return f'Name: {self.name}\nRoll: {self.roll}'
+
+student1 = Student('John', 1)
+print(str(student1))
+print(student1)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python str.py
+Name: John
+Roll: 1
+Name: John
+Roll: 1
+```
+
+In the above example, we have defined the `__str__()` method in the `Student` class. The `__str__()` method returns a string representation of the `Student` object. We have created an object named `student1` of the `Student` class. We have printed the `student1` object using the `str()` function. The output shows that the `__str__()` method is called when the `str()` function is called on the `student1` object.
+
+### `__repr__()` Method
+The `__repr__()` method is called when the `repr()` function is called on an object. It is used to return a string representation of an object. Let's see how to use the `__repr__()` method in Python. It also called when the `print()` function is called on an object.
+
+```python title="repr.py" showLineNumbers{1} {6-7}
+class Student:
+    def __init__(self, name, roll):
+        self.name = name
+        self.roll = roll
+
+    def __repr__(self):
+        return f'Name: {self.name}\nRoll: {self.roll}'
+
+student1 = Student('John', 1)
+print(student1)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python repr.py
+Name: John
+Roll: 1
+```
+
+In the above example, we have defined the `__repr__()` method in the `Student` class. The `__repr__()` method returns a string representation of the `Student` object. We have created an object named `student1` of the `Student` class. We have printed the `student1` object using the `print()` function. The output shows that the `__repr__()` method is called when the `print()` function is called on the `student1` object.
+
+### `__len__()` Method
+The `__len__()` method is called when the `len()` function is called on an object. It is used to return the length of an object. Let's see how to use the `__len__()` method in Python.
+
+```python title="len.py" showLineNumbers{1} {6-7}
+class Store:
+    def __init__(self, items):
+        self.items = items
+
+    def __len__(self):
+        return len(self.items)
+
+store1 = Store(['Apple', 'Banana', 'Orange'])
+print(len(store1))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python len.py
+3
+```
+
+In the above example, we have defined the `__len__()` method in the `Store` class. The `__len__()` method returns the length of the `items` list. We have created an object named `store1` of the `Store` class. We have printed the `store1` object using the `len()` function. The output shows that the `__len__()` method is called when the `len()` function is called on the `store1` object.
+
+### `__add__()` Method
+The `__add__()` method is called when the `+` operator is used with two objects. It is used to add two objects. Let's see how to use the `__add__()` method in Python.
+
+```python title="add.py" showLineNumbers{1} {6-8}
+class Complex:
+    def __init__(self, real, imag):
+        self.real = real
+        self.imag = imag
+
+    def __add__(self, other):
+        return Complex(self.real + other.real, self.imag + other.imag)
+
+c1 = Complex(1, 2)
+c2 = Complex(3, 4)
+c3 = c1 + c2
+print(f'{c1.real} + {c1.imag}j + {c2.real} + {c2.imag}j = {c3.real} + {c3.imag}j')
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python add.py
+1 + 2j + 3 + 4j = 4 + 6j
+```
+
+In the above example, we have defined the `__add__()` method in the `Complex` class. The `__add__()` method returns a `Complex` object. We have created two `Complex` objects named `c1` and `c2`. We have added the `c1` and `c2` objects using the `+` operator. The output shows that the `__add__()` method is called when the `+` operator is used with two `Complex` objects.
+
+### `__sub__()` Method
+The `__sub__()` method is called when the `-` operator is used with two objects. It is used to subtract two objects. Let's see how to use the `__sub__()` method in Python.
+
+```python title="sub.py" showLineNumbers{1} {6-8}
+class Complex:
+    def __init__(self, real, imag):
+        self.real = real
+        self.imag = imag
+
+    def __sub__(self, other):
+        return Complex(self.real - other.real, self.imag - other.imag)
+
+c1 = Complex(1, 2)
+c2 = Complex(3, 4)
+c3 = c1 - c2
+print(f'{c1.real} + {c1.imag}j - {c2.real} + {c2.imag}j = {c3.real} + {c3.imag}j')
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python sub.py
+1 + 2j - 3 + 4j = -2 + -2j
+```
+
+In the above example, we have defined the `__sub__()` method in the `Complex` class. The `__sub__()` method returns a `Complex` object. We have created two `Complex` objects named `c1` and `c2`. We have subtracted the `c1` and `c2` objects using the `-` operator. The output shows that the `__sub__()` method is called when the `-` operator is used with two `Complex` objects.
