@@ -240,7 +240,7 @@ Magic methods are special methods that are used to perform some special operatio
 |46|`__abs__()`|Called when the `abs()` function is called on an object.|`__abs__(self)`|
 |47|`__invert__()`|Called when the `~` operator is used with an object.|`__invert__(self)`|
 
-### `__init__()` Method
+### __init__() Method
 The `__init__()` method is called automatically when an object is created. It is used to initialize the instance variables of an object. It is also known as the **constructor** method. Let's see how to use the `__init__()` method in Python.
 
 ```python title="init.py" showLineNumbers{1} {2-4}
@@ -263,7 +263,7 @@ Roll: 1
 
 In the above example, we have created two instance variables named `name` and `roll`. We have initialized the `name` and `roll` variables to the `name` and `roll` parameters of the `__init__()` method. We have printed the `name` and `roll` variables using the `student1` object. The output shows that the `name` and `roll` variables are unique to the object.
 
-### `__str__()` Method
+### __str__() Method
 The `__str__()` method is called when the `str()` function is called on an object. It is used to return a string representation of an object. Let's see how to use the `__str__()` method in Python. It also called when the `print()` function is called on an object.
 
 ```python title="str.py" showLineNumbers{1} {6-7}
@@ -291,7 +291,7 @@ Roll: 1
 
 In the above example, we have defined the `__str__()` method in the `Student` class. The `__str__()` method returns a string representation of the `Student` object. We have created an object named `student1` of the `Student` class. We have printed the `student1` object using the `str()` function. The output shows that the `__str__()` method is called when the `str()` function is called on the `student1` object.
 
-### `__repr__()` Method
+### __repr__() Method
 The `__repr__()` method is called when the `repr()` function is called on an object. It is used to return a string representation of an object. Let's see how to use the `__repr__()` method in Python. It also called when the `print()` function is called on an object.
 
 ```python title="repr.py" showLineNumbers{1} {6-7}
@@ -316,7 +316,7 @@ Roll: 1
 
 In the above example, we have defined the `__repr__()` method in the `Student` class. The `__repr__()` method returns a string representation of the `Student` object. We have created an object named `student1` of the `Student` class. We have printed the `student1` object using the `print()` function. The output shows that the `__repr__()` method is called when the `print()` function is called on the `student1` object.
 
-### `__len__()` Method
+### __len__() Method
 The `__len__()` method is called when the `len()` function is called on an object. It is used to return the length of an object. Let's see how to use the `__len__()` method in Python.
 
 ```python title="len.py" showLineNumbers{1} {6-7}
@@ -339,7 +339,7 @@ C:\Users\username>python len.py
 
 In the above example, we have defined the `__len__()` method in the `Store` class. The `__len__()` method returns the length of the `items` list. We have created an object named `store1` of the `Store` class. We have printed the `store1` object using the `len()` function. The output shows that the `__len__()` method is called when the `len()` function is called on the `store1` object.
 
-### `__add__()` Method
+### __add__() Method
 The `__add__()` method is called when the `+` operator is used with two objects. It is used to add two objects. Let's see how to use the `__add__()` method in Python.
 
 ```python title="add.py" showLineNumbers{1} {6-8}
@@ -365,7 +365,7 @@ C:\Users\username>python add.py
 
 In the above example, we have defined the `__add__()` method in the `Complex` class. The `__add__()` method returns a `Complex` object. We have created two `Complex` objects named `c1` and `c2`. We have added the `c1` and `c2` objects using the `+` operator. The output shows that the `__add__()` method is called when the `+` operator is used with two `Complex` objects.
 
-### `__sub__()` Method
+### __sub__() Method
 The `__sub__()` method is called when the `-` operator is used with two objects. It is used to subtract two objects. Let's see how to use the `__sub__()` method in Python.
 
 ```python title="sub.py" showLineNumbers{1} {6-8}
@@ -391,7 +391,7 @@ C:\Users\username>python sub.py
 
 In the above example, we have defined the `__sub__()` method in the `Complex` class. The `__sub__()` method returns a `Complex` object. We have created two `Complex` objects named `c1` and `c2`. We have subtracted the `c1` and `c2` objects using the `-` operator. The output shows that the `__sub__()` method is called when the `-` operator is used with two `Complex` objects.
 
-### `__mul__()` Method
+### __mul__() Method
 The `__mul__()` method is called when the `*` operator is used with two objects. It is used to multiply two objects. Let's see how to use the `__mul__()` method in Python.
 
 ```python title="mul.py" showLineNumbers{1} {6-8}
@@ -417,7 +417,7 @@ C:\Users\username>python mul.py
 
 In the above example, we have defined the `__mul__()` method in the `Complex` class. The `__mul__()` method returns a `Complex` object. We have created two `Complex` objects named `c1` and `c2`. We have multiplied the `c1` and `c2` objects using the `*` operator. The output shows that the `__mul__()` method is called when the `*` operator is used with two `Complex` objects.
 
-### `__truediv__()` Method
+### __truediv__() Method
 The `__truediv__()` method is called when the `/` operator is used with two objects. It is used to divide two objects. Let's see how to use the `__truediv__()` method in Python.
 
 ```python title="truediv.py" showLineNumbers{1} {6-8}
@@ -443,7 +443,7 @@ C:\Users\username>python truediv.py
 
 In the above example, we have defined the `__truediv__()` method in the `Complex` class. The `__truediv__()` method returns a `Complex` object. We have created two `Complex` objects named `c1` and `c2`. We have divided the `c1` and `c2` objects using the `/` operator. The output shows that the `__truediv__()` method is called when the `/` operator is used with two `Complex` objects.
 
-### `__floordiv__()` Method
+### __floordiv__() Method
 The `__floordiv__()` method is called when the `//` operator is used with two objects. It is used to divide two objects. Let's see how to use the `__floordiv__()` method in Python.
 
 ```python title="floordiv.py" showLineNumbers{1} {6-8}
@@ -469,7 +469,7 @@ C:\Users\username>python floordiv.py
 
 In the above example, we have defined the `__floordiv__()` method in the `Complex` class. The `__floordiv__()` method returns a `Complex` object. We have created two `Complex` objects named `c1` and `c2`. We have divided the `c1` and `c2` objects using the `//` operator. The output shows that the `__floordiv__()` method is called when the `//` operator is used with two `Complex` objects.
 
-### `__mod__()` Method
+### __mod__() Method
 The `__mod__()` method is called when the `%` operator is used with two objects. It is used to find the remainder of two objects. Let's see how to use the `__mod__()` method in Python.
 
 ```python title="mod.py" showLineNumbers{1} {6-8}
@@ -495,7 +495,7 @@ C:\Users\username>python mod.py
 
 In the above example, we have defined the `__mod__()` method in the `Complex` class. The `__mod__()` method returns a `Complex` object. We have created two `Complex` objects named `c1` and `c2`. We have found the remainder of the `c1` and `c2` objects using the `%` operator. The output shows that the `__mod__()` method is called when the `%` operator is used with two `Complex` objects.
 
-### `__pow__()` Method
+### __pow__() Method
 The `__pow__()` method is called when the `**` operator is used with two objects. It is used to find the power of two objects. Let's see how to use the `__pow__()` method in Python.
 
 ```python title="pow.py" showLineNumbers{1} {5-6}
@@ -520,7 +520,7 @@ C:\Users\username>python pow.py
 
 In the above example, we have defined the `__pow__()` method in the `Number` class. The `__pow__()` method returns a `Number` object. We have created two `Number` objects named `n1` and `n2`. We have found the power of the `n1` and `n2` objects using the `**` operator. The output shows that the `__pow__()` method is called when the `**` operator is used with two `Number` objects.
 
-### `__and__()` Method
+### __and__() Method
 The `__and__()` method is called when the `&` operator is used with two objects. It is used to perform the bitwise AND operation on two objects. Let's see how to use the `__and__()` method in Python.
 
 ```python title="and.py" showLineNumbers{1} {5-6}
@@ -545,7 +545,7 @@ C:\Users\username>python and.py
 
 In the above example, we have defined the `__and__()` method in the `Number` class. The `__and__()` method returns a `Number` object. We have created two `Number` objects named `n1` and `n2`. We have performed the bitwise AND operation on the `n1` and `n2` objects using the `&` operator. The output shows that the `__and__()` method is called when the `&` operator is used with two `Number` objects.
 
-### `__or__()` Method
+### __or__() Method
 The `__or__()` method is called when the `|` operator is used with two objects. It is used to perform the bitwise OR operation on two objects. Let's see how to use the `__or__()` method in Python.
 
 ```python title="or.py" showLineNumbers{1} {5-6}
@@ -570,7 +570,7 @@ C:\Users\username>python or.py
 
 In the above example, we have defined the `__or__()` method in the `Number` class. The `__or__()` method returns a `Number` object. We have created two `Number` objects named `n1` and `n2`. We have performed the bitwise OR operation on the `n1` and `n2` objects using the `|` operator. The output shows that the `__or__()` method is called when the `|` operator is used with two `Number` objects.
 
-### `__xor__()` Method
+### __xor__() Method
 The `__xor__()` method is called when the `^` operator is used with two objects. It is used to perform the bitwise XOR operation on two objects. Let's see how to use the `__xor__()` method in Python.
 
 ```python title="xor.py" showLineNumbers{1} {5-6}
@@ -595,7 +595,7 @@ C:\Users\username>python xor.py
 
 In the above example, we have defined the `__xor__()` method in the `Number` class. The `__xor__()` method returns a `Number` object. We have created two `Number` objects named `n1` and `n2`. We have performed the bitwise XOR operation on the `n1` and `n2` objects using the `^` operator. The output shows that the `__xor__()` method is called when the `^` operator is used with two `Number` objects.
 
-### `__lt__()` Method
+### __lt__() Method
 The `__lt__()` method is called when the `<` operator is used with two objects. It is used to compare two objects. It returns `True` if the first object is less than the second object. Otherwise, it returns `False`. Let's see how to use the `__lt__()` method in Python.
 
 ```python title="lt.py" showLineNumbers{1} {5-6}
@@ -621,7 +621,7 @@ C:\Users\username>python lt.py
 
 In the above example, we have defined the `__lt__()` method in the `Number` class. The `__lt__()` method returns `True` if the first object is less than the second object. Otherwise, it returns `False`. We have created two `Number` objects named `n1` and `n2`. We have compared the `n1` and `n2` objects using the `<` operator. The output shows that the `__lt__()` method is called when the `<` operator is used with two `Number` objects.
 
-### `__le__()` Method
+### __le__() Method
 The `__le__()` method is called when the `<=` operator is used with two objects. It is used to compare two objects. It returns `True` if the first object is less than or equal to the second object. Otherwise, it returns `False`. Let's see how to use the `__le__()` method in Python.
 
 ```python title="le.py" showLineNumbers{1} {5-6}
@@ -649,7 +649,7 @@ C:\Users\username>python le.py
 
 In the above example, we have defined the `__le__()` method in the `Number` class. The `__le__()` method returns `True` if the first object is less than or equal to the second object. Otherwise, it returns `False`. We have created two `Number` objects named `n1` and `n2`. We have compared the `n1` and `n2` objects using the `<=` operator. The output shows that the `__le__()` method is called when the `<=` operator is used with two `Number` objects.
 
-### `__eq__()` Method
+### __eq__() Method
 The `__eq__()` method is called when the `==` operator is used with two objects. It is used to compare two objects. It returns `True` if the first object is equal to the second object. Otherwise, it returns `False`. Let's see how to use the `__eq__()` method in Python.
 
 ```python title="eq.py" showLineNumbers{1} {5-6}
@@ -677,7 +677,7 @@ C:\Users\username>python eq.py
 
 In the above example, we have defined the `__eq__()` method in the `Number` class. The `__eq__()` method returns `True` if the first object is equal to the second object. Otherwise, it returns `False`. We have created two `Number` objects named `n1` and `n2`. We have compared the `n1` and `n2` objects using the `==` operator. The output shows that the `__eq__()` method is called when the `==` operator is used with two `Number` objects.
 
-### `__ne__()` Method
+### __ne__() Method
 The `__ne__()` method is called when the `!=` operator is used with two objects. It is used to compare two objects. It returns `True` if the first object is not equal to the second object. Otherwise, it returns `False`. Let's see how to use the `__ne__()` method in Python.
 
 ```python title="ne.py" showLineNumbers{1} {5-6}
@@ -705,7 +705,7 @@ C:\Users\username>python ne.py
 
 In the above example, we have defined the `__ne__()` method in the `Number` class. The `__ne__()` method returns `True` if the first object is not equal to the second object. Otherwise, it returns `False`. We have created two `Number` objects named `n1` and `n2`. We have compared the `n1` and `n2` objects using the `!=` operator. The output shows that the `__ne__()` method is called when the `!=` operator is used with two `Number` objects.
 
-### `__gt__()` Method
+### __gt__() Method
 The `__gt__()` method is called when the `>` operator is used with two objects. It is used to compare two objects. It returns `True` if the first object is greater than the second object. Otherwise, it returns `False`. Let's see how to use the `__gt__()` method in Python.
 
 ```python title="gt.py" showLineNumbers{1} {5-6}
@@ -732,3 +732,31 @@ C:\Users\username>python gt.py
 ```
 
 In the above example, we have defined the `__gt__()` method in the `Number` class. The `__gt__()` method returns `True` if the first object is greater than the second object. Otherwise, it returns `False`. We have created two `Number` objects named `n1` and `n2`. We have compared the `n1` and `n2` objects using the `>` operator. The output shows that the `__gt__()` method is called when the `>` operator is used with two `Number` objects.
+
+### __ge__() Method
+The `__ge__()` method is called when the `>=` operator is used with two objects. It is used to compare two objects. It returns `True` if the first object is greater than or equal to the second object. Otherwise, it returns `False`. Let's see how to use the `__ge__()` method in Python.
+
+```python title="ge.py" showLineNumbers{1} {5-6}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __ge__(self, other):
+        return self.num >= other.num
+
+n1 = Number(2)
+n2 = Number(3)
+print(f'{n1.num} >= {n2.num} = {n1 >= n2}')
+print(f'{n2.num} >= {n1.num} = {n2 >= n1}')
+print(f'{n1.num} >= {n1.num} = {n1 >= n1}')
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-9}
+C:\Users\username>python ge.py
+2 >= 3 = False
+3 >= 2 = True
+2 >= 2 = True
+```
+
+In the above example, we have defined the `__ge__()` method in the `Number` class. The `__ge__()` method returns `True` if the first object is greater than or equal to the second object. Otherwise, it returns `False`. We have created two `Number` objects named `n1` and `n2`. We have compared the `n1` and `n2` objects using the `>=` operator. The output shows that the `__ge__()` method is called when the `>=` operator is used with two `Number` objects.
