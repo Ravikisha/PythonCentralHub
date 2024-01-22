@@ -223,22 +223,21 @@ Magic methods are special methods that are used to perform some special operatio
 |29|`__next__()`|Called when the `next()` function is called on an object.|`__next__(self)`|
 |30|`__reversed__()`|Called when the `reversed()` function is called on an object.|`__reversed__(self)`|
 |31|`__hash__()`|Called when the `hash()` function is called on an object.|`__hash__(self)`|
-|32|`__copy__()`|Called when the `copy()` function is called on an object.|`__copy__(self)`|
-|33|`__deepcopy__()`|Called when the `deepcopy()` function is called on an object.|`__deepcopy__(self)`|
-|34|`__bool__()`|Called when the `bool()` function is called on an object.|`__bool__(self)`|
-|35|`__format__()`|Called when the `format()` function is called on an object.|`__format__(self, format_spec)`|
-|36|`__index__()`|Called when an object is used as an index.|`__index__(self)`|
-|37|`__int__()`|Called when the `int()` function is called on an object.|`__int__(self)`|
-|38|`__float__()`|Called when the `float()` function is called on an object.|`__float__(self)`|
-|39|`__complex__()`|Called when the `complex()` function is called on an object.|`__complex__(self)`|
-|40|`__round__()`|Called when the `round()` function is called on an object.|`__round__(self, n)`|
-|41|`__floor__()`|Called when the `math.floor()` function is called on an object.|`__floor__(self)`|
-|42|`__ceil__()`|Called when the `math.ceil()` function is called on an object.|`__ceil__(self)`|
-|43|`__trunc__()`|Called when the `math.trunc()` function is called on an object.|`__trunc__(self)`|
-|44|`__pos__()`|Called when the `+` operator is used with an object.|`__pos__(self)`|
-|45|`__neg__()`|Called when the `-` operator is used with an object.|`__neg__(self)`|
-|46|`__abs__()`|Called when the `abs()` function is called on an object.|`__abs__(self)`|
-|47|`__invert__()`|Called when the `~` operator is used with an object.|`__invert__(self)`|
+|32|`__bool__()`|Called when the `bool()` function is called on an object.|`__bool__(self)`|
+|33|`__format__()`|Called when the `format()` function is called on an object.|`__format__(self, format_spec)`|
+|34|`__index__()`|Called when an object is used as an index.|`__index__(self)`|
+|35|`__int__()`|Called when the `int()` function is called on an object.|`__int__(self)`|
+|36|`__float__()`|Called when the `float()` function is called on an object.|`__float__(self)`|
+|37|`__complex__()`|Called when the `complex()` function is called on an object.|`__complex__(self)`|
+|38|`__round__()`|Called when the `round()` function is called on an object.|`__round__(self, n)`|
+|39|`__floor__()`|Called when the `math.floor()` function is called on an object.|`__floor__(self)`|
+|40|`__ceil__()`|Called when the `math.ceil()` function is called on an object.|`__ceil__(self)`|
+|41|`__trunc__()`|Called when the `math.trunc()` function is called on an object.|`__trunc__(self)`|
+|42|`__pos__()`|Called when the `+` operator is used with an object.|`__pos__(self)`|
+|43|`__neg__()`|Called when the `-` operator is used with an object.|`__neg__(self)`|
+|44|`__abs__()`|Called when the `abs()` function is called on an object.|`__abs__(self)`|
+|45|`__invert__()`|Called when the `~` operator is used with an object.|`__invert__(self)`|
+
 
 ### __init__() Method
 The `__init__()` method is called automatically when an object is created. It is used to initialize the instance variables of an object. It is also known as the **constructor** method. Let's see how to use the `__init__()` method in Python.
@@ -845,6 +844,91 @@ C:\Users\username>python delitem.py
 
 In the above example, we have defined the `__delitem__()` method in the `Store` class. The `__delitem__()` method deletes an item of the `items` list. We have created an object named `store1` of the `Store` class. We have deleted the items of the `store1` object using the `del` operator. The output shows that the `__delitem__()` method is called when an item is deleted using the `del` operator.
 
+### __contains__() Method
+The `__contains__()` method is called when the `in` operator is used with two objects. It is used to check if an item is present in an object. It returns `True` if the item is present in the object. Otherwise, it returns `False`. Let's see how to use the `__contains__()` method in Python.
+
+```python title="contains.py" showLineNumbers{1} {5-6}
+class Store:
+    def __init__(self, items):
+        self.items = items
+
+    def __contains__(self, item):
+        return item in self.items
+
+store1 = Store(['Apple', 'Banana', 'Orange'])
+print('Apple' in store1)
+print('Mango' in store1)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python contains.py
+True
+False
+```
+
+In the above example, we have defined the `__contains__()` method in the `Store` class. The `__contains__()` method returns `True` if the item is present in the object. Otherwise, it returns `False`. We have created an object named `store1` of the `Store` class. We have checked if the items are present in the `store1` object using the `in` operator. The output shows that the `__contains__()` method is called when the `in` operator is used with two objects.
+
+### __call__() Method
+The `__call__()` method is called when an object is called as a function. It is used to call an object as a function. Let's see how to use the `__call__()` method in Python.
+
+```python title="call.py" showLineNumbers{1} {5-6}
+class Store:
+    def __init__(self, items):
+        self.items = items
+
+    def __call__(self, item):
+        return item in self.items
+
+store1 = Store(['Apple', 'Banana', 'Orange'])
+print(store1('Apple'))
+print(store1('Mango'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python call.py
+True
+False
+```
+
+In the above example, we have defined the `__call__()` method in the `Store` class. The `__call__()` method returns `True` if the item is present in the object. Otherwise, it returns `False`. We have created an object named `store1` of the `Store` class. We have called the `store1` object as a function. The output shows that the `__call__()` method is called when an object is called as a function.
+
+### __enter__() & __exit__() Methods
+The `__enter__()` and `__exit__()` methods are called when an object is used with the `with` statement. It is used to create a context manager. Let's see how to use the `__enter__()` and `__exit__()` methods in Python.
+
+```python title="enter_exit.py" showLineNumbers{1} {5-7, 9-10, 12-13}
+class Store:
+    def __init__(self, items):
+        self.items = items
+
+    def __enter__(self):
+        print('Entering the Store')
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        print('Exiting the Store')
+
+    def __contains__(self, item):
+        return item in self.items
+
+store1 = Store(['Apple', 'Banana', 'Orange'])
+with store1 as store:
+    print('Apple' in store)
+    print('Mango' in store)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-15}
+C:\Users\username>python enter_exit.py
+Entering the Store
+True
+False
+Exiting the Store
+```
+
+In the above example, we have defined the `__enter__()` and `__exit__()` methods in the `Store` class. The `__enter__()` method is called when the `with` statement is used with an object. The `__exit__()` method is called when the `with` statement is exited. We have created an object named `store1` of the `Store` class. We have used the `store1` object with the `with` statement. The output shows that the `__enter__()` and `__exit__()` methods are called when an object is used with the `with` statement.
+
 ### __iter__() Method
 The `__iter__()` method is called when an object is iterated using the `for` loop. It is used to iterate over an object. Let's see how to use the `__iter__()` method in Python.
 
@@ -939,29 +1023,135 @@ Apple
 
 In the above example, we have defined the `__reversed__()` method in the `Store` class. The `__reversed__()` method returns a reversed iterator object. We have created an object named `store1` of the `Store` class. We have iterated over the `store1` object using the `for` loop. The output shows that the `__reversed__()` method is called when the `reversed()` function is called on an object.
 
-### __contains__() Method
-The `__contains__()` method is called when the `in` operator is used with two objects. It is used to check if an item is present in an object. It returns `True` if the item is present in the object. Otherwise, it returns `False`. Let's see how to use the `__contains__()` method in Python.
+### __hash__() Method
+The `__hash__()` method is called when the `hash()` function is called on an object. It is used to return the hash value of an object. Let's see how to use the `__hash__()` method in Python.
 
-```python title="contains.py" showLineNumbers{1} {5-6}
+```python title="hash.py" showLineNumbers{1} {5-6}
 class Store:
     def __init__(self, items):
         self.items = items
 
-    def __contains__(self, item):
-        return item in self.items
+    def __hash__(self):
+        return hash(self.items)
 
 store1 = Store(['Apple', 'Banana', 'Orange'])
-print('Apple' in store1)
-print('Mango' in store1)
+print(hash(store1))
 ```
 
 Output:
 ```cmd title="command" showLineNumbers{1} {2-5}
-C:\Users\username>python contains.py
-True
-False
+C:\Users\username>python hash.py
+-9223372036574775808
 ```
 
-In the above example, we have defined the `__contains__()` method in the `Store` class. The `__contains__()` method returns `True` if the item is present in the object. Otherwise, it returns `False`. We have created an object named `store1` of the `Store` class. We have checked if the items are present in the `store1` object using the `in` operator. The output shows that the `__contains__()` method is called when the `in` operator is used with two objects.
+In the above example, we have defined the `__hash__()` method in the `Store` class. The `__hash__()` method returns the hash value of the `items` list. We have created an object named `store1` of the `Store` class. We have called the `hash()` function on the `store1` object. The output shows that the `__hash__()` method is called when the `hash()` function is called on an object.
 
-### __len__() Method
+### __bool__() Method
+The `__bool__()` method is called when the `bool()` function is called on an object. It is used to return the boolean value of an object. Let's see how to use the `__bool__()` method in Python.
+
+```python title="bool.py" showLineNumbers{1} {5-6}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __bool__(self):
+        return bool(self.num)
+
+n1 = Number(0)
+n2 = Number(1)
+print(bool(n1))
+print(bool(n2))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python bool.py
+False
+True
+```
+
+In the above example, we have defined the `__bool__()` method in the `Number` class. The `__bool__()` method returns the boolean value of the `num` attribute. We have created two `Number` objects named `n1` and `n2`. We have called the `bool()` function on the `n1` and `n2` objects. The output shows that the `__bool__()` method is called when the `bool()` function is called on an object.
+
+### __format__() Method
+The `__format__()` method is called when the `format()` function is called on an object. It is used to return the formatted string of an object. Let's see how to use the `__format__()` method in Python.
+
+```python title="format.py" showLineNumbers{1} {5-6}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __format__(self, format_spec):
+        return format(self.num, format_spec)
+
+n1 = Number(2)
+n2 = Number(3)
+print(format(n1, 'b'))
+print(format(n2, 'b'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python format.py
+10
+11
+```
+
+In the above example, we have defined the `__format__()` method in the `Number` class. The `__format__()` method returns the formatted string of the `num` attribute. We have created two `Number` objects named `n1` and `n2`. We have called the `format()` function on the `n1` and `n2` objects. The output shows that the `__format__()` method is called when the `format()` function is called on an object.
+
+### __index__() Method
+The `__index__()` method is called when the `index()` function is called on an object. It is used to return the index of an object. Let's see how to use the `__index__()` method in Python.
+
+```python title="index.py" showLineNumbers{1} {5-6}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __index__(self):
+        return self.num
+
+n1 = Number(2)
+n2 = Number(3)
+print(index(n1))
+print(index(n2))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python index.py
+2
+3
+```
+
+In the above example, we have defined the `__index__()` method in the `Number` class. The `__index__()` method returns the index of the `num` attribute. We have created two `Number` objects named `n1` and `n2`. We have called the `index()` function on the `n1` and `n2` objects. The output shows that the `__index__()` method is called when the `index()` function is called on an object.
+
+### __int__() Method
+The `__int__()` method is called when the `int()` function is called on an object. It is used to return the integer value of an object. Let's see how to use the `__int__()` method in Python.
+
+```python title="int.py" showLineNumbers{1} {5-6}
+class Complex:
+    def __init__(self, real, imag):
+        self.real = real
+        self.imag = imag
+
+    def __int__(self):
+        return int(self.real)
+
+c1 = Complex(2.5, 3.5)
+c2 = Complex(3.5, 4.5)
+print(int(c1))
+print(int(c2))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python int.py
+2
+3
+```
+
+In the above example, we have defined the `__int__()` method in the `Complex` class. The `__int__()` method returns the integer value of the `real` attribute. We have created two `Complex` objects named `c1` and `c2`. We have called the `int()` function on the `c1` and `c2` objects. The output shows that the `__int__()` method is called when the `int()` function is called on an object.
+
+### __float__() Method
+The `__float__()` method is called when the `float()` function is called on an object. It is used to return the float value of an object. Let's see how to use the `__float__()` method in Python.
+
+```python title="float.py" showLineNumbers{1} {5-6}
