@@ -1418,3 +1418,60 @@ C:\Users\username>python invert.py
 
 In the above example, we have defined the `__invert__()` method in the `Number` class. The `__invert__()` method returns the inverted value of the `num` attribute. We have created two `Number` objects named `n1` and `n2`. We have used the `~` operator with the `n1` and `n2` objects. The output shows that the `__invert__()` method is called when the `~` operator is used with an object.
 
+## Multiple Dispatch
+Multiple dispatch is a feature of some programming languages in which a function or method can be dynamically dispatched based on the run time (dynamic) type or, in the more general case, some other attribute of more than one of its arguments. This is a generalization of single dispatch polymorphism and subclass polymorphism, where a method call is dynamically dispatched based on the class of one object.
+
+In python, we can use the `multipledispatch` library to implement multiple dispatch. Let's see how to use the `multipledispatch` library in Python.
+
+```cmd title="command" showLineNumbers{1} {1}
+C:\Users\username>pip install multipledispatch
+```
+
+In the above example, we have installed the `multipledispatch` library using the `pip` command.
+
+```python title="main.py" showLineNumbers{1} {1, 4-7, 9-12, 14-17, 19-22} 
+from multipledispatch import dispatch
+
+class Calculator:
+    @dispatch(int, int)
+    def add(self, a, b):
+        print("Two Numbers Argument")
+        return a + b
+
+    @dispatch(int, int, int)
+    def add(self, a, b, c):
+        print("Three Numbers Argument")
+        return a + b + c
+
+    @dispatch(float, float)
+    def add(self, a, b):
+        print("Two Floats Argument")
+        return a + b
+
+    @dispatch(str, str)
+    def add(self, a, b):
+        print("Two Strings Argument")
+        return a + b
+
+calculator = Calculator()
+print(calculator.add(2, 3))
+print(calculator.add(2, 3, 4))
+print(calculator.add(2.5, 3.5))
+print(calculator.add('Hello', 'World'))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-17}
+C:\Users\username>python main.py
+Two Numbers Argument
+5
+Three Numbers Argument
+9
+Two Floats Argument
+6.0
+Two Strings Argument
+HelloWorld
+```
+
+In the above example, we have defined the `Calculator` class. We have defined the `add()` method in the `Calculator` class. We have used the `@dispatch` decorator to define the `add()` method with different arguments. We have created an object named `calculator` of the `Calculator` class. We have called the `add()` method of the `calculator` object with different arguments. The output shows that the `add()` method is called based on the arguments. If the arguments are `int` and `int`, then the `add()` method with two `int` arguments is called. If the arguments are `int`, `int`, and `int`, then the `add()` method with three `int` arguments is called. If the arguments are `float` and `float`, then the `add()` method with two `float` arguments is called. If the arguments are `str` and `str`, then the `add()` method with two `str` arguments is called.
+
