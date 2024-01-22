@@ -760,3 +760,208 @@ C:\Users\username>python ge.py
 ```
 
 In the above example, we have defined the `__ge__()` method in the `Number` class. The `__ge__()` method returns `True` if the first object is greater than or equal to the second object. Otherwise, it returns `False`. We have created two `Number` objects named `n1` and `n2`. We have compared the `n1` and `n2` objects using the `>=` operator. The output shows that the `__ge__()` method is called when the `>=` operator is used with two `Number` objects.
+
+### __getitem__() Method
+The `__getitem__()` method is called when an item is accessed using the `[]` operator. It is used to access an item of an object. Let's see how to use the `__getitem__()` method in Python.
+
+```python title="getitem.py" showLineNumbers{1} {5-6}
+class Store:
+    def __init__(self, items):
+        self.items = items
+
+    def __getitem__(self, index):
+        return self.items[index]
+
+store1 = Store(['Apple', 'Banana', 'Orange'])
+print(store1[0])
+print(store1[1])
+print(store1[2])
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-7}
+C:\Users\username>python getitem.py
+Apple
+Banana
+Orange
+```
+
+In the above example, we have defined the `__getitem__()` method in the `Store` class. The `__getitem__()` method returns an item of the `items` list. We have created an object named `store1` of the `Store` class. We have accessed the items of the `store1` object using the `[]` operator. The output shows that the `__getitem__()` method is called when an item is accessed using the `[]` operator.
+
+### __setitem__() Method
+The `__setitem__()` method is called when an item is assigned using the `[]` operator. It is used to assign an item of an object. Let's see how to use the `__setitem__()` method in Python.
+
+```python title="setitem.py" showLineNumbers{1} {5-6}
+class Store:
+    def __init__(self, items):
+        self.items = items
+
+    def __setitem__(self, index, value):
+        self.items[index] = value
+
+store1 = Store(['Apple', 'Banana', 'Orange'])
+store1[0] = 'Mango'
+store1[1] = 'Grapes'
+store1[2] = 'Watermelon'
+print(store1[0])
+print(store1[1])
+print(store1[2])
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-9}
+C:\Users\username>python setitem.py
+Mango
+Grapes
+Watermelon
+```
+
+In the above example, we have defined the `__setitem__()` method in the `Store` class. The `__setitem__()` method assigns an item of the `items` list. We have created an object named `store1` of the `Store` class. We have assigned the items of the `store1` object using the `[]` operator. The output shows that the `__setitem__()` method is called when an item is assigned using the `[]` operator.
+
+### __delitem__() Method
+The `__delitem__()` method is called when an item is deleted using the `del` operator. It is used to delete an item of an object. Let's see how to use the `__delitem__()` method in Python.
+
+```python title="delitem.py" showLineNumbers{1} {5-6}
+class Store:
+    def __init__(self, items):
+        self.items = items
+
+    def __delitem__(self, index):
+        del self.items[index]
+
+store1 = Store(['Apple', 'Banana', 'Orange'])
+del store1[0]
+print(store1.items)
+del store1[1]
+print(store1.items)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-7}
+C:\Users\username>python delitem.py
+['Banana', 'Orange']
+['Banana']
+```
+
+In the above example, we have defined the `__delitem__()` method in the `Store` class. The `__delitem__()` method deletes an item of the `items` list. We have created an object named `store1` of the `Store` class. We have deleted the items of the `store1` object using the `del` operator. The output shows that the `__delitem__()` method is called when an item is deleted using the `del` operator.
+
+### __iter__() Method
+The `__iter__()` method is called when an object is iterated using the `for` loop. It is used to iterate over an object. Let's see how to use the `__iter__()` method in Python.
+
+```python title="iter.py" showLineNumbers{1} {5-6}
+class Store:
+    def __init__(self, items):
+        self.items = items
+
+    def __iter__(self):
+        return iter(self.items)
+
+store1 = Store(['Apple', 'Banana', 'Orange'])
+for item in store1:
+    print(item)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python iter.py
+Apple
+Banana
+Orange
+```
+
+In the above example, we have defined the `__iter__()` method in the `Store` class. The `__iter__()` method returns an iterator object. We have created an object named `store1` of the `Store` class. We have iterated over the `store1` object using the `for` loop. The output shows that the `__iter__()` method is called when an object is iterated using the `for` loop.
+
+### __next__() Method
+The `__next__()` method is called when the `next()` function is called on an iterator object. It is used to return the next item of an iterator object. Let's see how to use the `__next__()` method in Python.
+
+```python title="next.py" showLineNumbers{1} {6-14}
+class Store:
+    def __init__(self, items):
+        self.items = items
+        self.index = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.index >= len(self.items):
+            raise StopIteration
+        item = self.items[self.index]
+        self.index += 1
+        return item
+
+store1 = Store(['Apple', 'Banana', 'Orange'])
+print(next(store1))
+print(next(store1))
+print(next(store1))
+print(next(store1))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-9}
+C:\Users\username>python next.py
+Apple
+Banana
+Orange
+Traceback (most recent call last):
+  File "next.py", line 21, in <module>
+    print(next(store1))
+  File "next.py", line 12, in __next__
+    raise StopIteration
+StopIteration
+```
+
+In the above example, we have defined the `__next__()` method in the `Store` class. The `__next__()` method returns the next item of the `items` list. We have created an object named `store1` of the `Store` class. We have called the `next()` function on the `store1` object. The output shows that the `__next__()` method is called when the `next()` function is called on an iterator object.
+
+### __reversed__() Method
+The `__reversed__()` method is called when the `reversed()` function is called on an object. It is used to return a reversed iterator object. Let's see how to use the `__reversed__()` method in Python.
+
+```python title="reversed.py" showLineNumbers{1} {5-6}
+class Store:
+    def __init__(self, items):
+        self.items = items
+
+    def __reversed__(self):
+        return reversed(self.items)
+
+store1 = Store(['Apple', 'Banana', 'Orange'])
+for item in reversed(store1):
+    print(item)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\username>python reversed.py
+Orange
+Banana
+Apple
+```
+
+In the above example, we have defined the `__reversed__()` method in the `Store` class. The `__reversed__()` method returns a reversed iterator object. We have created an object named `store1` of the `Store` class. We have iterated over the `store1` object using the `for` loop. The output shows that the `__reversed__()` method is called when the `reversed()` function is called on an object.
+
+### __contains__() Method
+The `__contains__()` method is called when the `in` operator is used with two objects. It is used to check if an item is present in an object. It returns `True` if the item is present in the object. Otherwise, it returns `False`. Let's see how to use the `__contains__()` method in Python.
+
+```python title="contains.py" showLineNumbers{1} {5-6}
+class Store:
+    def __init__(self, items):
+        self.items = items
+
+    def __contains__(self, item):
+        return item in self.items
+
+store1 = Store(['Apple', 'Banana', 'Orange'])
+print('Apple' in store1)
+print('Mango' in store1)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python contains.py
+True
+False
+```
+
+In the above example, we have defined the `__contains__()` method in the `Store` class. The `__contains__()` method returns `True` if the item is present in the object. Otherwise, it returns `False`. We have created an object named `store1` of the `Store` class. We have checked if the items are present in the `store1` object using the `in` operator. The output shows that the `__contains__()` method is called when the `in` operator is used with two objects.
+
+### __len__() Method
