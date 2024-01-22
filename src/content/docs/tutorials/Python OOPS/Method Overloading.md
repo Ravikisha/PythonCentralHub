@@ -5,26 +5,6 @@ sidebar:
     order: 87
 ---
 
-<!-- ```python title="constructor.py" showLineNumbers{1} {2-5}
-class Student:
-    def __init__(self, name, roll):
-        self.name = name
-        self.roll = roll
-
-student1 = Student('John', 1)
-print('Name:', student1.name)
-print('Roll:', student1.roll)
-```
-
-Output:
-```cmd title="command" showLineNumbers{1} {2-5}
-C:\Users\username>python constructor.py
-Name: John
-Roll: 1
-```
-
-In the above example, we have created two instance variables named `name` and `roll`. We have initialized the `name` and `roll` variables to the `name` and `roll` parameters of the `__init__()` method. We have printed the `name` and `roll` variables using the `student1` object. The output shows that the `name` and `roll` variables are unique to the object. -->
-
 ## Compile-time Polymorphism
 Compile-time polymorphism is also known as **static polymorphism**. It occurs when the compiler knows which polymorphic function to call at compile-time. Compile-time polymorphism is achieved through function overloading and operator overloading.
 
