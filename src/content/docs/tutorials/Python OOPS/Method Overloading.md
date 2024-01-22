@@ -1233,7 +1233,7 @@ In the above example, we have defined the `__round__()` method in the `Number` c
 ### __floor__() Method
 The `__floor__()` method is called when the `math.floor()` function is called on an object. It is used to return the floor value of an object. Let's see how to use the `__floor__()` method in Python.
 
-```python title="floor.py" showLineNumbers{1} {5-6}
+```python title="floor.py" showLineNumbers{1} {7-8}
 import math
 
 class Number:
@@ -1261,7 +1261,7 @@ In the above example, we have defined the `__floor__()` method in the `Number` c
 ### __ceil__() Method
 The `__ceil__()` method is called when the `math.ceil()` function is called on an object. It is used to return the ceil value of an object. Let's see how to use the `__ceil__()` method in Python.
 
-```python title="ceil.py" showLineNumbers{1} {5-6}
+```python title="ceil.py" showLineNumbers{1} {7-8}
 import math
 
 class Number:
@@ -1289,4 +1289,132 @@ In the above example, we have defined the `__ceil__()` method in the `Number` cl
 ### __trunc__() Method
 The `__trunc__()` method is called when the `math.trunc()` function is called on an object. It is used to return the truncated value of an object. Let's see how to use the `__trunc__()` method in Python.
 
-```python title="trunc.py" showLineNumbers{1} {5-6}
+```python title="trunc.py" showLineNumbers{1} {7-8}
+import math
+
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __trunc__(self):
+        return math.trunc(self.num)
+
+n1 = Number(2.5)
+n2 = Number(3.5)
+print(math.trunc(n1))
+print(math.trunc(n2))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python trunc.py
+2
+3
+```
+
+In the above example, we have defined the `__trunc__()` method in the `Number` class. The `__trunc__()` method returns the truncated value of the `num` attribute. We have created two `Number` objects named `n1` and `n2`. We have called the `math.trunc()` function on the `n1` and `n2` objects. The output shows that the `__trunc__()` method is called when the `math.trunc()` function is called on an object.
+
+### __pos__() Method
+The `__pos__()` method is called when the `+` operator is used with an object. It is used to return the positive value of an object. Let's see how to use the `__pos__()` method in Python.
+
+```python title="pos.py" showLineNumbers{1} {5-6}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __pos__(self):
+        return abs(self.num)
+
+n1 = Number(-2)
+n2 = Number(3)
+print(+n1)
+print(+n2)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python pos.py
+2
+3
+```
+
+In the above example, we have defined the `__pos__()` method in the `Number` class. The `__pos__()` method returns the positive value of the `num` attribute. We have created two `Number` objects named `n1` and `n2`. We have used the `+` operator with the `n1` and `n2` objects. The output shows that the `__pos__()` method is called when the `+` operator is used with an object.
+
+### __neg__() Method
+The `__neg__()` method is called when the `-` operator is used with an object. It is used to return the negative value of an object. Let's see how to use the `__neg__()` method in Python.
+
+```python title="neg.py" showLineNumbers{1} {5-6}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __neg__(self):
+        return -self.num
+
+n1 = Number(2)
+n2 = Number(3)
+print(-n1)
+print(-n2)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python neg.py
+-2
+-3
+```
+
+In the above example, we have defined the `__neg__()` method in the `Number` class. The `__neg__()` method returns the negative value of the `num` attribute. We have created two `Number` objects named `n1` and `n2`. We have used the `-` operator with the `n1` and `n2` objects. The output shows that the `__neg__()` method is called when the `-` operator is used with an object.
+
+### __abs__() Method
+The `__abs__()` method is called when the `abs()` function is called on an object. It is used to return the absolute value of an object. Let's see how to use the `__abs__()` method in Python.
+
+```python title="abs.py" showLineNumbers{1} {5-6}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __abs__(self):
+        return abs(self.num)
+
+n1 = Number(-2)
+n2 = Number(3)
+print(abs(n1))
+print(abs(n2))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python abs.py
+2
+3
+```
+
+In the above example, we have defined the `__abs__()` method in the `Number` class. The `__abs__()` method returns the absolute value of the `num` attribute. We have created two `Number` objects named `n1` and `n2`. We have called the `abs()` function on the `n1` and `n2` objects. The output shows that the `__abs__()` method is called when the `abs()` function is called on an object.
+
+### __invert__() Method
+The `__invert__()` method is called when the `~` operator is used with an object. It is used to return the inverted value of an object. Let's see how to use the `__invert__()` method in Python.
+
+```python title="invert.py" showLineNumbers{1} {5-6}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __invert__(self):
+        return ~self.num
+
+n1 = Number(2)
+n2 = Number(3)
+print(~n1)
+print(~n2)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python invert.py
+-3
+-4
+```
+
+In the above example, we have defined the `__invert__()` method in the `Number` class. The `__invert__()` method returns the inverted value of the `num` attribute. We have created two `Number` objects named `n1` and `n2`. We have used the `~` operator with the `n1` and `n2` objects. The output shows that the `__invert__()` method is called when the `~` operator is used with an object.
+
