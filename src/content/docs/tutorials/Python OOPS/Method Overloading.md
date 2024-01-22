@@ -1127,7 +1127,7 @@ In the above example, we have defined the `__index__()` method in the `Number` c
 ### __int__() Method
 The `__int__()` method is called when the `int()` function is called on an object. It is used to return the integer value of an object. Let's see how to use the `__int__()` method in Python.
 
-```python title="int.py" showLineNumbers{1} {5-6}
+```python title="int.py" showLineNumbers{1} {6-7}
 class Complex:
     def __init__(self, real, imag):
         self.real = real
@@ -1155,3 +1155,138 @@ In the above example, we have defined the `__int__()` method in the `Complex` cl
 The `__float__()` method is called when the `float()` function is called on an object. It is used to return the float value of an object. Let's see how to use the `__float__()` method in Python.
 
 ```python title="float.py" showLineNumbers{1} {5-6}
+class Complex:
+    def __init__(self, real, imag):
+        self.real = real
+        self.imag = imag
+
+    def __float__(self):
+        return float(self.real)
+
+c1 = Complex(2.5, 3.5)
+c2 = Complex(3.5, 4.5)
+print(float(c1))
+print(float(c2))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python float.py
+2.5
+3.5
+```
+
+In the above example, we have defined the `__float__()` method in the `Complex` class. The `__float__()` method returns the float value of the `real` attribute. We have created two `Complex` objects named `c1` and `c2`. We have called the `float()` function on the `c1` and `c2` objects. The output shows that the `__float__()` method is called when the `float()` function is called on an object.
+
+### __complex__() Method
+The `__complex__()` method is called when the `complex()` function is called on an object. It is used to return the complex value of an object. Let's see how to use the `__complex__()` method in Python.
+
+```python title="complex.py" showLineNumbers{1} {5-6}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __complex__(self):
+        return complex(self.num)
+
+n1 = Number(2)
+n2 = Number(3)
+print(complex(n1))
+print(complex(n2))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python complex.py
+(2+0j)
+(3+0j)
+```
+
+In the above example, we have defined the `__complex__()` method in the `Number` class. The `__complex__()` method returns the complex value of the `num` attribute. We have created two `Number` objects named `n1` and `n2`. We have called the `complex()` function on the `n1` and `n2` objects. The output shows that the `__complex__()` method is called when the `complex()` function is called on an object.
+
+### __round__() Method
+The `__round__()` method is called when the `round()` function is called on an object. It is used to return the rounded value of an object. Let's see how to use the `__round__()` method in Python.
+
+```python title="round.py" showLineNumbers{1} {5-6}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __round__(self):
+        return round(self.num)
+
+n1 = Number(2.5)
+n2 = Number(3.5)
+print(round(n1))
+print(round(n2))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python round.py
+2
+4
+```
+
+In the above example, we have defined the `__round__()` method in the `Number` class. The `__round__()` method returns the rounded value of the `num` attribute. We have created two `Number` objects named `n1` and `n2`. We have called the `round()` function on the `n1` and `n2` objects. The output shows that the `__round__()` method is called when the `round()` function is called on an object.
+
+### __floor__() Method
+The `__floor__()` method is called when the `math.floor()` function is called on an object. It is used to return the floor value of an object. Let's see how to use the `__floor__()` method in Python.
+
+```python title="floor.py" showLineNumbers{1} {5-6}
+import math
+
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __floor__(self):
+        return math.floor(self.num)
+
+n1 = Number(2.5)
+n2 = Number(3.5)
+print(math.floor(n1))
+print(math.floor(n2))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python floor.py
+2
+3
+```
+
+In the above example, we have defined the `__floor__()` method in the `Number` class. The `__floor__()` method returns the floor value of the `num` attribute. We have created two `Number` objects named `n1` and `n2`. We have called the `math.floor()` function on the `n1` and `n2` objects. The output shows that the `__floor__()` method is called when the `math.floor()` function is called on an object.
+
+### __ceil__() Method
+The `__ceil__()` method is called when the `math.ceil()` function is called on an object. It is used to return the ceil value of an object. Let's see how to use the `__ceil__()` method in Python.
+
+```python title="ceil.py" showLineNumbers{1} {5-6}
+import math
+
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __ceil__(self):
+        return math.ceil(self.num)
+
+n1 = Number(2.5)
+n2 = Number(3.5)
+print(math.ceil(n1))
+print(math.ceil(n2))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python ceil.py
+3
+4
+```
+
+In the above example, we have defined the `__ceil__()` method in the `Number` class. The `__ceil__()` method returns the ceil value of the `num` attribute. We have created two `Number` objects named `n1` and `n2`. We have called the `math.ceil()` function on the `n1` and `n2` objects. The output shows that the `__ceil__()` method is called when the `math.ceil()` function is called on an object.
+
+### __trunc__() Method
+The `__trunc__()` method is called when the `math.trunc()` function is called on an object. It is used to return the truncated value of an object. Let's see how to use the `__trunc__()` method in Python.
+
+```python title="trunc.py" showLineNumbers{1} {5-6}
