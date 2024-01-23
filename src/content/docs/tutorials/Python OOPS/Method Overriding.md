@@ -117,9 +117,96 @@ Method overriding is often confused with method overloading. However, they are t
 | Method overriding is a feature of inheritance. | Method overloading is not a feature of inheritance. |
 | Method overriding is a key element of polymorphism in OOP. | Method overloading is not a key element of polymorphism in OOP. |
 
+## More examples of Method Overriding:
+Let's look at an example of method overriding in Python:
 
+```python title="method_overriding.py" {6-7, 14-15, 21-22, 31-32}
+class Employee:
+    def __init__(self, name, salary):
+        self.name = name
+        self.salary = salary
 
+    def work(self):
+        print(self.name + " is working.")
 
+class SoftwareEngineer(Employee):
+    def __init__(self, name, salary, level):
+        super().__init__(name, salary)
+        self.level = level
+
+    def work(self):
+        print(self.name + " is coding.")
+
+    def debug(self):
+        print(self.name + " is debugging.")
+
+class Designer(Employee):
+    def work(self):
+        print(self.name + " is designing.")
+
+    def draw(self):
+        print(self.name + " is drawing.")
+
+software_engineer = SoftwareEngineer("John", 1000, "Junior")
+designer = Designer("Jane", 1000)
+employees = [software_engineer, designer]
+
+for employee in employees:
+    employee.work()
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python method_overriding.py
+John is coding.
+Jane is designing.
+```
+
+In this example, we have a base class `Employee` with a method `work`. We have two subclasses `SoftwareEngineer` and `Designer` that override the `work` method inherited from the `Employee` class. The `SoftwareEngineer` and `Designer` classes provide specialized implementations of the `work` method that are specific to each employee. The `SoftwareEngineer` class overrides the `work` method to print "John is coding.", while the `Designer` class overrides the `work` method to print "Jane is designing.". When we call the `work` method on the `software_engineer` and `designer` objects, the overridden methods in the respective subclasses are invoked, printing "John is coding." and "Jane is designing.".
+
+**Another example of method overriding**:
+```python title="method_overriding" {5-6, 13-14, 21-22, 28-29}
+class Person:
+    def __init__(self, name):
+        self.name = name
+
+    def greet(self):
+        print("Hello, I am " + self.name + ".")
+
+class Student(Person):
+    def __init__(self, name, roll_number):
+        super().__init__(name)
+        self.roll_number = roll_number
+
+    def greet(self):
+        print("Hello, I am " + self.name + ". My roll number is " + str(self.roll_number) + ".")
+
+class Teacher(Person):
+    def __init__(self, name, subject):
+        super().__init__(name)
+        self.subject = subject
+
+    def greet(self):
+        print("Hello, I am " + self.name + ". I teach " + self.subject + ".")
+
+student = Student("John", 1)
+teacher = Teacher("Jane", "Math")
+people = [student, teacher]
+
+for person in people:
+    person.greet()
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python method_overriding.py
+Hello, I am John. My roll number is 1.
+Hello, I am Jane. I teach Math.
+```
+
+In this example, we have a base class `Person` with a method `greet`. We have two subclasses `Student` and `Teacher` that override the `greet` method inherited from the `Person` class. The `Student` and `Teacher` classes provide specialized implementations of the `greet` method that are specific to each person. The `Student` class overrides the `greet` method to print "Hello, I am John. My roll number is 1.", while the `Teacher` class overrides the `greet` method to print "Hello, I am Jane. I teach Math.". When we call the `greet` method on the `student` and `teacher` objects, the overridden methods in the respective subclasses are invoked, printing "Hello, I am John. My roll number is 1." and "Hello, I am Jane. I teach Math.".
+
+## 
 
 ## Key Features and Considerations:
 
@@ -149,13 +236,14 @@ Method overriding is often confused with method overloading. However, they are t
    ```
 
    Output:
-   ```cmd title="command" showLineNumbers{1} {2-5}
-    C:\Users\username>python method_overriding.py
-    Generic animal sound
-    Bark!
-    Generic animal sound
-    Meow!
-    ```
+    
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python method_overriding.py
+Generic animal sound
+Bark!
+Generic animal sound
+Meow!
+```
 
 #### 5. **Consistency Across the Hierarchy:**
    - In a class hierarchy, if a method is overridden in a subclass, it should be consistently overridden in all its subclasses. This ensures a predictable and maintainable codebase.
