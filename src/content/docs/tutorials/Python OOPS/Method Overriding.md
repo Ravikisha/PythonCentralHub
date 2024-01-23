@@ -5,35 +5,6 @@ sidebar:
     order: 88
 ---
 
-<!-- ```python title="function_overloading.py" showLineNumbers{1} {1-3, 5-7, 9-11}
-def add(a, b):
-    print("Two arguments\n")
-    return a + b
-
-def add(a, b, c):
-    print("Three arguments\n")
-    return a + b + c
-
-def add(a, b, c, d):
-    print("Four arguments\n")
-    return a + b + c + d
-
-print(add(1, 2))
-print(add(1, 2, 3))
-print(add(1, 2, 3, 4))
-```
-
-Output:
-```cmd title="command" showLineNumbers{1} {2-5}
-C:\Users\username>python function_overloading.py
-Traceback (most recent call last):
-  File "function_overloading.py", line 11, in <module>
-    print(add(1, 2))
-TypeError: add() missing 2 required positional arguments: 'c' and 'd'
-```
-
-In the above example, we have defined three functions with the same name but with different parameters. The first function takes two arguments, the second function takes three arguments, and the third function takes four arguments. We have called the `add()` function with two, three, and four arguments. The output shows that the `add()` function is called based on the number of arguments passed to it. The `add()` function is called with two arguments, three arguments, and four arguments. In Python, function overloading is achieved by using default arguments and variable-length arguments. Let's see how to achieve function overloading in Python using default arguments and variable-length arguments. -->
-
 ## Method Overriding in Python: Redefining Behavior with Elegance
 Method overriding is a fundamental concept in object-oriented programming (OOP) that allows a subclass to provide a specific implementation of a method that is already defined in its superclass. This process enables the subclass to tailor the behavior of the inherited method to suit its own requirements. In Python, method overriding contributes to the flexibility and extensibility of code, promoting a clean and elegant approach to designing and extending classes.
 
@@ -381,4 +352,4 @@ Meow!
 
 ## Conclusion:
 
-Method overriding in Python is a powerful mechanism for tailoring the behavior of a subclass by redefining methods inherited from its superclass. It promotes code reuse, flexibility, and consistency across class hierarchies. Understanding and leveraging method overriding is essential for creating well-structured and extensible object-oriented code in Python.
+Method overriding in Python is a powerful mechanism for tailoring the behavior of a subclass by redefining methods inherited from its superclass. It promotes code reuse, flexibility, and consistency across class hierarchies. Understanding and leveraging method overriding is essential for creating well-structured and extensible object-oriented code in Python. For more information on method overriding, refer to the [official documentation](https://docs.python.org/3/tutorial/classes.html#inheritance). For more tutorials on object-oriented programming in Python, refer to the [official documentation](https://docs.python.org/3/tutorial/classes.html). For more tutorial, visit Python Central Hub.
