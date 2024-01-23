@@ -105,9 +105,17 @@ classDiagram
 
 In this example, the `Animal` class has a method `make_sound`. The `Dog` and `Cat` classes inherit from the `Animal` class and override the `make_sound` method. The `Dog` class overrides the `make_sound` method to print "Bark!", while the `Cat` class overrides the `make_sound` method to print "Meow!". When we call the `make_sound` method on the `dog` and `cat` objects, the overridden methods in the respective subclasses are invoked, printing "Bark!" and "Meow!".
 
+## Method Overriding vs. Method Overloading
+Method overriding is often confused with method overloading. However, they are two different concepts. Method overloading is the ability to define multiple methods with the same name but with different parameters. Method overriding is the ability of a subclass to change the implementation of a method provided by one of its ancestors. Overriding is a very important part of OOP since it is the feature that makes inheritance exploit its full power.
 
-
-
+| Method Overriding | Method Overloading |
+| :--- | :--- |
+| Method overriding is the ability of a subclass to change the implementation of a method provided by one of its ancestors. | Method overloading is the ability to define multiple methods with the same name but with different parameters. |
+| Method overriding is a very important part of OOP since it is the feature that makes inheritance exploit its full power. | Method overloading is not a very important part of OOP. |
+| Method overriding is achieved by redefining a method in the subclass with the same name and parameters as a method in its superclass. | Method overloading is achieved by defining multiple methods with the same name but with different parameters. |
+| Method overriding is also known as runtime polymorphism. | Method overloading is also known as compile-time polymorphism. |
+| Method overriding is a feature of inheritance. | Method overloading is not a feature of inheritance. |
+| Method overriding is a key element of polymorphism in OOP. | Method overloading is not a key element of polymorphism in OOP. |
 
 
 
@@ -115,13 +123,13 @@ In this example, the `Animal` class has a method `make_sound`. The `Dog` and `Ca
 
 ## Key Features and Considerations:
 
-### 1. **Method Signature:**
+#### 1. **Method Signature:**
    - The overriding method in the subclass must have the same method signature (name and parameters) as the method in the superclass.
 
-### 2. **Dynamic Binding:**
+#### 2. **Dynamic Binding:**
    - Method overriding in Python involves dynamic binding, where the decision about which method to call is made at runtime based on the type of the object.
 
-### 3. **Access to Superclass Method:**
+#### 3. **Access to Superclass Method:**
    - Inside the overridden method, you can access the method of the superclass using the `super()` function.
 
    ```python title="method_overriding.py" showLineNumbers{1} {1-4}
@@ -131,7 +139,7 @@ In this example, the `Animal` class has a method `make_sound`. The `Dog` and `Ca
            print("Bark!")
    ```
 
-### 4. **Polymorphism:**
+#### 4. **Polymorphism:**
    - Method overriding is a key element of polymorphism in OOP. It allows objects of different classes to be treated uniformly based on a common interface.
 
    ```python title="method_overrinding.py" showLineNumbers{1} {1-4}
@@ -140,56 +148,32 @@ In this example, the `Animal` class has a method `make_sound`. The `Dog` and `Ca
        animal.make_sound()  # Outputs: Bark!  Meow!
    ```
 
-### 5. **Consistency Across the Hierarchy:**
+   Output:
+   ```cmd title="command" showLineNumbers{1} {2-5}
+    C:\Users\username>python method_overriding.py
+    Generic animal sound
+    Bark!
+    Generic animal sound
+    Meow!
+    ```
+
+#### 5. **Consistency Across the Hierarchy:**
    - In a class hierarchy, if a method is overridden in a subclass, it should be consistently overridden in all its subclasses. This ensures a predictable and maintainable codebase.
 
 ## Use Cases and Best Practices:
 
-### 1. **Customizing Behavior:**
+#### 1. **Customizing Behavior:**
    - Method overriding is useful when you want to customize the behavior of a method inherited from a superclass to better suit the needs of a subclass.
 
-### 2. **Extending Functionality:**
+#### 2. **Extending Functionality:**
    - Subclasses can override methods to extend or enhance the functionality provided by the superclass.
 
-### 3. **Maintaining a Common Interface:**
+#### 3. **Maintaining a Common Interface:**
    - Method overriding contributes to maintaining a common interface across related classes, facilitating polymorphism.
 
-### 4. **Design Patterns:**
+#### 4. **Design Patterns:**
    - Method overriding is often employed in design patterns like the Template Method Pattern, where a superclass provides a template method that is overridden by its subclasses.
 
-## Example in Real-world Scenario:
-
-Consider a scenario where you have a base class `Shape` with a method `area`. You can have different subclasses like `Circle` and `Rectangle` that override the `area` method to calculate the area specific to each shape.
-
-```python title="method_overriding.py" {2-3, 9-10,17-18}
-class Shape:
-    def area(self):
-        pass
-
-class Circle(Shape):
-    def __init__(self, radius):
-        self.radius = radius
-
-    def area(self):
-        return 3.14 * self.radius * self.radius
-
-class Rectangle(Shape):
-    def __init__(self, length, width):
-        self.length = length
-        self.width = width
-
-    def area(self):
-        return self.length * self.width
-
-# Usage
-circle = Circle(5)
-rectangle = Rectangle(4, 6)
-
-print(circle.area())      # Outputs: 78.5
-print(rectangle.area())   # Outputs: 24
-```
-
-In this example, both `Circle` and `Rectangle` override the `area` method inherited from the `Shape` class, providing specialized implementations based on their respective geometries.
 
 ## Conclusion:
 
