@@ -4,3 +4,121 @@ description: Learn about Method Overriding in Python. Overriding is the ability 
 sidebar: 
     order: 88
 ---
+
+<!-- ```python title="function_overloading.py" showLineNumbers{1} {1-3, 5-7, 9-11}
+def add(a, b):
+    print("Two arguments\n")
+    return a + b
+
+def add(a, b, c):
+    print("Three arguments\n")
+    return a + b + c
+
+def add(a, b, c, d):
+    print("Four arguments\n")
+    return a + b + c + d
+
+print(add(1, 2))
+print(add(1, 2, 3))
+print(add(1, 2, 3, 4))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python function_overloading.py
+Traceback (most recent call last):
+  File "function_overloading.py", line 11, in <module>
+    print(add(1, 2))
+TypeError: add() missing 2 required positional arguments: 'c' and 'd'
+```
+
+In the above example, we have defined three functions with the same name but with different parameters. The first function takes two arguments, the second function takes three arguments, and the third function takes four arguments. We have called the `add()` function with two, three, and four arguments. The output shows that the `add()` function is called based on the number of arguments passed to it. The `add()` function is called with two arguments, three arguments, and four arguments. In Python, function overloading is achieved by using default arguments and variable-length arguments. Let's see how to achieve function overloading in Python using default arguments and variable-length arguments. -->
+
+## Method Overriding in Python: Redefining Behavior with Elegance
+Method overriding is a fundamental concept in object-oriented programming (OOP) that allows a subclass to provide a specific implementation of a method that is already defined in its superclass. This process enables the subclass to tailor the behavior of the inherited method to suit its own requirements. In Python, method overriding contributes to the flexibility and extensibility of code, promoting a clean and elegant approach to designing and extending classes.
+
+## The Basics of Method Overriding:
+Inheritance in Python allows a subclass to inherit attributes and methods from its superclass. Method overriding occurs when a method in the subclass has the same name and parameters as a method in its superclass. The overridden method in the subclass provides a specialized implementation, effectively replacing the method inherited from the superclass.
+
+
+## Key Features and Considerations:
+
+### 1. **Method Signature:**
+   - The overriding method in the subclass must have the same method signature (name and parameters) as the method in the superclass.
+
+### 2. **Dynamic Binding:**
+   - Method overriding in Python involves dynamic binding, where the decision about which method to call is made at runtime based on the type of the object.
+
+### 3. **Access to Superclass Method:**
+   - Inside the overridden method, you can access the method of the superclass using the `super()` function.
+
+   ```python title="method_overriding.py" showLineNumbers{1} {1-4}
+   class Dog(Animal):
+       def make_sound(self):
+           super().make_sound()  # Calls the make_sound method of the superclass
+           print("Bark!")
+   ```
+
+### 4. **Polymorphism:**
+   - Method overriding is a key element of polymorphism in OOP. It allows objects of different classes to be treated uniformly based on a common interface.
+
+   ```python title="method_overrinding.py" showLineNumbers{1} {1-4}
+   animals = [Dog(), Cat()]
+   for animal in animals:
+       animal.make_sound()  # Outputs: Bark!  Meow!
+   ```
+
+### 5. **Consistency Across the Hierarchy:**
+   - In a class hierarchy, if a method is overridden in a subclass, it should be consistently overridden in all its subclasses. This ensures a predictable and maintainable codebase.
+
+## Use Cases and Best Practices:
+
+### 1. **Customizing Behavior:**
+   - Method overriding is useful when you want to customize the behavior of a method inherited from a superclass to better suit the needs of a subclass.
+
+### 2. **Extending Functionality:**
+   - Subclasses can override methods to extend or enhance the functionality provided by the superclass.
+
+### 3. **Maintaining a Common Interface:**
+   - Method overriding contributes to maintaining a common interface across related classes, facilitating polymorphism.
+
+### 4. **Design Patterns:**
+   - Method overriding is often employed in design patterns like the Template Method Pattern, where a superclass provides a template method that is overridden by its subclasses.
+
+## Example in Real-world Scenario:
+
+Consider a scenario where you have a base class `Shape` with a method `area`. You can have different subclasses like `Circle` and `Rectangle` that override the `area` method to calculate the area specific to each shape.
+
+```python title="method_overriding.py" {2-3, 9-10,17-18}
+class Shape:
+    def area(self):
+        pass
+
+class Circle(Shape):
+    def __init__(self, radius):
+        self.radius = radius
+
+    def area(self):
+        return 3.14 * self.radius * self.radius
+
+class Rectangle(Shape):
+    def __init__(self, length, width):
+        self.length = length
+        self.width = width
+
+    def area(self):
+        return self.length * self.width
+
+# Usage
+circle = Circle(5)
+rectangle = Rectangle(4, 6)
+
+print(circle.area())      # Outputs: 78.5
+print(rectangle.area())   # Outputs: 24
+```
+
+In this example, both `Circle` and `Rectangle` override the `area` method inherited from the `Shape` class, providing specialized implementations based on their respective geometries.
+
+## Conclusion:
+
+Method overriding in Python is a powerful mechanism for tailoring the behavior of a subclass by redefining methods inherited from its superclass. It promotes code reuse, flexibility, and consistency across class hierarchies. Understanding and leveraging method overriding is essential for creating well-structured and extensible object-oriented code in Python.
