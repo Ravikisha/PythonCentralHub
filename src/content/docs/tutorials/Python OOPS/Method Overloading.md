@@ -1398,6 +1398,106 @@ C:\Users\username>python invert.py
 
 In the above example, we have defined the `__invert__()` method in the `Number` class. The `__invert__()` method returns the inverted value of the `num` attribute. We have created two `Number` objects named `n1` and `n2`. We have used the `~` operator with the `n1` and `n2` objects. The output shows that the `__invert__()` method is called when the `~` operator is used with an object.
 
+### __str__() Method VS __repr__() Method
+The `__str__()` and `__repr__()` methods are called when the `str()` and `repr()` functions are called on an object. Both methods are used to return the string representation of an object. The `__str__()` method is called when the `str()` function is called on an object. It is used to return the informal string representation of an object. The `__repr__()` method is called when the `repr()` function is called on an object. It is used to return the official string representation of an object. This both can use to print the object. Let's see how to use the `__str__()` and `__repr__()` methods in Python.
+
+```python title="str_repr.py" showLineNumbers{1} {5-6}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __str__(self):
+        print('Calling __str__ method')
+        return str(self.num)
+
+    def __repr__(self):
+        print('Calling __repr__ method')
+        return repr(self.num)
+
+n = Number(2)
+print(str(n))
+print(repr(n))
+print(n)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-11}
+C:\Users\username>python str_repr.py
+Calling __str__ method
+2
+Calling __repr__ method
+2
+Calling __str__ method
+2
+```
+
+In the above example, we have defined the `__str__()` and `__repr__()` methods in the `Number` class. The `__str__()` method returns the informal string representation of the `num` attribute. The `__repr__()` method returns the official string representation of the `num` attribute. We have created an object named `n` of the `Number` class. We have called the `str()` and `repr()` functions on the `n` object. We have also printed the `n` object. The output shows that the `__str__()` and `__repr__()` methods are called when the `str()` and `repr()` functions are called on an object. The output also shows that the `__str__()` method is called when an object is printed.
+
+:::note
+If there is no `__str__()` method in the class, then the `__repr__()` method is called when the `str()` function is called on an object. Let's see how to use the `__str__()` and `__repr__()` methods in Python.
+
+```python title="str_repr.py" showLineNumbers{1} {5-6}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __repr__(self):
+        print('Calling __repr__ method')
+        return repr(self.num)
+
+n = Number(2)
+print(str(n))
+print(repr(n))
+print(n)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-9}
+C:\Users\username>python str_repr.py
+Calling __repr__ method
+2
+Calling __repr__ method
+2
+Calling __repr__ method
+2
+```
+
+In this example, we have defined the `__repr__()` method in the `Number` class. The `__repr__()` method returns the official string representation of the `num` attribute. We have created an object named `n` of the `Number` class. We have called the `str()` and `repr()` functions on the `n` object. We have also printed the `n` object. The output shows that the `__repr__()` method is called when the `str()` function is called on an object. The output also shows that the `__repr__()` method is called when an object is printed.
+:::
+
+:::note
+If there is no `__repr__()` method in the class, then the `__str__()` method is called when the `repr()` function is called on an object. Let's see how to use the `__str__()` and `__repr__()` methods in Python.
+
+```python title="str_repr.py" showLineNumbers{1} {5-6}
+class Number:
+    def __init__(self, num):
+        self.num = num
+
+    def __str__(self):
+        print('Calling __str__ method')
+        return str(self.num)
+
+n = Number(2)
+print(str(n))
+print(repr(n))
+print(n)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-9}
+C:\Users\username>python str_repr.py
+Calling __str__ method
+2
+Calling __str__ method
+2
+Calling __str__ method
+2
+```
+
+In this example, we have defined the `__str__()` method in the `Number` class. The `__str__()` method returns the informal string representation of the `num` attribute. We have created an object named `n` of the `Number` class. We have called the `str()` and `repr()` functions on the `n` object. We have also printed the `n` object. The output shows that the `__str__()` method is called when the `repr()` function is called on an object. The output also shows that the `__str__()` method is called when an object is printed.
+
+:::
+
 ## Multiple Dispatch
 Multiple dispatch is a feature of some programming languages in which a function or method can be dynamically dispatched based on the run time (dynamic) type or, in the more general case, some other attribute of more than one of its arguments. This is a generalization of single dispatch polymorphism and subclass polymorphism, where a method call is dynamically dispatched based on the class of one object.
 
