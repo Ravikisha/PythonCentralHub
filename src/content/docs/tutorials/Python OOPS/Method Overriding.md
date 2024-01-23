@@ -206,7 +206,123 @@ Hello, I am Jane. I teach Math.
 
 In this example, we have a base class `Person` with a method `greet`. We have two subclasses `Student` and `Teacher` that override the `greet` method inherited from the `Person` class. The `Student` and `Teacher` classes provide specialized implementations of the `greet` method that are specific to each person. The `Student` class overrides the `greet` method to print "Hello, I am John. My roll number is 1.", while the `Teacher` class overrides the `greet` method to print "Hello, I am Jane. I teach Math.". When we call the `greet` method on the `student` and `teacher` objects, the overridden methods in the respective subclasses are invoked, printing "Hello, I am John. My roll number is 1." and "Hello, I am Jane. I teach Math.".
 
-## 
+## Base Overriding Methods:
+In Python, there are several methods that are commonly overridden in subclasses. These methods are known as base overriding methods. Let's look at some of the base overriding methods in Python:
+
+1. **`__init__`**
+2. **`__str__`**
+3. **`__repr__`**
+4. **`__del__`**
+
+#### 1. **`__init__`:**
+The `__init__` method is used to initialize an object. It is called when an object is created from a class and allows the class to initialize the attributes of the class.
+```python title="base_overriding_methods.py" showLineNumbers{1} {2-3, 6-8}
+class Person:
+    def __init__(self, name):
+        self.name = name
+class Student(Person):
+    def __init__(self, name, roll_number):
+        super().__init__(name)
+        self.roll_number = roll_number
+student = Student("John", 1)
+print(student.name)
+print(student.roll_number)
+```
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python base_overriding_methods.py
+John
+1
+```
+In this example, we have a base class `Person` with an `__init__` method. We have a subclass `Student` that overrides the `__init__` method inherited from the `Person` class. The `Student` class overrides the `__init__` method to initialize the `name` and `roll_number` attributes of the `Student` class. When we create a `Student` object, the `__init__` method in the `Student` class is invoked, initializing the `name` and `roll_number` attributes of the `Student` object.
+
+#### 2. **`__str__`:**
+The `__str__` method is used to return a string representation of an object. It is called when the `print()` or `str()` function is invoked on an object.
+```python title="base_overriding_methods.py" showLineNumbers{1} {4-5, 11-12}
+class Person:
+    def __init__(self, name):
+        self.name = name
+    def __str__(self):
+        return "Person: " + self.name
+
+class Student(Person):
+    def __init__(self, name, roll_number):
+        super().__init__(name)
+        self.roll_number = roll_number
+    def __str__(self):
+        return "Student: " + self.name + " " + str(self.roll_number)
+
+student = Student("John", 1)
+print(student)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python base_overriding_methods.py
+Student: John 1
+```
+
+In this example, we have a base class `Person` with a `__str__` method. We have a subclass `Student` that overrides the `__str__` method inherited from the `Person` class. The `Student` class overrides the `__str__` method to return a string representation of the `Student` object. When we call the `print()` function on the `student` object, the `__str__` method in the `Student` class is invoked, returning a string representation of the `Student` object.
+
+#### 3. **`__repr__`:**
+The `__repr__` method is used to return a string representation of an object. It is called when the `repr()` function is invoked on an object.
+```python title="base_overriding_methods.py" showLineNumbers{1} {4-5, 11-12}
+class Person:
+    def __init__(self, name):
+        self.name = name
+    def __repr__(self):
+        return "Person: " + self.name
+
+class Student(Person):
+    def __init__(self, name, roll_number):
+        super().__init__(name)
+        self.roll_number = roll_number
+    def __repr__(self):
+        return "Student: " + self.name + " " + str(self.roll_number)
+
+student = Student("John", 1)
+print(repr(student))
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python base_overriding_methods.py
+Student: John 1
+```
+
+In this example, we have a base class `Person` with a `__repr__` method. We have a subclass `Student` that overrides the `__repr__` method inherited from the `Person` class. The `Student` class overrides the `__repr__` method to return a string representation of the `Student` object. When we call the `repr()` function on the `student` object, the `__repr__` method in the `Student` class is invoked, returning a string representation of the `Student` object.
+
+#### 4. **`__del__`:**
+The `__del__` method is used to delete an object. It is called when an object is deleted using the `del` keyword.
+```python title="base_overriding_methods.py" showLineNumbers{1} {4-5, 11-12}
+class Person:
+    def __init__(self, name):
+        self.name = name
+    def __del__(self):
+        print("Deleting " + self.name)
+
+class Student(Person):
+    def __init__(self, name, roll_number):
+        super().__init__(name)
+        self.roll_number = roll_number
+    def __del__(self):
+        print("Deleting " + self.name + " " + str(self.roll_number))
+
+student = Student("John", 1)
+del student
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-5}
+C:\Users\username>python base_overriding_methods.py
+Deleting John 1
+```
+
+In this example, we have a base class `Person` with a `__del__` method. We have a subclass `Student` that overrides the `__del__` method inherited from the `Person` class. The `Student` class overrides the `__del__` method to print a message when the `Student` object is deleted. When we delete the `student` object using the `del` keyword, the `__del__` method in the `Student` class is invoked, printing a message.
+
+:::tip
+You can override any method in a subclass, but you should only override base overriding methods when it makes sense to do so. You can override any magic method in a subclass.
+:::
 
 ## Key Features and Considerations:
 
