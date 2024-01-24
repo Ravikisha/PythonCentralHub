@@ -5,33 +5,6 @@ sidebar:
     order: 89
 ---
 
-<!-- ```python title="method_overriding.py" {2-3, 6-7, 10-11}
-class Animal:
-    def make_sound(self):
-        print("Generic animal sound")
-
-class Dog(Animal):
-    def make_sound(self):
-        print("Bark!")
-
-class Cat(Animal):
-    def make_sound(self):
-        print("Meow!")
-
-dog = Dog()
-cat = Cat()
-dog.make_sound()
-cat.make_sound()
-```
-
-Output:
-```cmd title="command" showLineNumbers{1} {2-5}
-Bark!
-Meow!
-```
-
-In this example, we have a base class `Animal` with a method `make_sound`. We have two subclasses `Dog` and `Cat` that override the `make_sound` method inherited from the `Animal` class. The `Dog` and `Cat` classes provide specialized implementations of the `make_sound` method that are specific to each animal. The `Dog` class overrides the `make_sound` method to print "Bark!", while the `Cat` class overrides the `make_sound` method to print "Meow!". When we call the `make_sound` method on the `dog` and `cat` objects, the overridden methods in the respective subclasses are invoked, printing "Bark!" and "Meow!". -->
-
 ## Dynamic Binding and Typing in Python: Embracing Flexibility
 
 Python is a dynamically-typed and dynamically-bound language, and these characteristics contribute significantly to its flexibility and ease of use. Understanding dynamic binding and typing in Python is crucial for writing expressive and adaptable code. Let's explore these concepts and their impact on the Python programming language.
