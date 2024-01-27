@@ -287,6 +287,19 @@ export default defineConfig({
             crossorigin: "anonymous",
           },
         },
+        // <script src="https://www.gstatic.com/firebasejs/3.7.4/firebase.js"></script>
+        {
+          tag: "script",
+          attrs: {
+            src: "https://www.gstatic.com/firebasejs/8.2.9/firebase-app.js",
+          },
+        },
+        {
+          tag: "script",
+          attrs: {
+            src: "https://www.gstatic.com/firebasejs/8.2.9/firebase-analytics.js",
+          },
+        }
       ],
     }),
     tailwind({
