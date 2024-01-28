@@ -8,6 +8,9 @@ const gray = { 100: '#f6f6f6', 200: '#eeeeee', 300: '#c2c2c2', 400: '#8b8b8b', 5
 export default {
 	content: ['./src/**/*.{astro,html,js,jsx,md,mdx,svelte,ts,tsx,vue}'],
 	theme: {
+		fontFamily:{
+			"poppins": ['Poppins', 'sans-serif'],
+		},
 		extend: {
 			colors: { accent, gray },
 		},
