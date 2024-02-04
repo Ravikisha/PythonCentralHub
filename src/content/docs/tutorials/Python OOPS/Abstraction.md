@@ -104,6 +104,23 @@ In this example:
 - The abstract method `area` provides a high-level view of the functionality, allowing concrete subclasses to provide specific implementations while still allowing for default behavior.
 - The default implementation in the abstract method serves as a fallback, providing a consistent behavior across concrete subclasses.
 
+### Abstraction Diagram
+The following diagram illustrates the concept of abstraction in Python, where an abstract class `Shape` defines an abstract method `area`. The concrete class `Circle` inherits from the abstract class `Shape` and provides a specific implementation for the `area` method.
+
+```mermaid title="Abstraction" desc="Abstraction in Python"
+classDiagram
+    class Shape {
+        + area()
+    }
+    class Circle {
+        + area()
+    }
+    class Rectangle {
+        + area()
+    }
+    Shape <|-- Circle
+    Shape <|-- Rectangle
+```
 
 ### Concrete Classes in Python
 Concrete classes are derived from abstract classes and provide concrete implementations for the abstract methods. They can be instantiated and used to interact with the functionality provided by the abstract class.
