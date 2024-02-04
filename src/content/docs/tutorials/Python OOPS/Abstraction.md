@@ -78,7 +78,7 @@ TypeError: Can't instantiate abstract class Shape with abstract methods area
 ### 2. **Concrete Classes:**
    - Concrete classes are derived from abstract classes and provide concrete implementations for the abstract methods.
 
-```python
+```python title="abstraction.py" showLineNumbers{1} {5-6,13-14}
 class Circle(Shape):
     def __init__(self, radius):
         self.radius = radius
@@ -96,21 +96,42 @@ class Rectangle(Shape):
 
 circle = Circle(5)
 rectangle = Rectangle(4, 6)
+print(circle.area())
+print(rectangle.area())
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\user\Desktop>python abstraction.py
+78.5
+24
+```
+
+In this example, we define an abstract class `Shape` with an abstract method `area`. We then create two concrete classes `Circle` and `Rectangle` that inherit from the `Shape` class and provide concrete implementations for the `area` method. We create objects of type `Circle` and `Rectangle` and call the `area` method on each object, which invokes the respective implementations of the `area` method in the concrete classes. The output demonstrates the polymorphic behavior achieved through abstraction.
 
 
 ### 3. **Usage:**
    - Users can interact with abstract classes and their methods without needing to know the specific implementations in the concrete classes.
 
-   ```python
-   def print_area(shape):
-       print(f"Area: {shape.area()}")
+```python title="abstraction.py" showLineNumbers{1} {1-2, 7-8}
+def print_area(shape):
+    print(f"Area: {shape.area()}")
 
-   circle = Circle(5)
-   rectangle = Rectangle(4, 6)
+circle = Circle(5)
+rectangle = Rectangle(4, 6)
 
-   print_area(circle)      # Outputs: Area: 78.5
-   print_area(rectangle)   # Outputs: Area: 24
-    ```
+print_area(circle)      
+print_area(rectangle)
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-8}
+C:\Users\user\Desktop>python abstraction.py
+Area: 78.5
+Area: 24
+```
+
+In this example, we define a function `print_area` that takes an object of type `Shape` and calls the `area` method on the object. We then create objects of type `Circle` and `Rectangle` and pass them to the `print_area` function. The `print_area` function interacts with the abstract class `Shape` without needing to know the specific implementations in the concrete classes, demonstrating the power of abstraction.
 
 ## Advantages of Abstraction:
 
