@@ -410,6 +410,4 @@ student.set_age(30)    # Using a setter method to modify the age attribute
 
 ## Conclusion:
 
-Encapsulation in Python OOP encapsulates the essence of objects by bundling data and methods into a cohesive unit, shielding internal details from external code. Through the use of private
-
- attributes, public methods, and controlled access, encapsulation enhances security, modifiability, and code readability. Embrace the principles of encapsulation to create robust, maintainable, and secure Python code that stands the test of time in the dynamic landscape of software development.
+Encapsulation in Python OOP encapsulates the essence of objects by bundling data and methods into a cohesive unit, shielding internal details from external code. Through the use of private attributes, public methods, and controlled access, encapsulation enhances security, modifiability, and code readability. Embrace the principles of encapsulation to create robust, maintainable, and secure Python code that stands the test of time in the dynamic landscape of software development. For more information, refer to the official Python documentation on [Classes](https://docs.python.org/3/tutorial/classes.html). For more tutorials, visit the Python Central Hub.
