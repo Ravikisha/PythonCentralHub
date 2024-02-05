@@ -52,6 +52,35 @@ Encapsulation is a key pillar of object-oriented programming (OOP) that involves
 ### 4. **Information Hiding:**
    - Encapsulation enables information hiding, allowing developers to expose only the necessary details of an object's behavior while concealing the rest. This simplifies the usage of the class.
 
+## Access Modifiers in Python:
+In Python, access control is not enforced through access modifiers such as `public`, `private`, or `protected` as in some other programming languages. Instead, Python uses naming conventions and language features to achieve encapsulation. The following are the common naming conventions used to indicate the level of access to attributes and methods in Python:
+
+- **Public Attributes and Methods**
+- **Private Attributes and Methods**
+- **Protected Attributes and Methods**
+
+### Access Modifier Table:
+
+| Access Modifier | Naming Convention | Description | Example |
+| --- | --- | --- | --- |
+| Public | No leading underscore | Accessible from outside the class | `name` |
+| Private | Single leading underscore | Intended for internal use within the class | `_name` |
+| Protected | Single leading underscore | Conventional indication of protected attribute | `_name` |
+
+In Python, the use of access modifiers is based on conventions rather than strict enforcement by the language. The single leading underscore (`_`) is used to indicate that an attribute or method is intended for internal use within the class. This convention serves as a signal to other developers that the attribute or method is not part of the public interface of the class. It is important to note that direct access to private attributes and methods is still possible in Python, as the language does not enforce strict access control. However, the use of naming conventions and encapsulation principles helps promote secure and maintainable code.
+
+### Access Modifiers Access Levels:
+
+|Access Modifier| Class | Subclass | Module | Anywhere |
+|---|---|---|---|---|
+| Public | ✅ | ✅ | ✅ | ✅ |
+| Private | ✅ | ❌ | ❌ | ❌ |
+| Protected | ✅ | ✅ | ❌ | ❌ |
+
+
+### Public Attributes and Methods:
+
+
 ## Implementation of Encapsulation in Python:
 
 ### 1. **Private Attributes:**
@@ -112,19 +141,58 @@ In this example, the `name` and `salary` attributes of the `Employee` class are 
 
 ### 2. **Public Methods:**
    - Public methods, also known as accessor or getter methods, provide controlled access to private attributes. These methods allow external code to interact with the encapsulated data in a controlled manner.
+  
+#### Syntax:
+```python title="Syntax" showLineNumbers{1} {1-6}
+class ClassName:
+    def __init__(self, attribute1, attribute2):
+        self._attribute1 = attribute1      # Private attribute
+        self._attribute2 = attribute2      # Private attribute
 
-   ```python
-   class Student:
-       def __init__(self, name, age):
-           self._name = name      # Private attribute
-           self._age = age        # Private attribute
+    def get_attribute1(self):
+        return self._attribute1
 
-       def get_name(self):
-           return self._name
+    def get_attribute2(self):
+        return self._attribute2
 
-       def get_age(self):
-           return self._age
-   ```
+object = ClassName(value1, value2)
+print(object.get_attribute1())    # Accessing a private attribute through a public method
+```
+
+In this syntax:
+- The `get_attribute1` and `get_attribute2` methods are public methods that provide controlled access to the private attributes of the class.
+- These methods return the values of the private attributes, allowing external code to access the encapsulated data in a controlled manner.
+- The private attributes are accessed through the public methods, ensuring that the internal state of the object is not directly exposed.
+- The public methods provide a well-defined interface for interacting with the class, promoting modularity and information hiding.
+- The public methods can also include additional logic for validating or processing the encapsulated data.
+- The public methods can be used to modify the private attributes in a controlled manner, ensuring data integrity.
+
+#### Example:
+
+```python
+class Student:
+    def __init__(self, name, age):
+        self._name = name      # Private attribute
+        self._age = age        # Private attribute
+
+    def get_name(self):
+        return self._name
+
+    def get_age(self):
+        return self._age
+
+student = Student("Alice", 22)
+print(student.get_name())    # Accessing the name attribute through a public method
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\user\Desktop>python encapsulation.py
+Alice
+```
+
+In this example, the `name` and `age` attributes of the `Student` class are marked as private by prefixing them with a single leading underscore (`_`). The `get_name` and `get_age` methods are public methods that provide controlled access to the private attributes. These methods return the values of the private attributes, allowing external code to access the encapsulated data in a controlled manner. The private attributes are accessed through the public methods, ensuring that the internal state of the object is not directly exposed.
+
 
 ### 3. **Encapsulation Benefits:**
    - The encapsulated attributes are not directly accessible from outside the class, preventing unauthorized modifications and ensuring data integrity.
