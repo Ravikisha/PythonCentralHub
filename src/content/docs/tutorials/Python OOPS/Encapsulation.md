@@ -57,12 +57,58 @@ Encapsulation is a key pillar of object-oriented programming (OOP) that involves
 ### 1. **Private Attributes:**
    - In Python, encapsulation is often achieved by marking attributes as private using a single leading underscore (`_`). This convention indicates that the attribute is intended for internal use within the class.
 
-   ```python
-   class Student:
-       def __init__(self, name, age):
-           self._name = name      # Private attribute
-           self._age = age        # Private attribute
-   ```
+#### Syntax:
+```python title="Syntax" showLineNumbers{1} {1-4}
+class ClassName:
+    def __init__(self, attribute1, attribute2):
+        self._attribute1 = attribute1      # Private attribute
+        self._attribute2 = attribute2      # Private attribute
+```
+
+In the above syntax:
+- The `__init__` method is used to initialize the private attributes of the class.
+- The private attributes are accessed using the `self` keyword within the class.
+- The single leading underscore (`_`) indicates that the attributes are intended for internal use within the class.
+- The private attributes are not directly accessible from outside the class.
+
+#### Example:
+
+```python title="encapsulation.py" showLineNumbers{1} {1-4}
+class Student:
+    def __init__(self, name, age):
+        self._name = name      # Private attribute
+        self._age = age        # Private attribute
+
+student = Student("Alice", 22)
+print(student._name)    # Direct access to a private attribute
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\user\Desktop>python encapsulation.py
+Alice
+```
+
+In this example, the `name` and `age` attributes of the `Student` class are marked as private by prefixing them with a single leading underscore (`_`). However, Python does not enforce strict access control, and it is still possible to access private attributes directly from outside the class. This is known as "name mangling" and is a feature of the Python language. It is important to note that direct access to private attributes from outside the class is discouraged, as it bypasses the principles of encapsulation.
+
+Another Example:
+```python title="encapsulation.py" showLineNumbers{1} {1-4}
+class Employee:
+    def __init__(self, name, salary):
+        self._name = name      # Private attribute
+        self._salary = salary  # Private attribute
+
+employee = Employee("Bob", 50000)
+print(employee._salary)    # Direct access to a private attribute
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\user\Desktop>python encapsulation.py
+50000
+```
+
+In this example, the `name` and `salary` attributes of the `Employee` class are marked as private by prefixing them with a single leading underscore (`_`). However, Python does not enforce strict access control, and it is still possible to access private attributes directly from outside the class. This is known as "name mangling" and is a feature of the Python language. It is important to note that direct access to private attributes from outside the class is discouraged, as it bypasses the principles of encapsulation.
 
 ### 2. **Public Methods:**
    - Public methods, also known as accessor or getter methods, provide controlled access to private attributes. These methods allow external code to interact with the encapsulated data in a controlled manner.
