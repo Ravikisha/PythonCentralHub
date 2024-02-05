@@ -79,6 +79,124 @@ In Python, the use of access modifiers is based on conventions rather than stric
 
 
 ### Public Attributes and Methods:
+Public attributes and methods are accessible from outside the class. They form the public interface of the class, allowing external code to interact with the object. In Python, public attributes and methods do not have a leading underscore in their names. They are intended to be part of the public interface of the class and can be accessed from anywhere.
+
+#### Syntax:
+```python title="Syntax" showLineNumbers{1} {1-4, 6-7}
+class ClassName:
+    def __init__(self, attribute1, attribute2):
+        self.attribute1 = attribute1      # Public attribute
+        self.attribute2 = attribute2      # Public attribute
+
+    def public_method(self):
+        pass
+```
+
+In the above syntax:
+- The `attribute1` and `attribute2` are public attributes of the class, as they do
+- The `public_method` is a public method that forms part of the public interface of the class.
+- Public attributes and methods are accessible from outside the class, allowing external code to interact with the object.
+- Public attributes and methods do not have a leading underscore in their names.
+- Public attributes and methods are intended to be part of the public interface of the class and can be accessed from anywhere.
+- Public attributes and methods are used to expose the essential details of an object's behavior to external code.
+- Public attributes and methods can be used to modify the internal state of the object in a controlled manner, ensuring data integrity.
+
+#### Example:
+```python title="encapsulation.py" showLineNumbers{1} {1-4, 6-7, 9-10}
+class Student:
+    def __init__(self, name, age):
+        self.name = name      # Public attribute
+        self.age = age        # Public attribute
+
+    def get_name(self):
+        return self.name
+
+    def get_age(self):
+        return self.age
+
+student = Student("Alice", 22)
+print(student.name)    # Direct access to a public attribute
+print(student.get_age())    # Accessing a public attribute through a public method
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\user\Desktop>python encapsulation.py
+Alice
+22
+```
+
+In this example, the `name` and `age` attributes of the `Student` class are public attributes, as they do not have a leading underscore in their names. The `get_name` and `get_age` methods are public methods that form part of the public interface of the class. These methods provide controlled access to the public attributes, allowing external code to interact with the encapsulated data in a controlled manner. The public attributes and methods are accessible from outside the class, enabling external code to access the essential details of the object's behavior.
+
+### Private Attributes and Methods:
+Private attributes and methods are intended for internal use within the class. They are not directly accessible from outside the class, promoting data hiding and information hiding. In Python, private attributes and methods are indicated by a single leading underscore (`_`) in their names. This convention signals that the attributes and methods are intended for internal use within the class and should not be accessed directly from outside the class.
+
+#### Syntax:
+```python title="Syntax" showLineNumbers{1} {1-4, 6-7}
+class ClassName:
+    def __init__(self, attribute1, attribute2):
+        self.__attribute1 = attribute1      # Private attribute
+        self.__attribute2 = attribute2      # Private attribute
+
+    def __private_method(self):
+        pass
+```
+
+In the above syntax:
+- The `__attribute1` and `__attribute2` are private attributes of the class, as they have a double leading underscore (`__`) in their names.
+- The `__private_method` is a private method that is intended for internal use within the class.
+- Private attributes and methods are not directly accessible from outside the class, promoting data hiding and information hiding.
+- Private attributes and methods are indicated by a double leading underscore (`__`) in their names, signaling that they are intended for internal use within the class.
+- Private attributes and methods are used to encapsulate the internal state and behavior of the object, preventing unauthorized access and modifications.
+- Private attributes and methods can include additional logic for processing the encapsulated data, ensuring data integrity and security.
+
+#### Example:
+```python title="encapsulation.py" showLineNumbers{1} {1-4, 6-7}
+class Employee:
+    def __init__(self, name, salary):
+        self.__name = name      # Private attribute
+        self.__salary = salary  # Private attribute
+
+    def __calculate_bonus(self):
+        pass
+
+employee = Employee("Bob", 50000)
+print(employee.__name)    # Direct access to a private attribute
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\user\Desktop>python encapsulation.py
+Traceback (most recent call last):
+  File "encapsulation.py", line 7, in <module>
+    print(employee.__name)    # Direct access to a private attribute
+AttributeError: 'Employee' object has no attribute '__name'
+```
+
+In this example, the `name` and `salary` attributes of the `Employee` class are private attributes, as they have a double leading underscore (`__`) in their names. The `__calculate_bonus` method is a private method that is intended for internal use within the class. The private attributes and methods are not directly accessible from outside the class, preventing unauthorized access and modifications. Attempting to access the private attributes directly from outside the class results in an `AttributeError`, indicating that the attributes are not directly accessible.
+
+### Protected Attributes and Methods:
+Protected attributes and methods are indicated by a single leading underscore (`_`) in their names. This convention is a conventional indication of a protected attribute or method, although it does not enforce strict access control. Protected attributes and methods are intended for internal use within the class and its subclasses, promoting a limited level of access to the encapsulated data.
+
+#### Syntax:
+```python title="Syntax" showLineNumbers{1} {1-4, 6-7}
+class ClassName:
+    def __init__(self, attribute1, attribute2):
+        self._attribute1 = attribute1      # Protected attribute
+        self._attribute2 = attribute2      # Protected attribute
+
+    def _protected_method(self):
+        pass
+```
+
+In the above syntax:
+- The `_attribute1` and `_attribute2` are protected attributes of the class, as they have a single leading underscore (`_`) in their names.
+- The `_protected_method` is a protected method that is intended for internal use within the class and its subclasses.
+- Protected attributes and methods are not directly accessible from outside the class, promoting a limited level of access to the encapsulated data.
+- Protected attributes and methods are indicated by a single leading underscore (`_`) in their names, serving as a conventional indication of a protected attribute or method.
+- Protected attributes and methods are intended for internal use within the class and its subclasses, promoting a limited level of access to the encapsulated data.
+
+
 
 
 ## Implementation of Encapsulation in Python:
