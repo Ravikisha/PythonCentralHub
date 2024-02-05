@@ -196,8 +196,29 @@ In the above syntax:
 - Protected attributes and methods are indicated by a single leading underscore (`_`) in their names, serving as a conventional indication of a protected attribute or method.
 - Protected attributes and methods are intended for internal use within the class and its subclasses, promoting a limited level of access to the encapsulated data.
 
+#### Example:
+```python title="encapsulation.py" showLineNumbers{1} {1-4, 6-7}
+class Person:
+    def __init__(self, name, age):
+        self._name = name      # Protected attribute
+        self._age = age        # Protected attribute
 
+    def _display_info(self):
+        print(f"Name: {self._name}, Age: {self._age}")
 
+person = Person("Alice", 22)
+print(person._name)    # Direct access to a protected attribute
+print(person._display_info())    # Accessing a protected method through a public method
+```
+
+Output:
+```cmd title="command" showLineNumbers{1} {2-6}
+C:\Users\user\Desktop>python encapsulation.py
+Alice
+Name: Alice, Age: 22
+```
+
+In this example, the `name` and `age` attributes of the `Person` class are protected attributes, as they have a single leading underscore (`_`) in their names. The `_display_info` method is a protected method that is intended for internal use within the class and its subclasses. The protected attributes and methods are not directly accessible from outside the class, promoting a limited level of access to the encapsulated data. Attempting to access the protected attributes directly from outside the class is possible, but it is discouraged, as it bypasses the principles of encapsulation.
 
 ## Implementation of Encapsulation in Python:
 
@@ -208,8 +229,8 @@ In the above syntax:
 ```python title="Syntax" showLineNumbers{1} {1-4}
 class ClassName:
     def __init__(self, attribute1, attribute2):
-        self._attribute1 = attribute1      # Private attribute
-        self._attribute2 = attribute2      # Private attribute
+        self.__attribute1 = attribute1      # Private attribute
+        self.__attribute2 = attribute2      # Private attribute
 ```
 
 In the above syntax:
@@ -223,39 +244,45 @@ In the above syntax:
 ```python title="encapsulation.py" showLineNumbers{1} {1-4}
 class Student:
     def __init__(self, name, age):
-        self._name = name      # Private attribute
-        self._age = age        # Private attribute
+        self.__name = name      # Private attribute
+        self.__age = age        # Private attribute
 
 student = Student("Alice", 22)
-print(student._name)    # Direct access to a private attribute
+print(student.__name)    # Direct access to a private attribute
 ```
 
 Output:
 ```cmd title="command" showLineNumbers{1} {2-6}
 C:\Users\user\Desktop>python encapsulation.py
-Alice
+Traceback (most recent call last):
+  File "encapsulation.py", line 5, in <module>
+    print(student.__name)    # Direct access to a private attribute
+AttributeError: 'Student' object has no attribute '__name'
 ```
 
-In this example, the `name` and `age` attributes of the `Student` class are marked as private by prefixing them with a single leading underscore (`_`). However, Python does not enforce strict access control, and it is still possible to access private attributes directly from outside the class. This is known as "name mangling" and is a feature of the Python language. It is important to note that direct access to private attributes from outside the class is discouraged, as it bypasses the principles of encapsulation.
+In this example, the `name` and `age` attributes of the `Student` class are marked as private by prefixing them with a double leading underscore (`__`). Attempting to access the private attributes directly from outside the class results in an `AttributeError`, indicating that the attributes are not directly accessible. This demonstrates the principle of data hiding and information hiding, as the internal state of the object is not directly exposed.
 
 Another Example:
-```python title="encapsulation.py" showLineNumbers{1} {1-4}
+```python title="encapsulation.py" showLineNumbers{1} {1-4, 6-7}
 class Employee:
     def __init__(self, name, salary):
-        self._name = name      # Private attribute
-        self._salary = salary  # Private attribute
+        self.__name = name      # Private attribute
+        self.__salary = salary  # Private attribute
+
+        def display_info(self):
+            print(f"Name: {self.__name}, Salary: {self.__salary}")
 
 employee = Employee("Bob", 50000)
-print(employee._salary)    # Direct access to a private attribute
+print(employee.display_info())    # Accessing a private method through a public method
 ```
 
 Output:
 ```cmd title="command" showLineNumbers{1} {2-6}
 C:\Users\user\Desktop>python encapsulation.py
-50000
+Name: Bob, Salary: 50000
 ```
 
-In this example, the `name` and `salary` attributes of the `Employee` class are marked as private by prefixing them with a single leading underscore (`_`). However, Python does not enforce strict access control, and it is still possible to access private attributes directly from outside the class. This is known as "name mangling" and is a feature of the Python language. It is important to note that direct access to private attributes from outside the class is discouraged, as it bypasses the principles of encapsulation.
+In this example, the `name` and `salary` attributes of the `Employee` class are marked as private by prefixing them with a double leading underscore (`__`). The `display_info` method is a private method that is intended for internal use within the class. The private attributes and methods are not directly accessible from outside the class, promoting data hiding and information hiding. The private method is accessed through a public method, demonstrating controlled access to the encapsulated data.
 
 ### 2. **Public Methods:**
    - Public methods, also known as accessor or getter methods, provide controlled access to private attributes. These methods allow external code to interact with the encapsulated data in a controlled manner.
@@ -264,8 +291,8 @@ In this example, the `name` and `salary` attributes of the `Employee` class are 
 ```python title="Syntax" showLineNumbers{1} {1-6}
 class ClassName:
     def __init__(self, attribute1, attribute2):
-        self._attribute1 = attribute1      # Private attribute
-        self._attribute2 = attribute2      # Private attribute
+        self.__attribute1 = attribute1      # Private attribute
+        self.__attribute2 = attribute2      # Private attribute
 
     def get_attribute1(self):
         return self._attribute1
@@ -290,14 +317,14 @@ In this syntax:
 ```python
 class Student:
     def __init__(self, name, age):
-        self._name = name      # Private attribute
-        self._age = age        # Private attribute
+        self.__name = name      # Private attribute
+        self.__age = age        # Private attribute
 
     def get_name(self):
-        return self._name
+        return self.__name
 
     def get_age(self):
-        return self._age
+        return self.__age
 
 student = Student("Alice", 22)
 print(student.get_name())    # Accessing the name attribute through a public method
@@ -309,43 +336,49 @@ C:\Users\user\Desktop>python encapsulation.py
 Alice
 ```
 
-In this example, the `name` and `age` attributes of the `Student` class are marked as private by prefixing them with a single leading underscore (`_`). The `get_name` and `get_age` methods are public methods that provide controlled access to the private attributes. These methods return the values of the private attributes, allowing external code to access the encapsulated data in a controlled manner. The private attributes are accessed through the public methods, ensuring that the internal state of the object is not directly exposed.
-
+In this example, the `name` and `age` attributes of the `Student` class are marked as private by prefixing them with a double leading underscore (`__`). The `get_name` and `get_age` methods are public methods that provide controlled access to the private attributes. These methods return the values of the private attributes, allowing external code to access the encapsulated data in a controlled manner. The private attributes are accessed through the public methods, ensuring that the internal state of the object is not directly exposed. This demonstrates the principle of information hiding, as the essential details of the object's behavior are exposed through well-defined interfaces.
 
 ### 3. **Encapsulation Benefits:**
    - The encapsulated attributes are not directly accessible from outside the class, preventing unauthorized modifications and ensuring data integrity.
 
-   ```python
-   student = Student("Alice", 22)
-   print(student.get_name())   # Accessing the name attribute through a public method
-   ```
+```python title="encapsulation.py" showLineNumbers{1} {1-2}
+student = Student("Alice", 22)
+print(student.get_name())   # Accessing the name attribute through a public method
+```
 
 ### 4. **Setter Methods:**
    - To allow controlled modification of private attributes, setter methods can be implemented. These methods validate and set new values for the encapsulated data.
 
-   ```python
-   class Student:
-       def __init__(self, name, age):
-           self._name = name      # Private attribute
-           self._age = age        # Private attribute
+```python title="encapsulation.py" showLineNumbers{1} {1-4, 6-10, 12-16}
+class Student:
+    def __init__(self, name, age):
+        self._name = name      # Private attribute
+        self._age = age        # Private attribute
 
-       def set_name(self, new_name):
-           if isinstance(new_name, str):
-               self._name = new_name
-           else:
-               raise ValueError("Name must be a string.")
+    def set_name(self, new_name):
+        if isinstance(new_name, str):
+            self._name = new_name
+        else:
+            raise ValueError("Name must be a string.")
 
-       def set_age(self, new_age):
-           if isinstance(new_age, int) and new_age > 0:
-               self._age = new_age
-           else:
-               raise ValueError("Age must be a positive integer.")
-   ```
+    def set_age(self, new_age):
+        if isinstance(new_age, int) and new_age > 0:
+            self._age = new_age
+        else:
+            raise ValueError("Age must be a positive integer.")
 
-   ```python
-   student = Student("Bob", 25)
-   student.set_age(30)    # Using a setter method to modify the age attribute
-   ```
+student = Student("Alice", 22)
+student.set_name("Bob")    # Using a setter method to modify the name attribute
+student.set_age(25)    # Using a setter method to modify the age attribute
+```
+
+In this example, the `name` and `age` attributes of the `Student` class are marked as private by prefixing them with a single leading underscore (`_`). The `set_name` and `set_age` methods are setter methods that provide controlled modification of the private attributes. These methods validate the new values and set them for the encapsulated data, ensuring data integrity and security. The setter methods allow controlled modification of the private attributes, promoting data integrity and information hiding.
+
+
+```python title="encapsulation.py" showLineNumbers{1} {1-2}
+student = Student("Bob", 25)
+student.set_age(30)    # Using a setter method to modify the age attribute
+```
 
 ## Advantages of Encapsulation:
 
