@@ -111,3 +111,6 @@ TypeError: Can't instantiate abstract class Shape with abstract methods area, pe
 In this example, we have created an object of the `Shape` interface and tried to call the `area` and `perimeter` methods. Since the `Shape` interface is an abstract class, we cannot create an object of the `Shape` interface, and we cannot call the `area` and `perimeter` methods using the object of the `Shape` interface.
 
 :::
+
+## Conclusion
+In Python, an interface is a collection of abstract methods. Python does not have a native support for interfaces, but we can use Abstract Base Classes to create interfaces in Python. An interface is like a contract. It defines the syntax that any class must follow to implement that interface. An interface is like a blueprint for a class. For more information, you can refer to the [official documentation](https://docs.python.org/3/library/abc.html) of the `abc` module. For more tutorials, you can visit the Python Central Hub.
