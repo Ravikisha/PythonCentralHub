@@ -5,7 +5,7 @@ sidebar:
     order: 92
 ---
 
-## Interfaces in Python
+## Interfaces in Python : Implementing Abstract Base Classes
 In Python, an interface is a collection of abstract methods. Python does not have a native support for interfaces, but we can use Abstract Base Classes to create interfaces in Python.
 
 An interface is like a contract. It defines the syntax that any class must follow to implement that interface. An interface is like a blueprint for a class. If a class follows the blueprint, it is guaranteed to provide the necessary functionality.
@@ -34,7 +34,7 @@ In the above example, we have created an interface called `Shape`. The `Shape` i
 
 Here is an example of a class that implements the `Shape` interface:
 
-```python title="rectangle.py" showLineNumbers{1} {1, 3-6}
+```python title="rectangle.py" showLineNumbers{1} {1, 3-6, 8-9, 11-12}
 from interfaces import Shape
 
 class Rectangle(Shape):
@@ -53,7 +53,7 @@ In the above example, we have created a class called `Rectangle` that implements
 
 Here is an example of a class that does not implement the `Shape` interface:
 
-```python title="circle.py" showLineNumbers{1} {1, 3-6}
+```python title="circle.py" showLineNumbers{1} {1-3, 5-6, 8-9}
 class Circle:
     def __init__(self, radius):
         self.radius = radius
@@ -66,6 +66,28 @@ class Circle:
 ```
 
 In the above example, we have created a class called `Circle` that does not implement the `Shape` interface. The `Circle` class provides the implementation for the `area` and `perimeter` methods, but it does not implement the `Shape` interface.
+
+```mermaid title="Interfaces in Python" desc="Interfaces in Python"
+classDiagram
+    class Shape {
+        + area()
+        + perimeter()
+    }
+    class Rectangle {
+        - width
+        - height
+        + area()
+        + perimeter()
+    }
+    class Circle {
+        - radius
+        + area()
+        + perimeter()
+    }
+    Shape <|-- Rectangle
+```
+
+In this example, we have created an interface called `Shape` with two abstract methods `area` and `perimeter`. We have created a class called `Rectangle` that implements the `Shape` interface. We have also created a class called `Circle` that does not implement the `Shape` interface.
 
 ### Calling Interface Methods
 You can call the interface methods using the object of the class that implements the interface. Here is an example:
