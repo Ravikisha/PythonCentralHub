@@ -54,20 +54,35 @@ Here are the top 10 Python courses that cover a wide range of topics from beginn
    - **Description**: Codecademy's interactive Python course covers basic Python syntax, data types, control flow, functions, and modules.
    - **Link**: [Learn Python](https://www.codecademy.com/learn/learn-python)
 
-6. **Pluralsight: Python Fundamentals**
-   - Level: Beginner to Intermediate
-   - Description: This course covers Python basics, including data types, control flow, functions, and exception handling. It's suitable for beginners and those looking to solidify their Python skills.
+### 7. Pluralsight: Python Fundamentals
+![Python Fundamentals](/src/assets/pluralsightpython.png)
+   - **Offered by**: Pluralsight
+   - **Level**: Beginner to Intermediate
+   - **Description**: This course covers Python basics, including data types, control flow, functions, and exception handling. It's suitable for beginners and those looking to solidify their Python skills.
+   - **Link**: [Python Fundamentals](https://www.pluralsight.com/courses/python-fundamentals)
 
-7. **LinkedIn Learning: Python Essential Training**
-   - Level: Beginner to Intermediate
-   - Description: This comprehensive course covers Python programming fundamentals, including variables, data types, control flow, functions, and more.
+### 8. LinkedIn Learning: Python Essential Training
+![Python Essential Training](/src/assets/linkedinpython.png)
+   - **Offered by**: LinkedIn Learning
+   - **Level**: Beginner to Intermediate
+   - **Description**: This comprehensive course covers Python programming fundamentals, including variables, data types, control flow, functions, and more.
+   - **Link**: [Python Essential Training](https://www.linkedin.com/learning/python-essential-training)
 
-8. **DataCamp: Introduction to Python**
-   - Level: Beginner
-   - Description: This course introduces Python programming basics, including variables, data types, and control flow. It's suitable for beginners with no prior programming experience.
+### 9. DataCamp: Introduction to Python
+![Introduction to Python](/src/assets/datacamppython.png)
+   - **Offered by**: DataCamp
+   - **Level**: Beginner
+   - **Description**: This course introduces Python programming basics, including variables, data types, and control flow. It's suitable for beginners with no prior programming experience.
+   - **Link**: [Introduction to Python](https://learn.datacamp.com/courses/intro-to-python-for-data-science)
 
-9.  **Treehouse: Python Track**
-    - Level: Beginner to Intermediate
-    - Description: Treehouse offers a Python track covering Python basics, web development with Django, data analysis with Pandas, and more. It's suitable for beginners and intermediate learners.
+### 10. Treehouse: Python Track
+![Python Track](/src/assets/treehousepython.png)
+  - **Offered by**: Treehouse
+  - **Level**: Beginner to Intermediate
+  - **Description**: Treehouse offers a Python track covering Python basics, web development with Django, data analysis with Pandas, and more. It's suitable for beginners and intermediate learners.
+  - **Link**: [Python Track](https://teamtreehouse.com/tracks/learn-python)
 
-Choose the course that best suits your learning goals and level of expertise in Python.
+## Conclusion
+
+These are some of the best Python courses available online. Whether you're a beginner or an intermediate learner, there's a course for you. Choose the one that best fits your learning style and level of expertise. Happy learning!
+
