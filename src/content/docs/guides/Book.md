@@ -150,7 +150,7 @@ Explore a collection of recipes and practical solutions to common Python challen
   <a href="https://www.amazon.in/dp/1491939362/">
     <img src="https://img.shields.io/badge/Amazon-Link-orange?style=for-the-badge&logo=amazon" alt="Amazon Link">
   </a>
-  <a href="https://github.com/Ravikisha/PythonCentralHub/blob/main/books/think=python-2nd.pdf">
+  <a href="https://github.com/Ravikisha/PythonCentralHub/blob/main/books/think-python-2nd.pdf">
     <img src="https://img.shields.io/badge/PDF-Download-blue?style=for-the-badge&logo=adobe-acrobat-reader" alt="PDF Download">
   </a>
 </div>
