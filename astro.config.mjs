@@ -70,10 +70,10 @@ export default defineConfig({
       favicon: "./src/assets/favicon.ico",
       social: {
         github: "https://github.com/Ravikisha/PythonCentralHub.git",
-        instagram: "https://www.instagram.com/ravikishan.69",
+        instagram: "https://www.instagram.com/ravikishan.404",
         "x.com": "https://twitter.com/@Ravikishan_",
         email: "mailto:ravikishan63392@gmail.com",
-        linkedin: "https://www.linkedin.com/in/ravi-kishan-62ab51221/",
+        linkedin: "https://www.linkedin.com/in/ravikisha/",
       },
       sidebar: [
         {
