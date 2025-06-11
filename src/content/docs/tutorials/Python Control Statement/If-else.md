@@ -347,7 +347,7 @@ x is greater than 5
 In the above example, we have used the `ternary operator` statement to check if the value of the variable `x` is greater than `5`. Since the value of `x` is `10`, the condition is `True`, and the code inside the `if` statement is executed. The string `"x is greater than 5"` is printed to the console.
 
 :::tip
-For more information on the ternary operator, see the [Python documentation](https://docs.python.org/3/reference/expressions.html#conditional-expressions). Or see the [Python Ternary Operator](https://www.pythoncentralhub.tech/tutorials/ternary-operator) tutorial on Python Central Hub.
+For more information on the ternary operator, see the [Python documentation](https://docs.python.org/3/reference/expressions.html#conditional-expressions). Or see the [Python Ternary Operator](https://www.pythoncentralhub.live/tutorials/ternary-operator) tutorial on Python Central Hub.
 :::
 
 ## Conclusion

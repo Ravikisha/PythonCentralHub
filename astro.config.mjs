@@ -5,7 +5,7 @@ import robotsTxt from "astro-robots-txt";
 import remakeMermaid from "./lib/mermaid/remake.ts";
 import markdownIntegration from "@astropub/md";
 
-const site = "https://pythoncentralhub.tech";
+const site = "https://pythoncentralhub.live";
 
 /** @type {import('rehype-pretty-code').Options} */
 import tailwind from "@astrojs/tailwind";
