@@ -64,9 +64,6 @@ export default defineConfig({
       components: {
         Footer: "./src/components/Footer.astro",
       },
-      // editLink: {
-      //   baseUrl: "https://github.com/Ravikisha/PythonCentralHub/edit/main/",
-      // },
       favicon: "./src/assets/favicon.ico",
       social: {
         github: "https://github.com/Ravikisha/PythonCentralHub.git",
