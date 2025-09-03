@@ -11,47 +11,47 @@ Certainly! Here's a list of 150 Python project ideas across different skill leve
 7.  [x] Rock, Paper, Scissors Game - Done
 8.  [x] Dice Rolling Simulator - Done
 9.  [x] Currency Converter - Done
-10. [x] Simple Chatbot
-11. [x] Web Page Content Downloader
-12. [x] Basic Alarm Clock
-13. [x] Hangman Game
-14. [x] ASCII Art Generator
-15. [x] URL Shortener
-16. [x] Random Password Generator
-17. [x] Basic File Explorer
-18. [x] Number Guessing Game with AI
-19. [x] Calculator with GUI (Tkinter)
-20. [x] Basic Email Sender
-21. [x] Simple Paint Program
-22. [x] Basic Quiz Game
-23. [x] Text-based Adventure Game
-24. [x] RSS Feed Reader
-25. [x] Morse Code Translator
-26. [x] Automated File Mover
-27. [x] Currency Exchange Rate Calculator GUI
-28. [x] Basic Music Player
-29. [x] Simple Reminder App
-30. [ ] Web Page Scraper with Notifications
-31. [x] Simple Stopwatch
-32. [ ] Text-based Blackjack Game
-33. [x] Word Counter
-34. [ ] Personal Diary Application
-35. [ ] Basic Web Crawler
-36. [ ] Basic Drawing App (Pygame)
-37. [ ] Tic-Tac-Toe Game
-38. [ ] Hangman Game with GUI (Tkinter)
-39. [x] Password Strength Checker
-40. [x] Basic Web Server (Flask)
-41. [ ] URL Status Checker
-42. [ ] Simple Timer App
-43. [ ] Basic Text Editor
-44. [x] Reverse a String
-45. [x] Fibonacci Sequence Generator
-46. [x] Binary to Decimal Converter
-47. [ ] Simple Blog System
-48. [ ] Movie Recommendation System (Basic)
-49. [ ] Basic Calendar App
-50. [ ] JSON Data Validator
+10. [x] Simple Chatbot - Done
+11. [x] Web Page Content Downloader - Done
+12. [x] Basic Alarm Clock - Done
+13. [x] Hangman Game - Done
+14. [x] ASCII Art Generator - Done
+15. [x] URL Shortener - Done
+16. [x] Random Password Generator - Done
+17. [x] Basic File Explorer - Done
+18. [x] Number Guessing Game with AI - Done
+19. [x] Calculator with GUI (Tkinter) - Done
+20. [x] Basic Email Sender - Done
+21. [x] Simple Paint Program - Done
+22. [x] Basic Quiz Game - Done
+23. [x] Text-based Adventure Game - Done
+24. [x] RSS Feed Reader - Done
+25. [x] Morse Code Translator - Done
+26. [x] Automated File Mover - Done
+27. [x] Currency Exchange Rate Calculator GUI - Done
+28. [x] Basic Music Player - Done
+29. [x] Simple Reminder App - Done
+30. [x] Web Page Scraper with Notifications - Done
+31. [x] Simple Stopwatch - Done
+32. [x] Text-based Blackjack Game - Done
+33. [x] Word Counter - Done
+34. [x] Personal Diary Application - Done
+35. [x] Basic Web Crawler - Done
+36. [x] Basic Drawing App (Pygame) - Done
+37. [x] Tic-Tac-Toe Game - Done
+38. [x] Hangman Game - Done
+39. [x] Password Strength Checker - Done
+40. [x] Basic Web Server (Flask) - Done
+41. [x] URL Status Checker - Done
+42. 34. Simple Timer App - Create a timer with countdown and stopwatch features - Done
+43. 35. Basic Text Editor - Create a text editor with basic editing features - Done
+44. [x] Reverse a String - Done
+45. [x] Fibonacci Sequence Generator - Done
+46. [x] Binary to Decimal Converter - Done
+47. [x] Simple Blog System - Done
+48. [x] Movie Recommendation System (Basic) - Done
+49. [x] Basic Calendar App - Done
+50. [x] JSON Data Validator - Done
 ### Intermediate (51-100):
 
 51. [ ] Web Scraping with BeautifulSoup
