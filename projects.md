@@ -43,8 +43,8 @@ Certainly! Here's a list of 150 Python project ideas across different skill leve
 39. [x] Password Strength Checker - Done
 40. [x] Basic Web Server (Flask) - Done
 41. [x] URL Status Checker - Done
-42. 34. Simple Timer App - Create a timer with countdown and stopwatch features - Done
-43. 35. Basic Text Editor - Create a text editor with basic editing features - Done
+42. [x] Simple Timer App - Create a timer with countdown and stopwatch features - Done
+43. [x] Basic Text Editor - Create a text editor with basic editing features - Done
 44. [x] Reverse a String - Done
 45. [x] Fibonacci Sequence Generator - Done
 46. [x] Binary to Decimal Converter - Done
@@ -54,76 +54,81 @@ Certainly! Here's a list of 150 Python project ideas across different skill leve
 50. [x] JSON Data Validator - Done
 ### Intermediate (51-100):
 
-51. [ ] Web Scraping with BeautifulSoup
-52. [ ] Weather App with GUI (Tkinter)
-53. [ ] Data Visualization with Matplotlib
-54. [ ] Personal Portfolio Website
-55. [ ] Simple Flask REST API
-56. [ ] File Encryption/Decryption
-57. [ ] Morse Code Audio Player
-58. [ ] Chat Application (Socket Programming)
-59. [ ] Hangman Game with Database
-60. [ ] Automated Email Sender
-61. [ ] Finance Tracker
-62. [ ] URL Shortener with Analytics
-63. [ ] Interactive Map with Folium
-64. [ ] Reddit Bot
-65. [ ] Social Media Dashboard
-66. [ ] Chatbot with NLP (Natural Language Processing)
-67. [ ] Basic OCR (Optical Character Recognition)
-68. [ ] Image Slider App (PyQt)
-69. [ ] Speech-to-Text Converter
-70. [ ] QR Code Generator/Scanner
-71. [ ] Chat Application with GUI (Tkinter)
-72. [ ] Currency Exchange Rate Tracker
-73. [ ] File Compression/Decompression
-74. [ ] RSS Feed Aggregator
-75. [ ] Basic Music Streaming App
-76. [ ] Password Manager
-77. [ ] Basic Photo Editor (PIL)
-78. [ ] Real-time Currency Converter (API)
-79. [ ] Twitter Bot with Tweepy
-80. [ ] Basic Content Management System (CMS)
-81. [ ] Password Generator with Strength Meter
-82. [ ] News Aggregator
-83. [ ] File Synchronization Tool
-84. [ ] Basic Chatroom App
-85. [ ] Anagram Game
-86. [ ] Image Recognition with OpenCV
-87. [ ] Simple Blog with Flask
-88. [ ] Quiz Game with Timer
-89. [ ] Basic File Version Control System
-90. [ ] Interactive Periodic Table
-91. [ ] Basic OCR with Tesseract
-92. [ ] Multiplayer Tic-Tac-Toe (Socket Programming)
-93. [ ] Weather App with Voice Commands
-94. [ ] Simple Weather Forecast App
-95. [ ] GUI-based SQL Database Viewer
-96. [ ] QR Code Attendance System
-97. [ ] GitHub Profile Viewer
-98. [ ] Real-time Chat Application (WebSocket)
-99. [ ] E-commerce Website (Basic)
-100. [ ] URL Expander
+51. [x] Web Scraping with BeautifulSoup - Done
+52. [x] AI Task Manager - Done
+53. [x] Weather App with GUI (Tkinter) - Done
+54. [x] Data Visualization with Matplotlib - Done
+55. [x] Penrsonal Portfolio Website - Done
+56. [x] Simple Flask REST API - Done
+57. [x] Crypto currency Portfolio Tracker - Done
+58. [x] File Encryption/Decryption - Done
+59. [x] Morse Code Audio Player - Done
+60. [x] Chat Application (Socket Programming) - Done
+61. [x] Real-time chat application - Done
+62. [x] Hangman Game with Database - Done
+63. [x] Automated Email Seder - Done
+64. [x] Personal Finance Tracker - Done
+65. [x] Ecommerce Analytics - Done
+66. [x] URL Shortener with Analytics - Done
+67. [x] Social Media Dashboard - Done
+68. [x] Basic Content Management System (CMS)
+69.  [x] Machine Learning Model (Basic) - Done
+70. [ ] Web Scrapping Pipeline - Done
+71. [ ] Interactive Map with Folium
+72. [ ] Reddit Bot
+73. [ ] Chatbot with NLP (Natural Language Processing)
+74. [ ] Basic OCR (Optical Character Recognition)
+75. [ ] Image Slider App (PyQt)
+76. [ ] Speech-to-Text Converter
+77. [ ] QR Code Generator/Scanner
+78. [ ] Chat Application with GUI (Tkinter)
+79. [ ] Currency Exchange Rate Tracker
+80. [ ] File Compression/Decompression
+81. [ ] RSS Feed Aggregator
+82. [ ] Basic Music Streaming App
+83. [ ] Password Manager
+84. [ ] Basic Photo Editor (PIL)
+85. [ ] Real-time Currency Converter (API)
+86. [ ] Twitter Bot with Tweepy
+87. [ ] Password Generator with Strength Meter
+88. [ ] News Aggregator
+89. [ ] File Synchronization Tool
+90. [ ] Basic Chatroom App
+91. [ ] Anagram Game
+92. [ ] Image Recognition with OpenCV
+93. [ ] Simple Blog with Flask
+94. [ ] Quiz Game with Timer
+95. [ ] Basic File Version Control System
+96. [ ] Interactive Periodic Table
+97. [ ] Basic OCR with Tesseract
+98. [ ] Multiplayer Tic-Tac-Toe (Socket Programming)
+99. [ ] Weather App with Voice Commands
+100. [ ] Simple Weather Forecast App
+101. [ ] GUI-based SQL Database Viewer
+102. [ ] QR Code Attendance System
+103. [ ] GitHub Profile Viewer
+104. [ ] Real-time Chat Application (WebSocket)
+104. [ ] E-commerce Website (Basic)
+105. [ ] URL Expander
 
 ### Advanced (101-150):
 
-101. [ ] Machine Learning Model (Basic)
-102. [ ] Advanced OCR with Tesseract
-103. [ ] Facial Recognition System
-104. [ ] Advanced Image Processing with OpenCV
-105. [ ] Stock Price Prediction Model
-106. [ ] Speech Emotion Recognition
-107. [ ] Virtual Reality (VR) Game (Pygame)
-108. [ ] Object Detection with TensorFlow
-109. [ ] Sentiment Analysis Model
-110. [ ] Chatbot with Machine Learning
-111. [ ] Image Segmentation
-112. [ ] Gesture Recognition System
-113. [ ] Autonomous Robot Simulation (Pygame)
-114. [ ] Deep Learning Image Classifier
-115. [ ] Blockchain Implementation (Basic)
-116. [ ] Cryptocurrency Price Tracker
-117. [ ] Advanced OCR with Deep Learning
+1.   [ ] Advanced OCR with Tesseract
+2.   [ ] Facial Recognition System
+3.   [ ] Advanced Image Processing with OpenCV
+4.   [ ] Stock Price Prediction Model
+5.   [ ] Speech Emotion Recognition
+6.   [ ] Virtual Reality (VR) Game (Pygame)
+7.   [ ] Object Detection with TensorFlow
+8.   [ ] Sentiment Analysis Model
+9.   [ ] Chatbot with Machine Learning
+10.  [ ] Image Segmentation
+11.  [ ] Gesture Recognition System
+12.  [ ] Autonomous Robot Simulation (Pygame)
+13.  [ ] Deep Learning Image Classifier
+14.  [ ] Blockchain Implementation (Basic)
+15.  [ ] Cryptocurrency Price Tracker
+16.  [ ] Advanced OCR with Deep Learning
 118. [ ] Automated Testing Framework
 119. [ ] AI-based Chess Game
 120. [ ] Voice Assistant
