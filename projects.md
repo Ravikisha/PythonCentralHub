@@ -74,42 +74,42 @@ Certainly! Here's a list of 150 Python project ideas across different skill leve
 68. [x] Basic Content Management System (CMS)
 69.  [x] Machine Learning Model (Basic) - Done
 70. [x] Web Scrapping Pipeline - Done
-71. [x] Interactive Map with Folium - Done
-72. [x] Reddit Bot - Done
-73. [x] Chatbot with NLP (Natural Language Processing) - Done
-74. [x] Basic OCR (Optical Character Recognition) - Done
-75. [x] Image Slider App (PyQt) - Done
-76. [x] Speech-to-Text Converter - Done
-77. [x] QR Code Generator/Scanner - Done
-78. [ ] Chat Application with GUI (Tkinter)
-79. [ ] Currency Exchange Rate Tracker
-80. [ ] File Compression/Decompression
-81. [ ] RSS Feed Aggregator
-82. [ ] Basic Music Streaming App
-83. [ ] Password Manager
-84. [ ] Basic Photo Editor (PIL)
-85. [ ] Real-time Currency Converter (API)
-86. [ ] Twitter Bot with Tweepy
-87. [ ] Password Generator with Strength Meter
-88. [ ] News Aggregator
-89. [ ] File Synchronization Tool
-90. [ ] Basic Chatroom App
-91. [ ] Anagram Game
-92. [ ] Image Recognition with OpenCV
-93. [ ] Simple Blog with Flask
-94. [ ] Quiz Game with Timer
-95. [ ] Basic File Version Control System
-96. [ ] Interactive Periodic Table
-97. [ ] Basic OCR with Tesseract
-98. [ ] Multiplayer Tic-Tac-Toe (Socket Programming)
-99. [ ] Weather App with Voice Commands
-100. [ ] Simple Weather Forecast App
-101. [ ] GUI-based SQL Database Viewer
-102. [ ] QR Code Attendance System
-103. [ ] GitHub Profile Viewer
-104. [ ] Real-time Chat Application (WebSocket)
-104. [ ] E-commerce Website (Basic)
-105. [ ] URL Expander
+71. [x] Interactive Map with Folium - 
+72. [x] Reddit Bot - 
+73. [x] Chatbot with NLP (Natural Language Processing) - 
+74. [x] Basic OCR (Optical Character Recognition) - 
+75. [x] Image Slider App (PyQt) - 
+76. [x] Speech-to-Text Converter - 
+77. [x] QR Code Generator/Scanner -
+78. [x] Chat Application with GUI (Tkinter)
+79. [x] Currency Exchange Rate Tracker
+80. [x] File Compression/Decompression
+81. [x] RSS Feed Aggregator
+82. [x] Basic Music Streaming App
+83. [x] Password Manager
+84. [x] Basic Photo Editor (PIL)
+85. [x] Real-time Currency Converter (API)
+86. [x] Twitter Bot with Tweepy
+87. [x] Password Generator with Strength Meter
+88. [x] News Aggregator - Done
+89. [x] File Synchronization Tool - Done
+90. [x] Basic Chatroom App - Done
+91. [x] Anagram Game - Done
+92. [x] Image Recognition with OpenCV - Done
+93. [x] Simple Blog with Flask - Done
+94. [x] Quiz Game with Timer - Done
+95. [x] Basic File Version Control System - Done
+96. [x] Interactive Periodic Table - Done
+97. [x] Basic OCR with Tesseract - Done
+98. [x] Multiplayer Tic-Tac-Toe (Socket Programming) - Done
+99. [x] Weather App with Voice Commands - Done
+100. [x] Simple Weather Forecast App - Done
+101. [x] GUI-based SQL Database Viewer - Done
+102. [x] QR Code Attendance System - Done
+103. [x] GitHub Profile Viewer - Done
+104. [x] Real-time Chat Application (WebSocket) - Done
+105. [x] E-commerce Website (Basic) - Done
+106. [x] URL Expander - Done
 
 ### Advanced (101-150):
 
