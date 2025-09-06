@@ -73,14 +73,14 @@ Certainly! Here's a list of 150 Python project ideas across different skill leve
 67. [x] Social Media Dashboard - Done
 68. [x] Basic Content Management System (CMS)
 69.  [x] Machine Learning Model (Basic) - Done
-70. [ ] Web Scrapping Pipeline - Done
-71. [ ] Interactive Map with Folium
-72. [ ] Reddit Bot
-73. [ ] Chatbot with NLP (Natural Language Processing)
-74. [ ] Basic OCR (Optical Character Recognition)
-75. [ ] Image Slider App (PyQt)
-76. [ ] Speech-to-Text Converter
-77. [ ] QR Code Generator/Scanner
+70. [x] Web Scrapping Pipeline - Done
+71. [x] Interactive Map with Folium - Done
+72. [x] Reddit Bot - Done
+73. [x] Chatbot with NLP (Natural Language Processing) - Done
+74. [x] Basic OCR (Optical Character Recognition) - Done
+75. [x] Image Slider App (PyQt) - Done
+76. [x] Speech-to-Text Converter - Done
+77. [x] QR Code Generator/Scanner - Done
 78. [ ] Chat Application with GUI (Tkinter)
 79. [ ] Currency Exchange Rate Tracker
 80. [ ] File Compression/Decompression
