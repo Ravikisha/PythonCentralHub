@@ -71,7 +71,42 @@
   function getCodeFromBlock(block) {
     const pre = block.querySelector('pre');
     if (!pre) return '';
-    return (pre.innerText || '').replace(/\r\n/g, '\n').trimEnd();
+
+    // rehype-pretty-code wraps every token in <span> elements and sometimes
+    // injects zero-width-space chars (\u200B) for copy behaviour. Using
+    // `innerText` on the highlighted <pre> returns all those invisible chars
+    // and produces garbage when loaded into the Monaco editor.
+    //
+    // Instead, walk every text node inside <code> and collect only real text,
+    // stripping zero-width chars and keeping newlines from <br> or per-line
+    // spans that rehype-pretty-code emits.
+    const code = pre.querySelector('code');
+    if (!code) {
+      // Fallback: plain text, strip zero-width chars.
+      return (pre.innerText || '')
+        .replace(/\u200B/g, '')
+        .replace(/\r\n/g, '\n')
+        .trimEnd();
+    }
+
+    // rehype-pretty-code emits one [data-line] span per source line.
+    const lineSpans = code.querySelectorAll('[data-line]');
+    if (lineSpans.length > 0) {
+      // Each [data-line] span holds the tokens for one line.
+      const lines = Array.from(lineSpans).map((span) =>
+        (span.textContent || '').replace(/\u200B/g, '')
+      );
+      return lines.join('\n').trimEnd();
+    }
+
+    // Generic fallback: collect text nodes, strip zero-width chars.
+    const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT);
+    let text = '';
+    let node;
+    while ((node = walker.nextNode())) {
+      text += node.nodeValue || '';
+    }
+    return text.replace(/\u200B/g, '').replace(/\r\n/g, '\n').trimEnd();
   }
 
   function ensurePyodide() {
@@ -305,7 +340,12 @@
         ui.editor.hidden = false;
   // Hide the original highlighted code.
   pre.hidden = true;
-  ensureEditor().then((x) => x.focus());
+  ensureEditor().then((x) => {
+    // After the container becomes visible, force a layout pass so Monaco
+    // measures the correct width/height and cursor positions correctly.
+    requestAnimationFrame(() => { try { x.layout?.(); } catch {} });
+    x.focus();
+  });
       } else {
         ui.root.dataset.mode = 'view';
   toggleBtn.setAttribute('aria-label', 'Edit');

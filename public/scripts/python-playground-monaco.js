@@ -91,16 +91,15 @@ export async function createPythonEditor({ parent, doc, onCtrlEnterRun }) {
     value: doc ?? '',
     language: 'python',
     theme: pickTheme(),
-    automaticLayout: true,
+    // Use false + manual layout() calls so Monaco never fights the CSS container.
+    automaticLayout: false,
     minimap: { enabled: false },
     scrollBeyondLastLine: false,
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
     fontSize: 14,
     lineHeight: 20,
     tabSize: 4,
-  // Keep rendering consistent with the site's code styling.
-  // (Font metric mismatches can cause cursor/click offset issues.)
-  fontLigatures: true,
+    fontLigatures: true,
   });
 
   // Ensure the editor only captures keystrokes when it is actually focused.
@@ -155,16 +154,30 @@ export async function createPythonEditor({ parent, doc, onCtrlEnterRun }) {
     const lines = Math.min(maxLines, Math.max(minLines, lineCount));
     const height = lines * lineHeight + padding;
     parent.style.height = `${height}px`;
-    editor.layout();
+    // Force Monaco to fill the container exactly.
+    editor.layout({ width: parent.clientWidth, height });
   };
 
   // First layout after the editor is actually visible in the document.
   // (If the editor is created right as we toggle edit mode, layout can lag.)
   requestAnimationFrame(() => {
     updateHeight();
-    editor.layout();
   });
   const disposable = editor.onDidContentSizeChange(() => updateHeight());
+
+  // Since automaticLayout is off, watch the container for width changes
+  // (e.g. sidebar open/close) and re-layout accordingly.
+  let _resizeObserver = null;
+  try {
+    _resizeObserver = new ResizeObserver(() => {
+      requestAnimationFrame(() => {
+        editor.layout({ width: parent.clientWidth, height: parent.clientHeight });
+      });
+    });
+    _resizeObserver.observe(parent);
+  } catch {
+    // ResizeObserver not available — degraded gracefully.
+  }
 
   // Adapter used by python-playground.js
   return {
@@ -177,6 +190,9 @@ export async function createPythonEditor({ parent, doc, onCtrlEnterRun }) {
       } catch {}
       try {
         document.removeEventListener('pointerdown', onPointerDownCapture, true);
+      } catch {}
+      try {
+        _resizeObserver?.disconnect?.();
       } catch {}
       try {
         disposable?.dispose?.();
