@@ -218,6 +218,13 @@ export default defineConfig({
         {
           tag: "meta",
           attrs: {
+            name: "monetag",
+            content: `${import.meta.env.VITE_MONETAG}`
+          }
+        },
+        {
+          tag: "meta",
+          attrs: {
             name: "author",
             content: "Ravi Kishan",
           },
