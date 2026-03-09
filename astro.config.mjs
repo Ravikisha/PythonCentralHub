@@ -261,9 +261,8 @@ export default defineConfig({
           tag: "script",
           attrs: {
             async: true,
-            src: `https://www.googletagmanager.com/gtag/js?id=${
-              import.meta.env.VITE_GOOGLE_ANALYTICS
-            }`,
+            src: `https://www.googletagmanager.com/gtag/js?id=${import.meta.env.VITE_GOOGLE_ANALYTICS
+              }`,
           },
         },
         {
@@ -285,12 +284,40 @@ export default defineConfig({
           tag: "script",
           attrs: {
             async: true,
-            src: `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${
-              import.meta.env.VITE_GOOGLE_ADSENSE
-            }`,
+            src: `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${import.meta.env.VITE_GOOGLE_ADSENSE
+              }`,
             crossorigin: "anonymous",
           },
-        },        
+        },
+        
+        {
+          tag: "link",
+          attrs: {
+            rel: "preconnect",
+            href: "https://cdn.datacamp.com",
+            crossorigin: true,
+          },
+        },
+        {
+          tag: "link",
+          attrs: {
+            rel: "dns-prefetch",
+            href: "https://cdn.datacamp.com",
+          },
+        },
+        {
+          tag: "link",
+          attrs: {
+            rel: "stylesheet",
+            href: "https://cdn.datacamp.com/dcl-react.css",
+          },
+        },
+        {
+          tag: "script",
+          attrs: {
+            src: "https://cdn.datacamp.com/dcl-react.js.gz",
+          },
+        }
       ],
     }),
     tailwind({

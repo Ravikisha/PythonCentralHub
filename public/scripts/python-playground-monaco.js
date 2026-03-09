@@ -81,11 +81,18 @@ export async function createPythonEditor({ parent, doc, onCtrlEnterRun }) {
   // Defensive: clear parent
   parent.innerHTML = '';
 
-  // Monaco is very sensitive to its container size at creation time.
-  // If created while height is `auto` (or while the element is hidden), the
-  // cursor can render at the wrong position and clicks may place it incorrectly.
-  // Give it an explicit height up-front; we'll auto-resize after init.
-  if (!parent.style.height) parent.style.height = '11rem';
+  // Pre-calculate the correct height based on line count BEFORE creating the
+  // editor. Monaco reads the container dimensions at construction time to build
+  // its internal coordinate mapping. If the height is wrong at that moment,
+  // clicks register on the wrong line (cursor misalignment).
+  const lineCount = (doc ?? '').split('\n').length;
+  const lineHeight = 20; // must match the lineHeight option below
+  const padding = 18;
+  const minLines = 8;
+  const maxLines = 40;
+  const initialLines = Math.min(maxLines, Math.max(minLines, lineCount));
+  const initialHeight = initialLines * lineHeight + padding;
+  parent.style.height = `${initialHeight}px`;
 
   const editor = window.monaco.editor.create(parent, {
     value: doc ?? '',
@@ -145,23 +152,31 @@ export async function createPythonEditor({ parent, doc, onCtrlEnterRun }) {
 
   // Auto-height: resize the editor DOM to fit content.
   // Monaco wants explicit height; we adapt to content height.
+  // Constants must match the pre-calculation above.
   const updateHeight = () => {
-    const lineCount = editor.getModel()?.getLineCount?.() ?? 1;
-    const lineHeight = editor.getOption(window.monaco.editor.EditorOption.lineHeight);
-    const padding = 18;
-    const minLines = 8;
-    const maxLines = 40;
-    const lines = Math.min(maxLines, Math.max(minLines, lineCount));
-    const height = lines * lineHeight + padding;
+    const lc = editor.getModel()?.getLineCount?.() ?? 1;
+    const lh = editor.getOption(window.monaco.editor.EditorOption.lineHeight);
+    const lines = Math.min(maxLines, Math.max(minLines, lc));
+    const height = lines * lh + padding;
     parent.style.height = `${height}px`;
-    // Force Monaco to fill the container exactly.
     editor.layout({ width: parent.clientWidth, height });
   };
 
   // First layout after the editor is actually visible in the document.
-  // (If the editor is created right as we toggle edit mode, layout can lag.)
-  requestAnimationFrame(() => {
+  // Monaco's internal coordinate mapping (line → pixel) is only correct once
+  // the container has its real painted size. We fire layout at 0ms, 50ms and
+  // 200ms after creation so staggered CSS transitions / Starlight sidebar
+  // animations don't leave the mapping stale and cause cursor misalignment.
+  const forceLayout = () => {
+    const w = parent.clientWidth;
+    const h = parent.clientHeight || parseInt(parent.style.height, 10) || 176;
+    if (w > 0) editor.layout({ width: w, height: h });
     updateHeight();
+  };
+  requestAnimationFrame(() => {
+    forceLayout();
+    setTimeout(forceLayout, 50);
+    setTimeout(forceLayout, 200);
   });
   const disposable = editor.onDidContentSizeChange(() => updateHeight());
 

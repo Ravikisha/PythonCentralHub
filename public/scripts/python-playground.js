@@ -248,10 +248,36 @@
       // Use runPythonAsync to allow top-level await in the future if needed.
       await pyodide.runPythonAsync(code);
 
-  // Preserve multiline output exactly as produced, including trailing newlines.
-  // (trimEnd() breaks some teaching examples that rely on blank lines.)
-  const out = (stdout || '');
-  const err = (stderr || '');
+  // Preserve multiline output exactly as produced.
+  // Normalize \r\n → \n and simulate \r (carriage-return) line-overwrite
+  // behaviour so the output <pre> shows what a real terminal would show.
+  const normalizeOutput = (s) => {
+    // First collapse Windows-style \r\n into \n.
+    let result = s.replace(/\r\n/g, '\n');
+    // Then simulate bare \r: split on \r, each segment overwrites the
+    // current line from the start (matching real terminal behaviour).
+    if (result.includes('\r')) {
+      const lines = result.split('\n');
+      const processed = lines.map((line) => {
+        const parts = line.split('\r');
+        // Each \r resets to column 0; last part wins for overlapping chars.
+        let out = '';
+        for (const part of parts) {
+          if (part.length >= out.length) {
+            out = part;
+          } else {
+            out = part + out.slice(part.length);
+          }
+        }
+        return out;
+      });
+      result = processed.join('\n');
+    }
+    return result;
+  };
+
+  const out = normalizeOutput(stdout || '');
+  const err = normalizeOutput(stderr || '');
 
   // Show output only after a run attempt.
   const wrap = outputEl.closest('.py-playground__output-wrap');
@@ -310,22 +336,30 @@
   toggleBtn.type = 'button';
   toggleBtn.className = 'py-playground__icon-btn';
   toggleBtn.setAttribute('aria-label', 'Edit');
+  toggleBtn.style.marginTop = '1.5rem';
   toggleBtn.innerHTML = ICONS.edit;
   ui.toolbar.insertBefore(toggleBtn, ui.runBtn);
 
   // Start in "view" mode (highlighted); user clicks Edit to open the editor.
     ui.root.dataset.mode = 'view';
+    // Hide the entire playground root — only the highlighted <pre> is shown at rest.
+    // This prevents the empty Monaco container from rendering as a black box.
+    ui.root.hidden = true;
     ui.editor.hidden = true;
 
-    // Mount Monaco lazily when user first enters edit mode.
+    // Mount Monaco lazily when user enters edit mode.
+    // cm is nulled when the user switches back to view (Monaco is destroyed).
     /** @type {any | null} */
     let cm = null;
     async function ensureEditor() {
       if (cm) return cm;
-  const mod = await import('/scripts/python-playground-monaco.js');
-      cm = mod.createPythonEditor({
+      const mod = await import('/scripts/python-playground-monaco.js');
+      // Always get the latest code value — could differ from initialCode if
+      // user edited, ran, then closed and re-opened.
+      const currentCode = cm ? cm.getValue() : ui.initialCode;
+      cm = await mod.createPythonEditor({
         parent: ui.editor,
-        doc: ui.initialCode,
+        doc: currentCode,
         onCtrlEnterRun: () => ui.runBtn.click(),
       });
       return cm;
@@ -335,46 +369,75 @@
       const isView = ui.root.dataset.mode === 'view';
       if (isView) {
         ui.root.dataset.mode = 'edit';
-  toggleBtn.setAttribute('aria-label', 'View');
-  toggleBtn.innerHTML = ICONS.eye;
+        toggleBtn.setAttribute('aria-label', 'View');
+        toggleBtn.innerHTML = ICONS.eye;
+        // Show the playground root (editor + output), hide the highlighted pre.
+        ui.root.hidden = false;
         ui.editor.hidden = false;
-  // Hide the original highlighted code.
-  pre.hidden = true;
-  ensureEditor().then((x) => {
-    // After the container becomes visible, force a layout pass so Monaco
-    // measures the correct width/height and cursor positions correctly.
-    requestAnimationFrame(() => { try { x.layout?.(); } catch {} });
-    x.focus();
-  });
+        pre.hidden = true;
+        ensureEditor().then((x) => {
+          // Fire multiple layout passes after the container becomes visible.
+          // A single rAF is not enough when the parent has a CSS transition or
+          // when the Starlight sidebar shifts content width after paint.
+          const doLayout = () => { try { x.layout?.(); } catch {} };
+          requestAnimationFrame(() => {
+            doLayout();
+            setTimeout(doLayout, 50);
+            setTimeout(doLayout, 200);
+          });
+          x.focus();
+        });
       } else {
         ui.root.dataset.mode = 'view';
-  toggleBtn.setAttribute('aria-label', 'Edit');
-  toggleBtn.innerHTML = ICONS.edit;
+        toggleBtn.setAttribute('aria-label', 'Edit');
+        toggleBtn.innerHTML = ICONS.edit;
+        // Destroy and wipe Monaco so the container has zero DOM and zero height.
+        if (cm) {
+          try { cm.dispose?.(); } catch {}
+          cm = null;
+        }
+        ui.editor.innerHTML = '';
+        ui.editor.style.height = '';
+        // Hide editor container, output, and the whole playground root.
         ui.editor.hidden = true;
+        ui.output.textContent = '';
+        const wrap = ui.output.closest('.py-playground__output-wrap');
+        if (wrap) wrap.hidden = true;
+        ui.root.hidden = true;
+        // Restore the original highlighted code.
         pre.hidden = false;
       }
     });
 
     // Hook buttons
     ui.runBtn.addEventListener('click', async () => {
-  const cmInstance = await ensureEditor().catch(() => null);
+      const cmInstance = await ensureEditor().catch(() => null);
       const codeToRun = cmInstance ? cmInstance.getValue() : ui.initialCode;
+      // Ensure the playground root is visible so output can be seen.
+      // (User may click Run without ever opening the editor.)
+      ui.root.hidden = false;
       runPython(codeToRun, ui.output, ui.status);
     });
 
     ui.resetBtn.addEventListener('click', () => {
-  // Ensure the editor exists so Reset always restores the code, even if user never clicked Edit.
-  ensureEditor().then((editor) => editor.setValue(ui.initialCode)).catch(() => {/* ignore */});
+      // Ensure the editor exists so Reset always restores the code, even if user never clicked Edit.
+      ensureEditor().then((editor) => editor.setValue(ui.initialCode)).catch(() => {/* ignore */});
       ui.output.textContent = '';
-  // Reset should also clear/hide the output panel.
-  const wrap = ui.output.closest('.py-playground__output-wrap');
-  if (wrap) wrap.hidden = true;
-  setStatus(ui.status, '', 'info');
+      // Reset: hide the output panel and the whole playground root (back to view mode).
+      const wrap = ui.output.closest('.py-playground__output-wrap');
+      if (wrap) wrap.hidden = true;
+      // Only collapse the root back if we're still in view mode (editor not open).
+      if (ui.root.dataset.mode === 'view') {
+        ui.root.hidden = true;
+      }
+      setStatus(ui.status, '', 'info');
     });
 
     ui.copyBtn.addEventListener('click', async () => {
       try {
-    const cmInstance = await ensureEditor().catch(() => null);
+        // If the editor is already open use its current content, otherwise
+        // use the original code directly — no need to spin up Monaco just to copy.
+        const cmInstance = cm;
         const text = cmInstance ? cmInstance.getValue() : ui.initialCode;
         await navigator.clipboard.writeText(text);
         setStatus(ui.status, 'Copied', 'success');
