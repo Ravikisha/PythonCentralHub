@@ -265,6 +265,16 @@ export default defineConfig({
               }`,
           },
         },
+        // <script src="https://quge5.com/88/tag.min.js" data-zone="217965" async data-cfasync="false"></script>
+        {
+          tag: "script",
+          attrs: {
+            src: "https://quge5.com/88/tag.min.js",
+            "data-zone": "217965",
+            async: true,
+            "data-cfasync": "false"
+          },
+        },
         {
           tag: "script",
           attrs: {
