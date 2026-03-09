@@ -31,7 +31,20 @@
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10z"/></svg>',
     terminal:
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 5h16v14H4V5zm2 2v10h12V7H6zm1.2 1.9 3.6 3.1-3.6 3.1-1.2-1.4 2.5-2.1-2.5-2.1 1.2-1.6zM12 15h5v-2h-5v2z"/></svg>',
+    expand:
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>',
   };
+
+  // ── Load fullscreen modal CSS once ──────────────────────────────────────────
+  (function ensureFullscreenCSS() {
+    const href = '/styles/editor-fullscreen.css';
+    if (!document.querySelector(`link[href="${href}"]`)) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = href;
+      document.head.appendChild(link);
+    }
+  })();
 
   function isPythonBlock(block) {
     // In this repo, rehype-pretty-code renders a wrapper:
@@ -178,9 +191,17 @@
   copyBtn.setAttribute('aria-label', 'Copy');
   copyBtn.innerHTML = ICONS.copy;
 
+  const expandBtn = document.createElement('button');
+  expandBtn.type = 'button';
+  expandBtn.className = 'py-playground__icon-btn ef-expand-btn';
+  expandBtn.setAttribute('aria-label', 'Open in fullscreen');
+  expandBtn.title = 'Open in fullscreen';
+  expandBtn.innerHTML = ICONS.expand;
+
   toolbar.appendChild(runBtn);
   toolbar.appendChild(resetBtn);
   toolbar.appendChild(copyBtn);
+  toolbar.appendChild(expandBtn);
 
   // The editor (Monaco) will mount into this container.
   const editor = document.createElement('div');
@@ -206,7 +227,7 @@
     root.appendChild(editor);
     root.appendChild(outputWrap);
 
-  return { root, toolbar, runBtn, resetBtn, copyBtn, status: null, editor, output, initialCode };
+  return { root, toolbar, runBtn, resetBtn, copyBtn, expandBtn, status: null, editor, output, initialCode };
   }
 
   function setStatus(statusEl, text, kind = 'info') {
@@ -443,6 +464,147 @@
         setStatus(ui.status, 'Copied', 'success');
       } catch {
         setStatus(ui.status, 'Copy failed', 'error');
+      }
+    });
+
+    // ── Fullscreen button ────────────────────────────────────────────────────
+    ui.expandBtn.addEventListener('click', async () => {
+      try {
+        const mod = await import('/scripts/editor-fullscreen.js');
+
+        // Get the exercise title from the nearest heading above the code block.
+        let modalTitle = 'Python Playground';
+        const figure = block;
+        let sibling = figure && figure.previousElementSibling;
+        while (sibling) {
+          const tag = sibling.tagName && sibling.tagName.toLowerCase();
+          if (tag === 'h2' || tag === 'h3' || tag === 'h4') {
+            modalTitle = sibling.textContent.trim();
+            break;
+          }
+          sibling = sibling.previousElementSibling;
+        }
+
+        // Current code value
+        const currentCode = cm ? cm.getValue() : ui.initialCode;
+
+        // We keep a reference to the Monaco instance created inside the modal.
+        let modalCm = null;
+
+        mod.openFullscreen({
+          title: modalTitle,
+          trigger: ui.expandBtn,
+          buildContent(container) {
+            // Clone the playground UI structure into the modal container.
+            // We create a fresh Monaco editor inside the modal with the same code.
+            const fsRoot = document.createElement('div');
+            fsRoot.className = 'py-playground';
+            fsRoot.style.height = '100%';
+
+            // Toolbar row (Run + Reset + Copy) — no expand btn inside modal
+            const fsTbar = document.createElement('div');
+            fsTbar.className = 'py-playground__toolbar';
+
+            const fsRunBtn = document.createElement('button');
+            fsRunBtn.type = 'button';
+            fsRunBtn.className = 'py-playground__icon-btn py-playground__icon-btn--primary';
+            fsRunBtn.setAttribute('aria-label', 'Run');
+            fsRunBtn.innerHTML = ICONS.play;
+
+            const fsResetBtn = document.createElement('button');
+            fsResetBtn.type = 'button';
+            fsResetBtn.className = 'py-playground__icon-btn';
+            fsResetBtn.setAttribute('aria-label', 'Reset');
+            fsResetBtn.innerHTML = ICONS.refresh;
+
+            const fsCopyBtn = document.createElement('button');
+            fsCopyBtn.type = 'button';
+            fsCopyBtn.className = 'py-playground__icon-btn';
+            fsCopyBtn.setAttribute('aria-label', 'Copy');
+            fsCopyBtn.innerHTML = ICONS.copy;
+
+            fsTbar.appendChild(fsRunBtn);
+            fsTbar.appendChild(fsResetBtn);
+            fsTbar.appendChild(fsCopyBtn);
+
+            const fsEditor = document.createElement('div');
+            fsEditor.className = 'py-playground__cm';
+
+            const fsOutWrap = document.createElement('div');
+            fsOutWrap.className = 'py-playground__output-wrap';
+            fsOutWrap.hidden = true;
+            const fsOutLabel = document.createElement('div');
+            fsOutLabel.className = 'py-playground__output-label';
+            fsOutLabel.textContent = 'Output';
+            const fsOut = document.createElement('pre');
+            fsOut.className = 'py-playground__output';
+            fsOutWrap.appendChild(fsOutLabel);
+            fsOutWrap.appendChild(fsOut);
+
+            fsRoot.appendChild(fsTbar);
+            fsRoot.appendChild(fsEditor);
+            fsRoot.appendChild(fsOutWrap);
+            container.appendChild(fsRoot);
+
+            // Create Monaco inside the modal editor div
+            import('/scripts/python-playground-monaco.js').then((monacoMod) => {
+              monacoMod.createPythonEditor({
+                parent: fsEditor,
+                doc: currentCode,
+                onCtrlEnterRun: () => fsRunBtn.click(),
+              }).then((editor) => {
+                modalCm = editor;
+                // Force layout after modal animation completes
+                setTimeout(() => {
+                  try { editor.layout?.(); } catch {}
+                }, 250);
+                editor.focus();
+              });
+            });
+
+            // Run button
+            fsRunBtn.addEventListener('click', async () => {
+              const code = modalCm ? modalCm.getValue() : currentCode;
+              fsOutWrap.hidden = false;
+              runPython(code, fsOut, null);
+            });
+
+            // Reset button
+            fsResetBtn.addEventListener('click', () => {
+              if (modalCm) modalCm.setValue(ui.initialCode);
+              fsOut.textContent = '';
+              fsOutWrap.hidden = true;
+            });
+
+            // Copy button
+            fsCopyBtn.addEventListener('click', async () => {
+              try {
+                const text = modalCm ? modalCm.getValue() : currentCode;
+                await navigator.clipboard.writeText(text);
+                setStatus(null, 'Copied', 'success');
+              } catch {
+                setStatus(null, 'Copy failed', 'error');
+              }
+            });
+          },
+          onClose() {
+            // Sync code back to the inline editor when modal closes
+            if (modalCm) {
+              const latestCode = modalCm.getValue();
+              // If inline editor is open, update it; otherwise update initialCode buffer
+              if (cm) {
+                try { cm.setValue(latestCode); } catch {}
+              } else {
+                ui.initialCode = latestCode;
+                ui.editor.dataset.initialCode = latestCode;
+              }
+              try { modalCm.dispose?.(); } catch {}
+              modalCm = null;
+            }
+          },
+        });
+      } catch (err) {
+        console.error('[py-playground] Fullscreen failed:', err);
       }
     });
 
