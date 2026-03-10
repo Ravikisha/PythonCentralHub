@@ -43,6 +43,23 @@ const options = {
 };
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import { visit } from 'unist-util-visit';
+
+// This function finds text nodes and replaces { with its HTML entity
+function remarkEscapeBraces() {
+  return (tree) => {
+    visit(tree, 'text', (node) => {
+      if (node.value.includes('{') || node.value.includes('}')) {
+        // We replace { with &#123; and } with &#125;
+        // This prevents MDX from seeing them as JSX blocks
+        node.value = node.value
+          .replace(/{/g, '&#123;')
+          .replace(/}/g, '&#125;');
+      }
+    });
+  };
+}
+
 // https://astro.build/config
 export default defineConfig({
   image: {
@@ -54,7 +71,7 @@ export default defineConfig({
     syntaxHighlight: false,
     // Disable syntax built-in syntax hightlighting from astro
     rehypePlugins: [[rehypePrettyCode, options], rehypeKatex],
-    remarkPlugins: [remakeMermaid, remarkMath],
+    remarkPlugins: [remakeMermaid, remarkMath, remarkEscapeBraces],
   },
   integrations: [
     starlight({
