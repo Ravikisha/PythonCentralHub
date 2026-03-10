@@ -86,6 +86,36 @@ export default defineConfig({
           },
         },
         {
+          label: "Flask Tutorials",
+          autogenerate: {
+            directory: "Flask Tutorials",
+          },
+        },
+        {
+          label: "Python Automation and Scripting",
+          autogenerate: {
+            directory: "Python Automation and Scripting",
+          },
+        },
+        {
+          label: "Data Analytics",
+          autogenerate: {
+            directory: "Data Analytics",
+          },
+        },
+        {
+          label: "Machine Learning",
+          autogenerate: {
+            directory: "Machine Learning",
+          },
+        },
+        {
+          label: "Software Testing and Quality",
+          autogenerate: {
+            directory: "Software Testing and Quality",
+          },
+        },
+        {
           label: "Projects",
           autogenerate: {
             directory: "projects",

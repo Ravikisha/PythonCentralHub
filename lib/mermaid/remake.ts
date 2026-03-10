@@ -25,6 +25,9 @@ import renderDiagram from "./render-diagram";
 const style = `all: initial; width: 100%;display: flex; flex-direction: column; justify-content: center;align-items: center; background-color: #fff; border-radius: 0.5rem; box-shadow: 10px 24px 50px 17px rgba(0, 0, 0, 0.1);border: 1px solid #c2c2c2;`;
 
 function getTitle(meta: string) {
+  if(!meta) return false;
+  if(meta.length === 0) return false;
+
   // Use a regular expression to extract the title value
   const match = meta.match(/title="([^"]*)"/);
 
@@ -40,6 +43,9 @@ function getTitle(meta: string) {
 }
 
 function getDesc(meta: string) {
+  if(!meta) return false;
+  if(meta.length === 0) return false;
+
   // Use a regular expression to extract the title value
   const match = meta.match(/desc="([^"]*)"/);
 
