@@ -41,7 +41,8 @@ const options = {
   },
   defaultLang: "python",
 };
-
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 // https://astro.build/config
 export default defineConfig({
   image: {
@@ -52,8 +53,8 @@ export default defineConfig({
   markdown: {
     syntaxHighlight: false,
     // Disable syntax built-in syntax hightlighting from astro
-    rehypePlugins: [[rehypePrettyCode, options]],
-    remarkPlugins: [remakeMermaid],
+    rehypePlugins: [[rehypePrettyCode, options], rehypeKatex],
+    remarkPlugins: [remakeMermaid, remarkMath],
   },
   integrations: [
     starlight({
