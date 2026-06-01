@@ -61,8 +61,14 @@ export default defineConfig({
       logo: {
         src: "./src/assets/pythonlogo.png",
       },
+      // Show "Last updated" on content pages, derived from git history.
+      lastUpdated: true,
       components: {
         Footer: "./src/components/Footer.astro",
+        // Injects per-page JSON-LD structured data.
+        Head: "./src/components/Head.astro",
+        // Adds sidebar search + collapse/expand-all with persisted state.
+        Sidebar: "./src/components/Sidebar.astro",
       },
       favicon: "./src/assets/favicon.ico",
       social: {
@@ -133,13 +139,17 @@ export default defineConfig({
             src: "/scripts/main.js",
           },
         },
-        {
-          tag: "meta",
-          attrs: {
-            name: "google-adsense-account",
-            content: import.meta.env.VITE_GOOGLE_ADSENSE,
-          },
-        },
+        ...(import.meta.env.VITE_GOOGLE_ADSENSE
+          ? [
+              {
+                tag: "meta",
+                attrs: {
+                  name: "google-adsense-account",
+                  content: import.meta.env.VITE_GOOGLE_ADSENSE,
+                },
+              },
+            ]
+          : []),
         {
           tag: "meta",
           attrs: {
@@ -215,13 +225,17 @@ export default defineConfig({
               "Python, Python Projects, Python Central Hub, Python Central Hub Projects, Python Central Hub Tutorials, Python Central Hub Guides, Python Central Hub Reference, Python Tutorial, Python tutorials, Python programming, Learn Python, Python for beginners, Python code examples, Python development, Python projects,Python programming language, Python tips and tricks,Python resources,Python learning platform,Python coding lessons,Python programming for beginners,Python programming exercises,Python coding practice,Python syntax,Python libraries,Python community,Python best practices,Python coding challenges",
           },
         },
-        {
-          tag: "meta",
-          attrs: {
-            name: "monetag",
-            content: `${import.meta.env.VITE_MONETAG}`
-          }
-        },
+        ...(import.meta.env.VITE_MONETAG
+          ? [
+              {
+                tag: "meta",
+                attrs: {
+                  name: "monetag",
+                  content: `${import.meta.env.VITE_MONETAG}`,
+                },
+              },
+            ]
+          : []),
         {
           tag: "meta",
           attrs: {
@@ -251,27 +265,39 @@ export default defineConfig({
           },
         },
         {
+          tag: "link",
+          attrs: {
+            rel: "alternate",
+            type: "application/rss+xml",
+            title: "Python Central Hub RSS Feed",
+            href: "/rss.xml",
+          },
+        },
+        {
           tag: "meta",
           attrs: {
             name: "theme-color",
             content: "#e7c384",
           },
         },
-        {
-          tag: "script",
-          attrs: {
-            async: true,
-            src: `https://www.googletagmanager.com/gtag/js?id=${import.meta.env.VITE_GOOGLE_ANALYTICS
-              }`,
-          },
-        },
-        {
-          tag: "script",
-          attrs: {
-            async: true,
-            src: "/scripts/gtag.js",
-          },
-        },
+        ...(import.meta.env.VITE_GOOGLE_ANALYTICS
+          ? [
+              {
+                tag: "script",
+                attrs: {
+                  async: true,
+                  src: `https://www.googletagmanager.com/gtag/js?id=${import.meta.env.VITE_GOOGLE_ANALYTICS}`,
+                },
+              },
+              {
+                tag: "script",
+                attrs: {
+                  async: true,
+                  src: "/scripts/gtag.js",
+                },
+              },
+            ]
+          : []),
         {
           tag: "script",
           attrs: {
@@ -280,16 +306,19 @@ export default defineConfig({
             src: "/scripts/mermaid.js",
           },
         },
-        {
-          tag: "script",
-          attrs: {
-            async: true,
-            src: `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${import.meta.env.VITE_GOOGLE_ADSENSE
-              }`,
-            crossorigin: "anonymous",
-          },
-        },
-        
+        ...(import.meta.env.VITE_GOOGLE_ADSENSE
+          ? [
+              {
+                tag: "script",
+                attrs: {
+                  async: true,
+                  src: `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${import.meta.env.VITE_GOOGLE_ADSENSE}`,
+                  crossorigin: "anonymous",
+                },
+              },
+            ]
+          : []),
+
         {
           tag: "link",
           attrs: {
@@ -323,7 +352,27 @@ export default defineConfig({
     tailwind({
       applyBaseStyles: false,
     }),
-    sitemap(),
+    sitemap({
+      // Give index/guides/tutorials higher priority than deep pages and
+      // stamp a build-time lastmod so crawlers see fresh dates.
+      serialize(item) {
+        const url = item.url;
+        if (url === `${site}/`) {
+          item.priority = 1.0;
+        } else if (url.includes("/guides/")) {
+          item.priority = 0.9;
+        } else if (url.includes("/tutorials/")) {
+          item.priority = 0.8;
+        } else if (url.includes("/projects/")) {
+          item.priority = 0.7;
+        } else {
+          item.priority = 0.6;
+        }
+        item.changefreq = "weekly";
+        item.lastmod = new Date().toISOString();
+        return item;
+      },
+    }),
     robotsTxt(),
     markdownIntegration(),
   ],

@@ -68,10 +68,28 @@ function plugin() {
         // or this keep running puppeeter ?
         // Also, disabling it prevent a bug which doesn't
         // occur in the regular component.
-        const html = await renderDiagram({
-          config: {},
-          code: node.value,
-        }).then((diagram) => diagram);
+        let html: string;
+        try {
+          html = await renderDiagram({
+            config: {},
+            code: node.value,
+          }).then((diagram) => diagram);
+        } catch (err) {
+          // A single bad diagram must not kill the whole build/page.
+          // Emit the original mermaid source so the author can debug it.
+          const message = err instanceof Error ? err.message : String(err);
+          console.warn(`[mermaid] Failed to render diagram: ${message}`);
+          const escaped = node.value
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+          parent.children.splice(index, 1, {
+            type: "html",
+            value: `<!-- mermaid render failed: ${message.replace(/--+/g, "—")} -->\n<pre class="mermaid-error"><code>${escaped}</code></pre>`,
+            position: node.position,
+          });
+          return;
+        }
 
         parent.children.splice(index, 1, {
           type: "html",

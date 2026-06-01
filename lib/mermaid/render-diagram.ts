@@ -60,8 +60,19 @@ export default async function renderDiagram({ config, code }: any) {
   return false;
   */
 
+  // Provide a text alternative for screen readers. The mermaid client script
+  // renders an <svg> into this <pre>; the role/aria-label survive on the element
+  // so assistive tech can still describe the diagram from its source.
+  const ariaLabel = code
+    .trim()
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\s+/g, " ");
+
   const htmlCode = `
-<pre class="mermaid" style="all: initial; width: 100%;display: flex; flex-direction: column; justify-content: center;align-items: center;">
+<pre class="mermaid" role="img" aria-label="Diagram: ${ariaLabel}" style="all: initial; width: 100%;display: flex; flex-direction: column; justify-content: center;align-items: center;">
   ${code.trimStart()}
 </pre>
   `;
