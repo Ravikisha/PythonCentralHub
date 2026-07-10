@@ -1,6 +1,6 @@
 ---
 title: Web Page Scraper with Notifications
-description: Monitor web pages for changes and receive notifications via email or desktop alerts
+description: Build a Python monitor that watches a web page for changes and alerts you via desktop, email, Slack, or Discord. Learn hashing, scheduling, SMTP, webhooks, and how to make a polite content tracker.
 sidebar:
   order: 53
 hero:
@@ -14,164 +14,273 @@ import FileCode from '../../../../components/FileCode.astro'
 
 ## Abstract
 
-Build an automated web page monitoring system that scrapes websites for content changes and sends notifications through multiple channels including email and desktop alerts. This project demonstrates web scraping, automation, content comparison, and notification systems.
+Some sites change rarely but matter when they do — a course catalog opens new spots, a product comes back in stock, a status page goes red, a government form gets a new revision. In this project you build an automated watcher that fetches a URL on a schedule, compares the content to the last fetch using an MD5 hash, and **pings you** when something changes through one or more channels: desktop notification, email, Slack webhook, or Discord webhook.
+
+You will learn:
+- How to detect change cheaply with **content hashing**.
+- How to scope monitoring to a single CSS selector instead of the whole page.
+- How to send notifications via four different channels.
+- How to schedule recurring jobs with the `schedule` library.
+- How to design a polite watcher that does not get banned.
 
 ## Prerequisites
+- Python 3.6 or above.
+- A code editor or IDE.
+- An internet connection.
+- (Optional) An SMTP account (Gmail app password works) and/or a Slack/Discord webhook URL.
 
-- Basic understanding of Python syntax
-- Knowledge of web scraping concepts
-- Familiarity with HTTP requests and HTML parsing
-- Understanding of email protocols and SMTP
-- Basic knowledge of scheduling and automation
+## Install Dependencies
+```bash title="install"
+pip install requests beautifulsoup4 schedule plyer
+```
+- **`requests`** — fetch the page.
+- **`beautifulsoup4`** — extract content from HTML.
+- **`schedule`** — run a job every N minutes.
+- **`plyer`** — cross-platform desktop notifications.
 
 ## Getting Started
 
+### Create the project
+1. Create folder `webpage-monitor`.
+2. Inside, create `webpagescrapernotifications.py`.
 
+### Write the code
+<FileCode file="projects/beginners/webpagescrapernotifications.py" lang="python" title="Web Page Monitor" />
 
-1. **Install Required Dependencies**
-   ```bash
-   pip install requests beautifulsoup4 schedule plyer
-   ```
+### Run it
+```bash title="run"
+python webpagescrapernotifications.py
+```
+The script polls the target URL every 30 minutes (by default), hashes the content, and notifies you when the hash changes from the previous run.
 
-2. **Configure Email Settings (Optional)**
-   - Set up Gmail app password for notifications
-   - Update email configuration in the script
-   - Test email functionality
+## Step-by-Step Explanation
 
-3. **Run the Web Page Monitor**
-   ```bash
-   python webpagescrapernotifications.py
-   ```
+### 1. Class skeleton
+```python title="webpagescrapernotifications.py"
+import hashlib, time, smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+import requests
+from bs4 import BeautifulSoup
+import schedule
 
-4. **Customize Monitoring**
-   - Change the URL to monitor your desired website
-   - Adjust checking intervals (default: 30 minutes)
-   - Configure notification preferences
+class WebPageMonitor:
+    def __init__(self, url, selector=None, email_config=None):
+        self.url = url
+        self.selector = selector              # optional CSS selector to scope changes
+        self.email_config = email_config
+        self.previous_hash = None
+```
 
-
-
-## Code Explanation
-
-### Web Page Content Extraction
-```python title="webpagescrapernotifications.py" showLineNumbers{1}
+### 2. Fetch and extract content
+```python title="webpagescrapernotifications.py"
 def get_page_content(self):
-    response = requests.get(self.url)
+    response = requests.get(self.url, timeout=15, headers={
+        "User-Agent": "WebPageMonitor/1.0 (+you@example.com)"
+    })
     response.raise_for_status()
-    soup = BeautifulSoup(response.content, 'html.parser')
-    content = soup.get_text().strip()
-    return content
+    soup = BeautifulSoup(response.content, "html.parser")
+    if self.selector:
+        node = soup.select_one(self.selector)
+        if node is None:
+            raise ValueError(f"Selector '{self.selector}' not found")
+        return node.get_text(separator=" ", strip=True)
+    return soup.get_text(separator=" ", strip=True)
 ```
+- A custom `User-Agent` identifies the bot — many sites block default Python requests.
+- `selector` lets you watch only the relevant part of the page. Without it, every footer copyright year change triggers an alert.
 
-Uses BeautifulSoup to parse HTML and extract text content for comparison detection.
+### 3. Hash to detect change
+```python title="webpagescrapernotifications.py"
+def get_hash(self, content):
+    return hashlib.md5(content.encode("utf-8")).hexdigest()
+```
+MD5 is **not** secure for cryptography but is perfect for change detection — it is fast and the input is not adversarial.
 
-### Content Change Detection
-```python title="webpagescrapernotifications.py" showLineNumbers{1}
-def get_content_hash(self, content):
-    return hashlib.md5(content.encode()).hexdigest()
-
+### 4. The check
+```python title="webpagescrapernotifications.py"
 def check_for_changes(self):
-    current_content = self.get_page_content()
-    current_hash = self.get_content_hash(current_content)
-    
-    if current_hash != self.previous_content:
-        print("Content change detected!")
+    try:
+        content = self.get_page_content()
+    except Exception as e:
+        print(f"[error] {e}")
+        return
+    current_hash = self.get_hash(content)
+    if self.previous_hash is None:
+        self.previous_hash = current_hash
+        print("First check — baseline recorded.")
+        return
+    if current_hash != self.previous_hash:
+        print("Change detected!")
+        self.notify("Page changed", f"Content hash changed for {self.url}")
+        self.previous_hash = current_hash
+    else:
+        print("No change.")
 ```
+Notice we **do not** alert on the first check — that would always fire on startup. We only alert on transitions.
 
-Generates MD5 hashes of page content to efficiently detect any changes without storing full content.
-
-### Email Notification System
-```python title="webpagescrapernotifications.py" showLineNumbers{1}
-def send_notification_email(self, subject, message):
+### 5. Email notification
+```python title="webpagescrapernotifications.py"
+def send_email(self, subject, body):
+    cfg = self.email_config
     msg = MIMEMultipart()
-    msg['From'] = self.email_config['from_email']
-    msg['To'] = self.email_config['to_email']
-    msg['Subject'] = subject
-    
-    server = smtplib.SMTP(self.email_config['smtp_server'], self.email_config['smtp_port'])
-    server.starttls()
-    server.login(self.email_config['from_email'], self.email_config['password'])
-    server.sendmail(self.email_config['from_email'], self.email_config['to_email'], text)
+    msg["From"] = cfg["from_email"]
+    msg["To"] = cfg["to_email"]
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
+    with smtplib.SMTP(cfg["smtp_server"], cfg["smtp_port"]) as server:
+        server.starttls()
+        server.login(cfg["from_email"], cfg["password"])
+        server.send_message(msg)
 ```
+For Gmail:
+- `smtp_server = "smtp.gmail.com"`, `smtp_port = 587`.
+- Use an **App Password** (Google Account → Security → 2-Step Verification → App passwords), **not** your real Gmail password.
 
-Implements SMTP email sending with proper authentication and formatting for change notifications.
-
-### Desktop Notification Integration
-```python title="webpagescrapernotifications.py" showLineNumbers{1}
-def send_desktop_notification(self, title, message):
-    import plyer
-    plyer.notification.notify(
-        title=title,
-        message=message,
-        timeout=10
-    )
+### 6. Desktop notification
+```python title="webpagescrapernotifications.py"
+def send_desktop(self, title, message):
+    from plyer import notification
+    notification.notify(title=title, message=message, timeout=10)
 ```
+Works on Windows, macOS, and many Linux desktops via `notify-send`.
 
-Provides cross-platform desktop notifications using the plyer library for immediate alerts.
-
-### Automated Scheduling
-```python title="webpagescrapernotifications.py" showLineNumbers{1}
-def start_monitoring(self, interval_minutes=30):
+### 7. Schedule the job
+```python title="webpagescrapernotifications.py"
+def start(self, interval_minutes=30):
     schedule.every(interval_minutes).minutes.do(self.check_for_changes)
-    
+    print(f"Monitoring {self.url} every {interval_minutes} minutes. Ctrl+C to stop.")
     while True:
         schedule.run_pending()
         time.sleep(1)
 ```
+`schedule.every().X.minutes.do(fn)` registers a recurring job. The `while True` loop is the "tick" — it wakes up every second to see if any jobs are due.
 
-Implements continuous monitoring with configurable intervals using the schedule library.
+## Webhook Notifications (Slack / Discord)
 
-### Object-Oriented Architecture
-```python title="webpagescrapernotifications.py" showLineNumbers{1}
-class WebPageMonitor:
-    def __init__(self, url, email_config=None):
-        self.url = url
-        self.email_config = email_config
-        self.previous_content = None
+Webhooks are the easiest cross-team alert channel. Create one in your workspace settings, then:
+
+```python title="slack.py"
+def send_slack(self, text):
+    requests.post(self.slack_webhook_url, json={"text": text}, timeout=10)
+
+def send_discord(self, text):
+    requests.post(self.discord_webhook_url, json={"content": text}, timeout=10)
+```
+A single line carries the alert — no SMTP setup, no app passwords.
+
+## Smarter Change Detection
+
+Plain hashes flag any change — even a refreshed CSRF token. Strategies to reduce noise:
+
+1. **Scope with a CSS selector.** Watch only `#main-content`, not the whole page.
+2. **Strip noisy elements before hashing:**
+   ```python title="strip.py"
+   for tag in soup.select("script, style, .ads, .timestamp"): tag.decompose()
+   ```
+3. **Diff instead of hash.** When the hash changes, compute a unified diff to *show* what changed:
+   ```python title="diff.py"
+   import difflib
+   diff = "\n".join(difflib.unified_diff(
+       old.splitlines(), new.splitlines(), lineterm=""))[:1500]
+   self.notify("Page changed", diff)
+   ```
+4. **Threshold-based.** Ignore changes under N characters using `difflib.SequenceMatcher.ratio()`.
+
+## Polite Scraping Checklist
+
+Before pointing this at a production site:
+- **Respect `robots.txt`.** Use `urllib.robotparser` to check before fetching.
+- **Set a real `User-Agent`** including contact info.
+- **Use a reasonable interval.** 30 minutes is friendly; 30 seconds is hostile.
+- **Honor rate limits.** Back off on 429 responses.
+- **Read the Terms of Service.** Some sites explicitly forbid automated monitoring.
+- **Stop immediately** if asked.
+
+A monitor that hammers a small site at 1 Hz can take it offline. Be a good citizen.
+
+## Common Mistakes
+
+| Problem | Cause | Fix |
+|---|---|---|
+| Always fires on startup | Compared against `None` | Skip the first iteration; record baseline only |
+| Email login fails | Used real password on Gmail | Generate an **App Password** |
+| 403 Forbidden | Default Python User-Agent | Set a real header |
+| Notifications fire constantly | Hashing the whole page including timestamps | Scope with a selector or strip dynamic elements |
+| Crash freezes loop | Network error inside the job | Wrap the job body in `try/except` |
+| Process killed when terminal closes | Run as a foreground process | Use `nohup`, `tmux`, `systemd`, or run as a Windows service |
+
+## Variations to Try
+
+### 1. Multiple URLs at once
+```python title="multi.py"
+sites = [WebPageMonitor(u) for u in URL_LIST]
+for s in sites:
+    schedule.every(30).minutes.do(s.check_for_changes)
 ```
 
-Uses class-based design for better organization and state management across monitoring sessions.
+### 2. Track specific values
+Use a regex to extract a number (price, stock count) and only alert if it crosses a threshold:
+```python title="price.py"
+import re
+price = float(re.search(r"\$([0-9.]+)", content).group(1))
+if price < TARGET_PRICE:
+    self.notify("Price drop!", f"Now ${price}")
+```
 
-## Features
+### 3. Screenshot diff
+Use **Playwright** to render the page and save a screenshot. Compute pixel difference with Pillow.
 
-- **Automated Web Scraping**: Continuously monitors specified web pages
-- **Change Detection**: Uses content hashing for efficient change identification
-- **Multiple Notification Channels**: Supports email and desktop notifications
-- **Configurable Intervals**: Customizable monitoring frequency
-- **Error Handling**: Robust handling of network and parsing errors
-- **Cross-Platform Support**: Works on Windows, macOS, and Linux
-- **Email Integration**: SMTP support for Gmail and other providers
-- **Content Hashing**: Efficient comparison without storing full content
+### 4. Web dashboard
+Pair with Flask (see [Basic Web Server](./basicwebserver)) — a page that lists all monitored URLs, last-check time, and recent history.
 
-## Next Steps
+### 5. SQLite history
+Persist every check (timestamp, hash, change?) for later analysis.
 
-### Enhancements
-- Add support for monitoring specific page elements (CSS selectors)
-- Implement webhook notifications for integration with other services
-- Create a web dashboard for managing multiple monitored sites
-- Add database storage for change history and analytics
-- Implement different notification types (SMS, Slack, Discord)
-- Create configuration file support for managing multiple sites
-- Add image/screenshot comparison capabilities
-- Implement rate limiting and respectful scraping practices
+### 6. Pushover / Pushbullet / Telegram
+Three more notification channels with simple APIs.
 
-### Learning Extensions
-- Study advanced web scraping techniques and anti-bot measures
-- Explore headless browsers (Selenium, Playwright) for dynamic content
-- Learn about web scraping ethics and legal considerations
-- Practice with database integration for historical data
-- Understand caching strategies for efficient monitoring
-- Explore real-time monitoring with WebSocket connections
+### 7. Headless browser
+Some sites are JavaScript-rendered. Replace `requests` with **Playwright** so you scrape the *rendered* DOM.
+
+### 8. RSS-aware mode
+If the site has an RSS feed (see [RSS Feed Reader](./rssfeedreader)), use that instead of scraping — far more reliable.
+
+### 9. Selector tester
+A small CLI that lets you try CSS selectors against a URL interactively before wiring them into the monitor.
+
+### 10. Docker container
+Pack the script in a Dockerfile and deploy to a tiny VPS so it runs 24/7 without keeping your laptop on.
+
+## Privacy & Operational Notes
+- **Do not put secrets in source.** Read SMTP passwords and webhook URLs from environment variables: `os.environ["SMTP_PASSWORD"]`.
+- **Add `*.json`, `.env`, `credentials.*` to `.gitignore`.**
+- **Log carefully.** Avoid printing full page content to disk when debugging is over.
+- **Rotate webhook URLs** if you suspect leaks.
+
+## Real-World Applications
+- **In-stock alerts** — bicycles, GPUs, concert tickets.
+- **Status pages** — pre-empt outages by watching `/status`.
+- **Job boards** — be first to apply to new listings.
+- **Course availability** — universities, training platforms.
+- **Government forms** — get notified when a deadline or form changes.
+- **Pricing intelligence** — track competitor prices (within Terms of Service).
 
 ## Educational Value
+- **HTTP & HTML parsing** — fetch and extract relevant text.
+- **Hashing** — fingerprinting for cheap comparison.
+- **Scheduling** — moving from a one-shot script to a long-running service.
+- **Notifications** — multiple channels, each with different trade-offs.
+- **Defensive coding** — failures must not kill the loop.
+- **Operational thinking** — running a real background process, not just a script.
 
-This project teaches:
-- **Web Scraping**: Extracting and processing data from websites
-- **Content Comparison**: Efficiently detecting changes in large datasets
-- **Automation**: Building systems that run continuously without human intervention
-- **Notification Systems**: Implementing multiple communication channels
-- **Email Programming**: Working with SMTP protocols and email formatting
-- **Scheduling**: Creating time-based automation with proper resource management
-- **Error Handling**: Managing network failures and parsing errors gracefully
-- **Object-Oriented Design**: Structuring applications for maintainability and reusability
+## Next Steps
+- Add **CSS selector scoping** to reduce noise.
+- Wire up **Slack/Discord** webhooks alongside email.
+- Persist history to **SQLite** for analysis.
+- Containerize with **Docker** and deploy to a cheap VPS.
+- Pair with [Email Sender](./emailsender) for richer email alerts.
+- Extend with **diff snippets** in the notification body.
 
-Perfect for understanding automation, web data monitoring, and building practical tools for content tracking and alerting systems.
+## Conclusion
+You built a real automation tool: it watches the web for you, sleeps politely between checks, alerts you through whichever channel you prefer, and recovers gracefully from network hiccups. Hash-based change detection, scheduling, and webhook notifications show up in nearly every monitoring system in production. Full source on [GitHub](https://github.com/Ravikisha/PythonCentralHub/blob/main/projects/beginners/webpagescrapernotifications.py). Explore more automation projects on Python Central Hub.

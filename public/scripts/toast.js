@@ -21,21 +21,41 @@
   }
 
   function show(opts){
-    const { title = '', description = '', variant = 'info', duration = 4000 } = opts || {};
+    const { title = '', description = '', variant = 'info', duration = 4000, html = false } = opts || {};
     const root = ensureRoot();
     const toast = document.createElement('div');
     toast.className = `toast toast--${variant} toast-show`;
 
-    toast.innerHTML = `
-      <div class="toast-icon">${iconForVariant(variant)}</div>
-      <div class="toast-body">
-        <div class="toast-title">${escapeHtml(title)}</div>
-        ${description ? `<div class="toast-desc">${escapeHtml(description)}</div>` : ''}
-      </div>
-      <button class="toast-close" aria-label="Dismiss">\u2715</button>
-    `;
+    // Build DOM structure without ever injecting untrusted strings as markup.
+    const icon = document.createElement('div');
+    icon.className = 'toast-icon';
+    icon.textContent = iconForVariant(variant);
 
-    const closeBtn = toast.querySelector('.toast-close');
+    const body = document.createElement('div');
+    body.className = 'toast-body';
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'toast-title';
+    // Markup only via explicit opt-in. Default is safe text.
+    if(html){ titleEl.innerHTML = title; } else { titleEl.textContent = title; }
+    body.appendChild(titleEl);
+
+    if(description){
+      const descEl = document.createElement('div');
+      descEl.className = 'toast-desc';
+      if(html){ descEl.innerHTML = description; } else { descEl.textContent = description; }
+      body.appendChild(descEl);
+    }
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'toast-close';
+    closeBtn.setAttribute('aria-label', 'Dismiss');
+    closeBtn.textContent = '\u2715';
+
+    toast.appendChild(icon);
+    toast.appendChild(body);
+    toast.appendChild(closeBtn);
+
     const hide = (animate=true)=>{
       if(!toast.__hidden){
         toast.__hidden = true;
@@ -60,15 +80,6 @@
     return {
       hide
     };
-  }
-
-  function escapeHtml(s){
-    return String(s)
-      .replace(/&/g,'&amp;')
-      .replace(/</g,'&lt;')
-      .replace(/>/g,'&gt;')
-      .replace(/"/g,'&quot;')
-      .replace(/'/g,'&#039;');
   }
 
   window.toast = window.toast || { show };
