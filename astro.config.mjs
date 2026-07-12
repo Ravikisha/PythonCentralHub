@@ -1,4 +1,5 @@
 import { defineConfig } from "astro/config";
+import { fileURLToPath } from "node:url";
 import starlight from "@astrojs/starlight";
 import rehypePrettyCode from "rehype-pretty-code";
 import robotsTxt from "astro-robots-txt";
@@ -67,6 +68,14 @@ function remarkEscapeBraces() {
 export default defineConfig({
   image: {
     domains: ["yt3.googleusercontent.com"],
+  },
+
+  vite: {
+    resolve: {
+      alias: {
+        "@": fileURLToPath(new URL("./src", import.meta.url)),
+      },
+    },
   },
 
   site,
