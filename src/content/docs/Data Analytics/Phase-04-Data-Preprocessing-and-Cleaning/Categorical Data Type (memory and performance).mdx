@@ -1,0 +1,414 @@
+---
+title: Categorical Data Type
+description: Use pandas Categorical dtype to shrink memory and speed up operations on repeated string values, plus nullable extension dtypes.
+sidebar:
+  order: 12
+---
+
+## What you'll learn
+
+- Why repeated string values (like `"apple"`, `"apple"`, `"orange"`...) waste memory
+- How pandas' `category` dtype stores data as **categories + integer codes**
+- Converting a column with `astype("category")`, and building one with `pd.Categorical`
+- Ordered categoricals and the `.cat` accessor (`categories`, `codes`, `rename_categories`, `set_categories`, `as_ordered`, `remove_unused_categories`)
+- Why `groupby` and `value_counts` are faster on categoricals
+- A quick look at nullable extension dtypes: `Int64`, `string`, `boolean`, and `pd.NA`
+
+## Why a "category" dtype?
+
+Real datasets are full of columns that only hold a handful of distinct values, repeated
+over and over. A `fruit` column with a million rows might only ever say `"apple"` or
+`"orange"`. Storing every one of those million rows as a full Python string is wasteful —
+you're storing the same few words again and again.
+
+pandas solves this the way data warehouses have for decades: keep a small table of the
+**distinct values** (the *categories*), and store each row as a cheap **integer code** that
+points into that table. This is called the **categorical** (or dictionary-encoded)
+representation.
+
+```python title="the idea, by hand" showLineNumbers{1}
+import pandas as pd
+
+values = pd.Series([0, 1, 0, 0] * 2)      # integer codes
+dim = pd.Series(["apple", "orange"])      # the categories (dimension table)
+
+print(dim.take(values).tolist())
+```
+
+```
+# Expected output:
+# ['apple', 'orange', 'apple', 'apple', 'apple', 'orange', 'apple', 'apple']
+```
+
+`dim.take(values)` rebuilds the original strings from the tiny lookup table — that's
+exactly what a `Categorical` does internally, automatically.
+
+## Converting a column with `astype("category")`
+
+```python title="fruit_categorical.py" showLineNumbers{1}
+import numpy as np
+import pandas as pd
+
+fruits = ["apple", "orange", "apple", "apple"] * 2
+df = pd.DataFrame({
+    "fruit": fruits,
+    "basket_id": np.arange(len(fruits)),
+})
+
+fruit_cat = df["fruit"].astype("category")
+print(fruit_cat)
+```
+
+```
+# Expected output:
+# 0     apple
+# 1    orange
+# 2     apple
+# 3     apple
+# 4     apple
+# 5    orange
+# 6     apple
+# 7     apple
+# Name: fruit, dtype: category
+# Categories (2, str): ['apple', 'orange']
+```
+
+Under the hood, `fruit_cat` now holds a `pandas.Categorical`. You can pull the two
+pieces apart with the `.cat` accessor:
+
+```python title="categories_and_codes.py" showLineNumbers{1}
+print(fruit_cat.cat.categories.tolist())
+print(fruit_cat.cat.codes.tolist())
+```
+
+```
+# Expected output:
+# ['apple', 'orange']
+# [0, 1, 0, 0, 0, 1, 0, 0]
+```
+
+`categories` is the small lookup table. `codes` is the compact integer array that
+replaces the repeated strings — one small int per row instead of one full string per row.
+
+## Building a Categorical directly
+
+You don't have to start from a plain Series. `pd.Categorical` and
+`pd.Categorical.from_codes` build one directly:
+
+```python title="build_categorical.py" showLineNumbers{1}
+import pandas as pd
+
+my_categories = pd.Categorical(["foo", "bar", "baz", "foo", "bar"])
+print(my_categories)
+
+categories = ["foo", "bar", "baz"]
+codes = [0, 1, 2, 0, 0, 1]
+from_codes = pd.Categorical.from_codes(codes, categories)
+print(from_codes)
+```
+
+```
+# Expected output:
+# ['foo', 'bar', 'baz', 'foo', 'bar']
+# Categories (3, str): ['bar', 'baz', 'foo']
+# ['foo', 'bar', 'baz', 'foo', 'foo', 'bar']
+# Categories (3, str): ['foo', 'bar', 'baz']
+```
+
+Notice the categories print in a different order than you passed them in — by default
+pandas just sorts the distinct values it finds. If the categories have a real ranking (like
+survey answers "low" < "medium" < "high"), pass `ordered=True` so comparisons like
+`<` work correctly:
+
+```python title="ordered_categorical.py" showLineNumbers{1}
+ordered_cat = pd.Categorical.from_codes(codes, categories, ordered=True)
+print(ordered_cat)
+```
+
+```
+# Expected output:
+# ['foo', 'bar', 'baz', 'foo', 'foo', 'bar']
+# Categories (3, str): ['foo' < 'bar' < 'baz']
+```
+
+An existing categorical can be flipped to ordered later with `.cat.as_ordered()`.
+
+## Editing categories with the `.cat` accessor
+
+The categories can be renamed, expanded, or trimmed **without touching the codes**,
+which makes these operations cheap:
+
+```python title="cat_accessor_methods.py" showLineNumbers{1}
+s = pd.Series(["a", "b", "c", "d"] * 2).astype("category")
+
+# Add a category that doesn't appear in the data yet
+s2 = s.cat.set_categories(["a", "b", "c", "d", "e"])
+print(s2.value_counts().sort_index())
+
+# Rename categories in place (order-preserving)
+s3 = s.cat.rename_categories(["A", "B", "C", "D"])
+print(s3.cat.categories.tolist())
+
+# Drop categories that no longer appear after filtering
+s4 = s[s.isin(["a", "b"])]
+print(s4.cat.categories.tolist())                       # still has c, d
+print(s4.cat.remove_unused_categories().cat.categories.tolist())
+```
+
+```
+# Expected output:
+# a    2
+# b    2
+# c    2
+# d    2
+# e    0
+# Name: count, dtype: int64
+# ['A', 'B', 'C', 'D']
+# ['a', 'b', 'c', 'd']
+# ['a', 'b']
+```
+
+## Computing with categoricals
+
+`groupby` and `value_counts` treat a categorical column the same way they'd treat a
+plain string column — but faster, because they work on the small integer codes array
+instead of comparing full strings.
+
+```python title="groupby_categorical.py" showLineNumbers{1}
+import numpy as np
+import pandas as pd
+
+rng = np.random.default_rng(seed=12345)
+draws = rng.standard_normal(1000)
+
+bins = pd.qcut(draws, 4, labels=["Q1", "Q2", "Q3", "Q4"])
+bins = pd.Series(bins, name="quartile")
+
+results = (
+    pd.Series(draws)
+    .groupby(bins, observed=False)
+    .agg(["count", "min", "max"])
+    .reset_index()
+)
+print(results["quartile"].dtype)
+```
+
+```
+# Expected output:
+# category
+```
+
+`pd.qcut` and `pd.cut` already hand you back a `Categorical` — that's why binned
+columns are cheap to group by, even across millions of rows.
+
+## Diagram: how a categorical is stored
+
+```mermaid title="String column vs categorical representation" desc="A repeated string column collapses into a small categories table plus a compact integer codes array."
+flowchart LR
+  A["Column of strings<br/>['apple','orange','apple','apple', ...]"] -->|"astype(\"category\")"| B["categories<br/>['apple', 'orange']"]
+  A -->|"astype(\"category\")"| C["codes<br/>[0, 1, 0, 0, ...]"]
+  B --> D["Categorical<br/>(categories + codes)"]
+  C --> D
+```
+
+## See the memory shrink
+
+```p5 title="Repeated strings collapsing into codes + a lookup table" desc="Full-length strings on the left compress into a tiny integer codes array plus a small categories table on the right." height="300"
+function setup() {
+  createCanvas(600, 300);
+  textFont("monospace");
+  noLoop();
+}
+function draw() {
+  background(13, 17, 23);
+  const words = ["apple", "orange", "apple", "apple", "apple", "orange", "apple", "apple"];
+  const codes = [0, 1, 0, 0, 0, 1, 0, 0];
+  const categories = ["apple", "orange"];
+  const colors = { apple: [255, 211, 67], orange: [75, 139, 190] };
+
+  fill(200);
+  textAlign(LEFT, TOP);
+  textSize(11);
+  text("object dtype (repeats full strings)", 20, 12);
+  text("category dtype (codes + lookup)", 340, 12);
+
+  // left column: full strings, wide boxes
+  for (let i = 0; i < words.length; i++) {
+    const y = 36 + i * 28;
+    const c = colors[words[i]];
+    fill(c[0], c[1], c[2], 60);
+    rect(20, y, 130, 22, 4);
+    fill(c[0], c[1], c[2]);
+    textAlign(LEFT, CENTER);
+    textSize(11);
+    text(words[i], 28, y + 11);
+  }
+
+  // right column: tiny code chips
+  for (let i = 0; i < codes.length; i++) {
+    const y = 36 + i * 28;
+    const c = colors[words[i]];
+    fill(c[0], c[1], c[2], 60);
+    rect(340, y, 26, 22, 4);
+    fill(c[0], c[1], c[2]);
+    textAlign(CENTER, CENTER);
+    textSize(11);
+    text(codes[i], 353, y + 11);
+  }
+
+  // categories lookup table
+  fill(30, 34, 42);
+  stroke(90, 100, 116);
+  rect(400, 40, 160, 70, 6);
+  noStroke();
+  fill(230);
+  textAlign(LEFT, TOP);
+  textSize(10);
+  text("categories lookup", 410, 48);
+  for (let i = 0; i < categories.length; i++) {
+    const c = colors[categories[i]];
+    fill(c[0], c[1], c[2]);
+    textSize(11);
+    text(i + " -> " + categories[i], 410, 68 + i * 18);
+  }
+
+  fill(180);
+  textAlign(LEFT, TOP);
+  textSize(10);
+  text("8 full-length strings", 20, 260);
+  text("8 tiny int codes + 2 category strings", 340, 260);
+}
+```
+
+:::tip[From the book]
+McKinney measures it directly: a 10-million-row Series of four repeated labels
+(`labels.memory_usage(deep=True)`) uses about **600 MB** as plain strings but only
+about **10 MB** once converted with `astype("category")`. `value_counts()` on the
+categorical version also runs roughly 25x faster, because it works on the integer
+codes array instead of comparing strings.
+:::
+
+## A note on nullable extension dtypes
+
+`category` is one of several **extension dtypes** pandas added on top of the original
+NumPy-based system. NumPy has no clean way to mark an integer or boolean as
+missing, so plain pandas used to silently upcast a column of integers with a missing
+value to `float64` (using `NaN`). Extension dtypes fix that by using a dedicated missing
+marker, `pd.NA`, instead:
+
+```python title="nullable_dtypes.py" showLineNumbers{1}
+import pandas as pd
+
+s = pd.Series([1, 2, 3, None], dtype="Int64")
+print(s)
+print(s.isna().tolist())
+```
+
+```
+# Expected output:
+# 0       1
+# 1       2
+# 2       3
+# 3    <NA>
+# dtype: Int64
+# [False, False, False, True]
+```
+
+The capitalized `"Int64"` (as opposed to lowercase `"int64"`) is what tells pandas to use
+the nullable extension type. The same pattern gives you `"string"` for text and
+`"boolean"` for True/False columns that may contain nulls — handy when you're
+cleaning a dataset that mixes real values with missing ones.
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Convert a column to category dtype
+
+<DataCampExercise
+  lang="python"
+  hint={`\`series.astype("category")\` converts a string column. \`.cat.categories\` lists the distinct values it found.`}
+  code={`# Task: Exercise 1 – Convert a column to category dtype
+import pandas as pd
+
+fruits = ["apple", "orange", "apple", "apple"] * 2
+s = pd.Series(fruits)
+cat = s.___("category")   # replace ___ with astype
+print(cat.cat.categories.tolist())
+
+# ── Expected Output ───────────────────────────────────────────
+# ['apple', 'orange']
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import pandas as pd
+
+fruits = ["apple", "orange", "apple", "apple"] * 2
+s = pd.Series(fruits)
+cat = s.astype("category")
+print(cat.cat.categories.tolist())`}
+  sct={`test_output_contains("['apple', 'orange']")
+success_msg("The repeated fruit names collapsed into two distinct categories!")`}
+  height={140}
+/>
+
+### Exercise 2 – Read the integer codes
+
+<DataCampExercise
+  lang="python"
+  hint={`\`.cat.codes\` gives you the small integer array that stands in for the original strings.`}
+  code={`# Task: Exercise 2 – Read the integer codes
+import pandas as pd
+
+fruits = ["apple", "orange", "apple", "apple"] * 2
+cat = pd.Series(fruits).astype("category")
+codes = cat.cat.___   # replace ___ with codes
+print(codes.tolist())
+
+# ── Expected Output ───────────────────────────────────────────
+# [0, 1, 0, 0, 0, 1, 0, 0]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import pandas as pd
+
+fruits = ["apple", "orange", "apple", "apple"] * 2
+cat = pd.Series(fruits).astype("category")
+codes = cat.cat.codes
+print(codes.tolist())`}
+  sct={`test_output_contains("[0, 1, 0, 0, 0, 1, 0, 0]")
+success_msg("That's the compact integer array pandas stores instead of full strings!")`}
+  height={140}
+/>
+
+### Exercise 3 – Prove the memory savings
+
+<DataCampExercise
+  lang="python"
+  hint={`\`series.memory_usage(deep=True)\` reports bytes used. Compare the object-dtype version against the category version.`}
+  code={`# Task: Exercise 3 – Prove the memory savings
+import pandas as pd
+
+fruits = ["apple", "orange", "apple", "apple"] * 2
+s = pd.Series(fruits)
+cat = s.astype("category")
+
+smaller = cat.memory_usage(deep=True) ___ s.memory_usage(deep=True)   # replace ___ with <
+print(smaller)
+
+# ── Expected Output ───────────────────────────────────────────
+# True
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import pandas as pd
+
+fruits = ["apple", "orange", "apple", "apple"] * 2
+s = pd.Series(fruits)
+cat = s.astype("category")
+
+smaller = cat.memory_usage(deep=True) < s.memory_usage(deep=True)
+print(smaller)`}
+  sct={`test_output_contains("True")
+success_msg("Fewer bytes, same information — that's the categorical payoff!")`}
+  height={150}
+/>
+
+## Next
+
+Now that repeated string columns can be compact and fast, move on to
+**Introduction to Matplotlib** to start visualizing the data you've cleaned and encoded.

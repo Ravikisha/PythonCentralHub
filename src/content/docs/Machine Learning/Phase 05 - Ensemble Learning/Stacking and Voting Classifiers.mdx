@@ -1,0 +1,424 @@
+---
+title: Stacking and Voting Classifiers
+description: Combine different model families with voting or stacking to exploit complementary strengths.
+sidebar:
+  order: 289
+---
+
+## What you'll learn
+
+- **hard voting** vs. **soft voting**, and why soft voting usually wins
+- how **stacking** replaces a simple vote with a trained "meta-learner"
+- why the meta-learner has to be trained on **held-out** predictions, not the same data
+  the base models trained on
+- how to build both with scikit-learn's `VotingClassifier` and `StackingClassifier`
+- a live accuracy comparison across every approach, on the same dataset
+
+## Voting ensembles
+
+Voting is the simplest way to combine several **already-trained**, **different**
+models: let them each cast a vote, and combine the votes.
+
+- **hard voting** — predict whichever class gets the most raw votes (majority rule)
+- **soft voting** — average each model's predicted class *probabilities*, and predict
+  whichever class has the highest average probability
+
+```mermaid title="Voting: combine different model families" desc="Diverse models vote directly on the final class." 
+flowchart LR
+  A["Logistic Regression"] --> V["Voting"]
+  B["Random Forest"] --> V
+  C["SVM"] --> V
+  V --> P["Final prediction"]
+```
+
+Soft voting usually beats hard voting because it gives more weight to *confident*
+predictions instead of treating every vote equally — but every base model needs a
+working `predict_proba()` method. For scikit-learn's `SVC`, that means you must ask for
+it explicitly with `probability=True` (this makes fitting slower, since it now uses
+internal cross-validation to calibrate those probabilities).
+
+## Stacking ensembles
+
+Voting aggregates predictions with a fixed rule (majority, or average). **Stacking**
+(short for *stacked generalization*) goes one step further: instead of a fixed rule, it
+**trains a model** — called a **blender**, or **meta-learner** — to learn how to best
+combine the base models' predictions.
+
+```mermaid title="Stacking: base learners feed a meta-learner" desc="Base models' predictions become input features for a blender that learns how to combine them."
+flowchart TD
+  X["Features"] --> M1["Base model 1 (Random Forest)"]
+  X --> M2["Base model 2 (SVM)"]
+  X --> M3["Base model 3 (Logistic Regression)"]
+  M1 --> Z["Meta-features: (p1, p2, p3)"]
+  M2 --> Z
+  M3 --> Z
+  Z --> META["Meta-learner (blender)"]
+  META --> Y["Final prediction"]
+```
+
+### How the blender gets trained without cheating
+
+If the blender trained on the same predictions the base models made on their own
+training data, it would be learning from predictions that are "too good" — the base
+models have already memorized some of that data. Géron's fix is to use a **hold-out
+set**:
+
+1. Split the training data into two parts.
+2. Train the base models on the first part only.
+3. Use the trained base models to predict on the **second, held-out** part — these
+   predictions are "clean," since the base models never saw those instances during
+   training.
+4. Build a new training set from those clean predictions (one column per base model)
+   with the original targets, and train the blender on **that**.
+
+It's even possible to stack multiple layers of blenders this way — split the data into
+three parts instead of two, and each layer trains on the previous layer's held-out
+predictions.
+
+:::caution
+Stacking must be done carefully to avoid leakage: never let the blender train on
+predictions the base models made on data they were also fitted on. Scikit-learn's
+`StackingClassifier` handles the hold-out split for you internally with cross-validation
+— that's the whole reason to prefer it over writing the loop yourself.
+:::
+
+## Scikit-learn examples
+
+```python title="VotingClassifier: hard vs. soft" showLineNumbers{1}
+from sklearn.datasets import make_moons
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score
+
+X, y = make_moons(n_samples=500, noise=0.30, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+
+def make_base_models():
+    return [
+        ("lr", LogisticRegression()),
+        ("rf", RandomForestClassifier(n_estimators=100, random_state=42)),
+        ("svc", SVC(probability=True, random_state=42)),
+    ]
+
+hard_voter = VotingClassifier(estimators=make_base_models(), voting="hard")
+soft_voter = VotingClassifier(estimators=make_base_models(), voting="soft")
+
+for name, clf in (("hard voting", hard_voter), ("soft voting", soft_voter)):
+    clf.fit(X_train, y_train)
+    acc = accuracy_score(y_test, clf.predict(X_test))
+    print(name, round(acc, 3))
+```
+
+```
+hard voting 0.912
+soft voting 0.92
+```
+
+```python title="StackingClassifier" showLineNumbers{1}
+from sklearn.ensemble import StackingClassifier
+
+stack_clf = StackingClassifier(
+    estimators=[
+        ("rf", RandomForestClassifier(n_estimators=100, random_state=42)),
+        ("svc", SVC(probability=True, random_state=42)),
+    ],
+    final_estimator=LogisticRegression(),
+)
+stack_clf.fit(X_train, y_train)
+print(round(accuracy_score(y_test, stack_clf.predict(X_test)), 3))
+```
+
+```
+0.912
+```
+
+Every combination here (0.912-0.92) beats every individual base model on its own
+(Logistic Regression alone scores 0.864) — that's the payoff of combining diverse,
+complementary models.
+
+:::tip[From the book]
+Géron notes that, in the book's edition, scikit-learn didn't ship stacking support
+directly — readers were shown how to roll their own hold-out-based blender. Modern
+scikit-learn now includes `StackingClassifier` / `StackingRegressor` built in, doing that
+same hold-out trick for you under the hood via cross-validation.
+:::
+
+## Visualize it: votes tallying up
+
+Three base learners each output a probability of class 1 for the same instance. Watch
+each model's bar arrive in turn, then watch the votes get **tallied one model at a
+time** — hard voting only cares which side of 0.5 each one lands on; soft voting
+averages the raw probabilities, and can flip the decision that hard voting would
+have made.
+
+```p5 title="Hard vote vs. soft vote" desc="Each model's probability bar fills in turn, votes get tallied one model at a time, then hard voting (majority of >0.5) and soft voting (averaged probability) are compared." height="280"
+let probs = [0.5, 0.5, 0.5];
+let t = 0;
+
+function newInstance() {
+  probs = [random(0.1, 0.95), random(0.1, 0.95), random(0.1, 0.95)];
+  t = 0;
+}
+
+function setup() {
+  createCanvas(600, 280);
+  textFont("monospace");
+  newInstance();
+}
+
+function easeOut(x) { return 1 - pow(1 - x, 3); }
+
+function draw() {
+  background(13, 17, 23);
+  const labels = ["Model A", "Model B", "Model C"];
+  const barTop = 40, barH = 26, gap = 44, barMaxW = width - 220;
+  const staggers = [0, 12, 24];
+
+  // each bar fills in with a stagger, so votes visibly arrive one at a time
+  const fills = probs.map((p, i) => {
+    const local = constrain((t - staggers[i]) / 25, 0, 1);
+    return p * easeOut(local);
+  });
+
+  for (let i = 0; i < 3; i++) {
+    const y = barTop + i * gap;
+    noStroke();
+    fill(60);
+    rect(150, y, barMaxW, barH);
+    fill(probs[i] > 0.5 ? color(75, 139, 190) : color(150, 90, 90));
+    rect(150, y, barMaxW * fills[i], barH);
+    fill(210);
+    textAlign(RIGHT, CENTER);
+    textSize(13);
+    text(labels[i], 140, y + barH / 2);
+    textAlign(LEFT, CENTER);
+    text(fills[i].toFixed(2), 150 + barMaxW + 8, y + barH / 2);
+  }
+
+  // tally the hard votes one model at a time, once its bar has landed
+  const voteRevealStart = 70;
+  let hardTally1 = 0, hardTally0 = 0;
+  for (let i = 0; i < 3; i++) {
+    const revealT = voteRevealStart + i * 10;
+    if (t >= revealT) {
+      if (probs[i] > 0.5) hardTally1++; else hardTally0++;
+    }
+  }
+
+  noStroke();
+  fill(255, 211, 67);
+  textSize(14);
+  textAlign(LEFT, TOP);
+  if (t < voteRevealStart) {
+    text("collecting predictions...", 20, 190);
+  } else {
+    text("tallying votes -> class 1: " + hardTally1 + "   class 0: " + hardTally0, 20, 190);
+  }
+
+  const softAvg = (probs[0] + probs[1] + probs[2]) / 3;
+  const softPred = softAvg > 0.5 ? 1 : 0;
+
+  if (t >= voteRevealStart + 30) {
+    const hardPred = hardTally1 >= 2 ? 1 : 0;
+    text("hard vote -> class " + hardPred + "  (" + hardTally1 + "/3 say class 1)", 20, 212);
+    text("soft vote -> class " + softPred + "  (avg prob = " + softAvg.toFixed(2) + ")", 20, 234);
+  }
+
+  fill(150);
+  textSize(11);
+  text("click to draw a new instance", 20, 258);
+
+  t++;
+  if (t > 210) newInstance();
+}
+
+function mousePressed() {
+  newInstance();
+}
+```
+
+## Mini-checkpoint
+
+Try a voting ensemble with:
+
+- one linear model (Logistic Regression)
+- one non-linear model (SVM)
+- one tree-based model (Random Forest)
+
+Compare its accuracy against each base model individually, then swap `voting="hard"` for
+`voting="soft"` and see whether it improves further.
+
+## 🧪 Try It Yourself
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+### Exercise 1 – Build a Hard Voting Ensemble
+
+<DataCampExercise
+  lang="python"
+  hint={`Fit \`hard_voter\` on the training data before scoring it on the test set.`}
+  code={`# Task: Exercise 1 – Build a Hard Voting Ensemble
+from sklearn.datasets import make_moons
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score
+
+X, y = make_moons(n_samples=500, noise=0.30, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+
+hard_voter = VotingClassifier(
+    estimators=[
+        ("lr", LogisticRegression()),
+        ("rf", RandomForestClassifier(n_estimators=100, random_state=42)),
+        ("svc", SVC(probability=True, random_state=42)),
+    ],
+    voting="hard",
+)
+hard_voter.___(X_train, y_train)   # replace ___ with fit
+print(round(accuracy_score(y_test, hard_voter.predict(X_test)), 3))
+
+# ── Expected Output ───────────────────────────────────────────
+# 0.912
+# ──────────────────────────────────────────────────────────────`}
+  solution={`from sklearn.datasets import make_moons
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score
+
+X, y = make_moons(n_samples=500, noise=0.30, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+
+hard_voter = VotingClassifier(
+    estimators=[
+        ("lr", LogisticRegression()),
+        ("rf", RandomForestClassifier(n_estimators=100, random_state=42)),
+        ("svc", SVC(probability=True, random_state=42)),
+    ],
+    voting="hard",
+)
+hard_voter.fit(X_train, y_train)
+print(round(accuracy_score(y_test, hard_voter.predict(X_test)), 3))`}
+  sct={`test_output_contains("0.912")
+success_msg("The majority vote already beats every individual base model!")`}
+  height={188}
+/>
+
+### Exercise 2 – Switch to Soft Voting
+
+<DataCampExercise
+  lang="python"
+  hint={`Just change the \`voting\` argument from \`"hard"\` to \`"soft"\`.`}
+  code={`# Task: Exercise 2 – Switch to Soft Voting
+from sklearn.datasets import make_moons
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score
+
+X, y = make_moons(n_samples=500, noise=0.30, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+
+soft_voter = VotingClassifier(
+    estimators=[
+        ("lr", LogisticRegression()),
+        ("rf", RandomForestClassifier(n_estimators=100, random_state=42)),
+        ("svc", SVC(probability=True, random_state=42)),
+    ],
+    voting=___,   # replace ___ with "soft"
+)
+soft_voter.fit(X_train, y_train)
+print(round(accuracy_score(y_test, soft_voter.predict(X_test)), 3))
+
+# ── Expected Output ───────────────────────────────────────────
+# 0.92
+# ──────────────────────────────────────────────────────────────`}
+  solution={`from sklearn.datasets import make_moons
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score
+
+X, y = make_moons(n_samples=500, noise=0.30, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+
+soft_voter = VotingClassifier(
+    estimators=[
+        ("lr", LogisticRegression()),
+        ("rf", RandomForestClassifier(n_estimators=100, random_state=42)),
+        ("svc", SVC(probability=True, random_state=42)),
+    ],
+    voting="soft",
+)
+soft_voter.fit(X_train, y_train)
+print(round(accuracy_score(y_test, soft_voter.predict(X_test)), 3))`}
+  sct={`test_output_contains("0.92")
+success_msg("Averaging probabilities squeezed out even more accuracy than hard voting.")`}
+  height={188}
+/>
+
+### Exercise 3 – Train a Stacking Classifier
+
+<DataCampExercise
+  lang="python"
+  hint={`The meta-learner goes in the \`final_estimator\` argument.`}
+  code={`# Task: Exercise 3 – Train a Stacking Classifier
+from sklearn.datasets import make_moons
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, StackingClassifier
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score
+
+X, y = make_moons(n_samples=500, noise=0.30, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+
+stack_clf = StackingClassifier(
+    estimators=[
+        ("rf", RandomForestClassifier(n_estimators=100, random_state=42)),
+        ("svc", SVC(probability=True, random_state=42)),
+    ],
+    final_estimator=___(),   # replace ___ with LogisticRegression
+)
+stack_clf.fit(X_train, y_train)
+print(round(accuracy_score(y_test, stack_clf.predict(X_test)), 3))
+
+# ── Expected Output ───────────────────────────────────────────
+# 0.912
+# ──────────────────────────────────────────────────────────────`}
+  solution={`from sklearn.datasets import make_moons
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, StackingClassifier
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score
+
+X, y = make_moons(n_samples=500, noise=0.30, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+
+stack_clf = StackingClassifier(
+    estimators=[
+        ("rf", RandomForestClassifier(n_estimators=100, random_state=42)),
+        ("svc", SVC(probability=True, random_state=42)),
+    ],
+    final_estimator=LogisticRegression(),
+)
+stack_clf.fit(X_train, y_train)
+print(round(accuracy_score(y_test, stack_clf.predict(X_test)), 3))`}
+  sct={`test_output_contains("0.912")
+success_msg("The meta-learner learned how to blend the base models' predictions!")`}
+  height={188}
+/>
+
+## Next
+
+That wraps up Phase 5. Continue to **Introduction to Clustering** in Phase 6 — you've
+spent this whole phase combining *supervised* models; next you'll learn how to find
+structure in data that has **no labels at all**.

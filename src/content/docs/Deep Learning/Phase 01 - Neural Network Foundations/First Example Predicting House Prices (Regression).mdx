@@ -1,0 +1,289 @@
+---
+title: "First Example: Predicting House Prices (Regression)"
+description: Predict a continuous value instead of a class - feature normalization, a linear (no-activation) output layer, MSE/MAE, and K-fold validation for small datasets.
+sidebar:
+  order: 408
+---
+
+The last two examples predicted a *category*. This one predicts a **number** — the
+median price of a house — which changes the output layer, the loss function, and (
+because there's so little data) how you validate the model at all.
+
+## The dataset: few samples, mismatched scales
+
+This dataset has only 506 data points total — 404 for training, 102 for testing —
+each with 13 numerical features about a Boston-area suburb in the 1970s (crime rate,
+rooms per dwelling, distance to employment centers, and so on). Two things make this
+example different from IMDB and Reuters:
+
+- **Very little data** — 404 samples is tiny by deep learning standards.
+- **Mismatched feature scales** — one column might range 0–1, another 1–12, another
+  0–100.
+
+```python title="Loading the housing dataset" showLineNumbers{1}
+from tensorflow.keras.datasets import boston_housing
+
+(train_data, train_targets), (test_data, test_targets) = boston_housing.load_data()
+
+print(train_data.shape)   # (404, 13)
+print(test_data.shape)    # (102, 13)
+print(train_targets[:5])  # e.g. [15.2, 42.3, 50.0, 21.1, 17.7] -- prices in $1000s
+```
+
+## Preparing the data: feature-wise normalization
+
+Feeding a network features on wildly different scales makes learning needlessly
+hard. The standard fix: for each column, subtract its mean and divide by its standard
+deviation, so every feature ends up centered at 0 with a standard deviation of 1:
+
+```python title="Normalizing every feature" showLineNumbers{1}
+mean = train_data.mean(axis=0)
+train_data -= mean
+std = train_data.std(axis=0)
+train_data /= std
+
+test_data -= mean   # reuse the TRAINING mean/std -- never compute stats from test data
+test_data /= std
+```
+
+The test set is normalized using the **training set's** mean and standard deviation —
+using anything computed from the test data, even something this simple, leaks
+information you're not supposed to have yet.
+
+## Building the model: a linear output layer
+
+With so few samples, a small model helps avoid overfitting — two 64-unit hidden
+layers is plenty here:
+
+```python title="A regression model, wrapped in a function" showLineNumbers{1}
+from tensorflow import keras
+from tensorflow.keras import layers
+
+def build_model():
+    model = keras.Sequential([
+        layers.Dense(64, activation="relu"),
+        layers.Dense(64, activation="relu"),
+        layers.Dense(1),   # no activation -- a purely linear output
+    ])
+    model.compile(optimizer="rmsprop", loss="mse", metrics=["mae"])
+    return model
+```
+
+- The output layer has **1 unit and no activation function**. Any activation (like
+  `sigmoid`) would squash the output into a fixed range — but a house price can be
+  any real number, so the last layer stays purely linear (`dot(input, W) + b`).
+- **`mse`** (mean squared error) is the standard regression loss.
+- **`mae`** (mean absolute error) is tracked as a metric because it's easy to
+  interpret directly: an MAE of 2.5 here means predictions are off by about $2,500 on
+  average.
+- `build_model()` is wrapped in a function because K-fold validation, next, needs a
+  **fresh, identically-initialized** model for every fold.
+
+```mermaid title="Classification vs. regression output layers" desc="Classification ends in sigmoid or softmax to produce probabilities; regression ends in a single linear unit that can output any real value."
+flowchart LR
+  A["Hidden layers"] --> B["Dense(1, sigmoid)<br/>binary probability"]
+  A --> C["Dense(N, softmax)<br/>class probabilities"]
+  A --> D["Dense(1)<br/>no activation -- any real value"]
+```
+
+## Why K-fold validation
+
+With only 404 training samples, a single train/validation split would leave a
+validation set of maybe 100 examples — small enough that the validation score would
+swing wildly depending on *which* 100 examples happened to land there. **K-fold
+cross-validation** fixes this: split the data into `k` chunks, train `k` separate
+models (each holding out a different chunk for validation), and average the results.
+
+```python title="K-fold validation" showLineNumbers{1}
+import numpy as np
+
+k = 4
+num_val_samples = len(train_data) // k
+num_epochs = 100
+all_scores = []
+
+for i in range(k):
+    val_data = train_data[i * num_val_samples: (i + 1) * num_val_samples]
+    val_targets = train_targets[i * num_val_samples: (i + 1) * num_val_samples]
+
+    partial_train_data = np.concatenate(
+        [train_data[:i * num_val_samples], train_data[(i + 1) * num_val_samples:]], axis=0)
+    partial_train_targets = np.concatenate(
+        [train_targets[:i * num_val_samples], train_targets[(i + 1) * num_val_samples:]], axis=0)
+
+    model = build_model()
+    model.fit(partial_train_data, partial_train_targets,
+              epochs=num_epochs, batch_size=16, verbose=0)
+    val_mse, val_mae = model.evaluate(val_data, val_targets, verbose=0)
+    all_scores.append(val_mae)
+
+print(all_scores)          # e.g. [2.1, 3.1, 2.6, 2.4] -- scores vary per fold
+print(np.mean(all_scores)) # ~2.55 -- a far more reliable estimate than any single fold
+```
+
+Individual folds can disagree by a dollar or more per house — the **average** across
+folds is what you should trust.
+
+## Choosing the number of epochs
+
+Training longer (say 500 epochs) while recording the validation MAE at every epoch,
+for every fold, lets you plot the average validation MAE curve and read off where it
+stops improving:
+
+```python title="Recording per-epoch validation history across folds" showLineNumbers{1}
+all_mae_histories = []
+for i in range(k):
+    # ... same fold split as above ...
+    model = build_model()
+    history = model.fit(partial_train_data, partial_train_targets,
+                         validation_data=(val_data, val_targets),
+                         epochs=500, batch_size=16, verbose=0)
+    all_mae_histories.append(history.history["val_mae"])
+
+average_mae_history = [
+    np.mean([fold[epoch] for fold in all_mae_histories]) for epoch in range(500)
+]
+```
+
+In the book, this curve flattens out around epoch 120–140 — training past that point
+just overfits.
+
+## Training the final model
+
+Once you've picked a good number of epochs, train one last model on **all** the
+training data and check it against the test set:
+
+```python title="Training the final production model" showLineNumbers{1}
+model = build_model()
+model.fit(train_data, train_targets, epochs=130, batch_size=16, verbose=0)
+test_mse_score, test_mae_score = model.evaluate(test_data, test_targets)
+print(test_mae_score)   # roughly 2.5 -- off by about $2,500 on average
+```
+
+```python title="Predicting a price" showLineNumbers{1}
+predictions = model.predict(test_data)
+print(predictions[0])   # e.g. array([9.99], dtype=float32) -- ~$10,000
+```
+
+:::tip[From the book]
+Chollet's reason for keeping this model small: the less training data you have, the
+worse overfitting gets, and a small network (few layers, modest units) is one of the
+simplest, most effective defenses. Don't reach for a bigger model just because you
+can — reach for one that matches how much data you actually have.
+:::
+
+## Mini-checkpoint
+
+Why does the model's final `Dense` layer have no activation function?
+
+- Applying an activation like `sigmoid` or `softmax` would constrain the output to a
+  fixed range (like 0–1). A house price can be any real number, so the last layer
+  stays a plain linear transformation.
+
+## Next
+
+You've now built all three of the classic vector-data workflows — binary
+classification, multiclass classification, and regression. Continue to **Phase 2:
+Training Deep Neural Networks** to see how backpropagation, optimizers, and
+regularization scale these same ideas up to bigger, deeper networks.
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Normalize Features by Hand
+
+<DataCampExercise
+  lang="python"
+  hint={`Subtract the column mean, then divide by the column standard deviation: \`(data - mean) / std\`.`}
+  code={`# Task: Exercise 1 - Normalize Features by Hand
+import numpy as np
+
+data = np.array([[1., 200.], [3., 400.], [5., 600.]])
+mean = data.mean(axis=0)
+std = data.std(axis=0)
+
+normalized = (data - mean) / ___   # replace ___ with std
+print(np.round(normalized, 2))
+
+# ── Expected Output ───────────────────────────────────────────
+# [[-1.22 -1.22]
+#  [ 0.    0.  ]
+#  [ 1.22  1.22]]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+data = np.array([[1., 200.], [3., 400.], [5., 600.]])
+mean = data.mean(axis=0)
+std = data.std(axis=0)
+normalized = (data - mean) / std
+print(np.round(normalized, 2))`}
+  sct={`test_output_contains("-1.22")
+success_msg("Every column is now centered at 0 with a standard deviation of 1!")`}
+  height={160}
+/>
+
+### Exercise 2 – A Linear Output Layer for Regression
+
+<DataCampExercise
+  lang="python"
+  hint={`Regression output layers have 1 unit and no \`activation\` argument at all.`}
+  code={`# Task: Exercise 2 - A Linear Output Layer for Regression
+from tensorflow import keras
+from tensorflow.keras import layers
+
+model = keras.Sequential([
+    layers.Dense(64, activation="relu"),
+    layers.Dense(64, activation="relu"),
+    layers.___(1),   # replace ___ with Dense -- no activation argument
+])
+model.compile(optimizer="rmsprop", loss="mse", metrics=["mae"])
+print("Output units:", model.layers[-1].units)
+print("Output activation:", model.layers[-1].activation.__name__)
+
+# ── Expected Output ───────────────────────────────────────────
+# Output units: 1
+# Output activation: linear
+# ──────────────────────────────────────────────────────────────`}
+  solution={`from tensorflow import keras
+from tensorflow.keras import layers
+
+model = keras.Sequential([
+    layers.Dense(64, activation="relu"),
+    layers.Dense(64, activation="relu"),
+    layers.Dense(1),
+])
+model.compile(optimizer="rmsprop", loss="mse", metrics=["mae"])
+print("Output units:", model.layers[-1].units)
+print("Output activation:", model.layers[-1].activation.__name__)`}
+  sct={`test_output_contains("Output units: 1")
+test_output_contains("Output activation: linear")
+success_msg("A single linear unit -- free to predict any real-valued price!")`}
+  height={170}
+/>
+
+### Exercise 3 – Average K-Fold Scores
+
+<DataCampExercise
+  lang="python"
+  hint={`Use \`np.mean(all_scores)\` to average the per-fold validation scores.`}
+  code={`# Task: Exercise 3 - Average K-Fold Scores
+import numpy as np
+
+all_scores = [2.1, 3.1, 2.6, 2.4]   # MAE from each of 4 folds
+
+average_score = np.___(all_scores)   # replace ___ with mean
+print("Average MAE:", round(average_score, 2))
+
+# ── Expected Output ───────────────────────────────────────────
+# Average MAE: 2.55
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+all_scores = [2.1, 3.1, 2.6, 2.4]
+average_score = np.mean(all_scores)
+print("Average MAE:", round(average_score, 2))`}
+  sct={`test_output_contains("Average MAE: 2.55")
+success_msg("The average across folds is a far more reliable estimate than any single fold!")`}
+  height={150}
+/>

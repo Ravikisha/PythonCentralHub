@@ -22,8 +22,6 @@
 import { visit } from "unist-util-visit";
 import renderDiagram from "./render-diagram";
 
-const style = `all: initial; width: 100%;display: flex; flex-direction: column; justify-content: center;align-items: center; background-color: #fff; border-radius: 0.5rem; box-shadow: 10px 24px 50px 17px rgba(0, 0, 0, 0.1);border: 1px solid #c2c2c2;`;
-
 function getTitle(meta: string) {
   if(!meta) return false;
   if(meta.length === 0) return false;
@@ -97,20 +95,26 @@ function plugin() {
           return;
         }
 
+        const title = getTitle(node.meta);
+        const desc = getDesc(node.meta);
+        // Class-based "instrument panel" — styling lives in src/styles/viz.css
+        // so it themes with the site (see the .pch-viz / .mermaid-diagram rules)
+        // instead of the old hard-coded white card.
         parent.children.splice(index, 1, {
           type: "html",
-          // TODO: put CSS elsewhere
           value: `
-          <div class="mermaid-diagram" style="${style}">
-          <p style="text-align: center;color: #222;font-size: 1rem; margin: 1rem 0 1rem 0; font-family: 'Atkinson Hyperlegible', sans-serif;padding: 0 1rem 0 1rem;">${
-            getDesc(node.meta) ?? ""
-          }</p>
-          <hr style="width: 80%; margin: 0.5rem 0 0.5rem 0; border: 1px solid #c2c2c2;"/>
-          ${html}
-          <h2 style="text-align: center;color: #222;font-size: 1.5rem; font-weight: 500; margin: 1rem 0 1rem 0; font-family: 'Atkinson Hyperlegible', sans-serif;">${
-            getTitle(node.meta) ?? ""
-          }</h2>
-          </div>
+<figure class="pch-viz mermaid-diagram">
+  <div class="pch-viz__bar">
+    <span class="pch-viz__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span class="pch-viz__tag">diagram</span>
+    <span class="pch-viz__title">${title || "Diagram"}</span>
+    <span class="pch-viz__lib">mermaid</span>
+  </div>
+  <div class="mermaid-diagram__stage">
+    ${html}
+  </div>
+  ${desc ? `<figcaption class="pch-viz__cap">${desc}</figcaption>` : ""}
+</figure>
           `,
 
           position: node.position,

@@ -333,7 +333,13 @@
 
     const code = getCodeFromBlock(block);
 
-    const pre = block.querySelector('pre');
+    // rehype-pretty-code emits TWO <pre> (a light-theme and a dark-theme copy;
+    // one is display:none per theme). Use the LAST one as the anchor so the
+    // playground (editor + output) is inserted AFTER both — otherwise output
+    // lands between the hidden light pre and the visible dark pre, i.e. ABOVE
+    // the code. Hiding all of them on edit avoids a duplicate code block.
+    const allPre = block.querySelectorAll('pre');
+    const pre = allPre[allPre.length - 1];
     if (!pre) return;
 
     // Determine packages to load from an optional attribute on the title.
@@ -395,7 +401,7 @@
         // Show the playground root (editor + output), hide the highlighted pre.
         ui.root.hidden = false;
         ui.editor.hidden = false;
-        pre.hidden = true;
+        allPre.forEach((p) => { p.hidden = true; });
         ensureEditor().then((x) => {
           // Fire multiple layout passes after the container becomes visible.
           // A single rAF is not enough when the parent has a CSS transition or
@@ -425,8 +431,8 @@
         const wrap = ui.output.closest('.py-playground__output-wrap');
         if (wrap) wrap.hidden = true;
         ui.root.hidden = true;
-        // Restore the original highlighted code.
-        pre.hidden = false;
+        // Restore the original highlighted code (CSS shows the right theme copy).
+        allPre.forEach((p) => { p.hidden = false; });
       }
     });
 

@@ -1,0 +1,323 @@
+---
+title: Hyperparameter Tuning with KerasTuner
+description: Automate the search for the best layer sizes, activations, and optimizers with KerasTuner, and combine several models into a stronger ensemble.
+sidebar:
+  order: 473.3
+---
+
+## What you'll learn
+
+- what a **hyperparameter** is, and why it's different from a parameter your model
+  learns via backpropagation
+- how to define a **search space** with KerasTuner's `hp.Int`, `hp.Float`, `hp.Boolean`,
+  and `hp.Choice`
+- the difference between the **RandomSearch**, **Hyperband**, and
+  **BayesianOptimization** tuners
+- the tuner workflow: search, query the best hyperparameters, then retrain a final
+  model
+- why automated tuning can quietly overfit to your validation set
+- how **model ensembling** — averaging several models' predictions — squeezes out
+  extra accuracy
+
+## Hyperparameters vs. parameters
+
+Every model you've built so far involved decisions that *aren't* learned by gradient
+descent: how many layers to stack, how many units per layer, which activation
+function, how much dropout, which optimizer. These architecture-level decisions are
+called **hyperparameters**, to distinguish them from the **parameters** (weights) a
+network learns automatically while training.
+
+Experienced engineers build intuition over time about what tends to work, but that
+intuition is never optimal — your first guess is almost always a little worse than
+the best possible configuration. Tweaking hyperparameters by hand and retraining
+over and over is exactly the kind of repetitive, mechanical search that's better left
+to a machine. That's what **KerasTuner** automates.
+
+```mermaid title="The KerasTuner search loop" desc="A tuner repeatedly samples a configuration, builds and trains a model, and uses the validation score to decide what to try next."
+flowchart LR
+  A["Search space: hp.Int, hp.Choice, ..."] --> B["Tuner samples one configuration"]
+  B --> C["build_model(hp) -> compiled Keras model"]
+  C --> D["Train + evaluate on validation data"]
+  D -->|"val_accuracy feedback"| B
+  D --> E["Best hyperparameters / best model"]
+```
+
+## Defining a search space
+
+Instead of hardcoding a value like `units=32`, you sample it from a range. A
+**model-building function** takes an `hp` object and returns a compiled model — every
+place you'd normally write a fixed number, you ask `hp` for one instead:
+
+```python title="A KerasTuner model-building function" showLineNumbers{1}
+import keras_tuner as kt
+import tensorflow as tf
+
+def build_model(hp):
+    units = hp.Int(name="units", min_value=16, max_value=64, step=16)
+    optimizer = hp.Choice(name="optimizer", values=["rmsprop", "adam"])
+
+    model = tf.keras.Sequential([
+        tf.keras.layers.Dense(units, activation="relu"),
+        tf.keras.layers.Dense(10, activation="softmax"),
+    ])
+    model.compile(
+        optimizer=optimizer,
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy"],
+    )
+    return model
+```
+
+`hp.Int` and `hp.Choice` are two of several hyperparameter types available — `hp.Float`
+and `hp.Boolean` cover continuous values and on/off switches. After KerasTuner samples
+a value, it's just a regular Python number or string inside `build_model()` — there's
+no special "hyperparameter type" to worry about once you're past the `hp.*` calls. If
+you'd rather organize this as a class (handy when you want constructor arguments like
+`num_classes`), you can subclass `kt.HyperModel` and define a `build(self, hp)` method
+instead — same logic, more structure.
+
+## Choosing a tuner
+
+A **tuner** is a loop that repeatedly picks a hyperparameter configuration, builds and
+trains a model with it, and records how well it did. KerasTuner ships three built-in
+strategies for picking the *next* configuration to try:
+
+- **RandomSearch** — samples configurations uniformly at random. Simple, and a
+  surprisingly strong baseline.
+- **Hyperband** — trains many configurations for just a few epochs, throws away the
+  worst performers, and gives the survivors more epochs — like a tournament bracket.
+  Much cheaper than training everything to completion.
+- **BayesianOptimization** — builds a probabilistic model of "which hyperparameters
+  tend to score well," and uses it to make smarter guesses about what to try next,
+  based on every trial so far.
+
+```python title="Setting up a BayesianOptimization tuner" showLineNumbers{1}
+tuner = kt.BayesianOptimization(
+    build_model,
+    objective="val_accuracy",   # always tune on a validation metric, never the test set
+    max_trials=100,             # how many configurations to try before stopping
+    executions_per_trial=2,     # train each configuration twice and average, to reduce noise
+    directory="mnist_kt_test",
+    overwrite=True,
+)
+```
+
+You can preview the space before running anything with `tuner.search_space_summary()`
+— it prints every hyperparameter, its type, and its allowed range:
+
+```
+>>> tuner.search_space_summary()
+Search space summary
+Default search space size: 2
+units (Int)
+{"min_value": 16, "max_value": 64, "step": 16, ...}
+optimizer (Choice)
+{"values": ["rmsprop", "adam"], ...}
+```
+
+## Running the search
+
+`tuner.search()` accepts the same arguments as `fit()` — it just calls `fit()` once
+per trial. Use a generous number of epochs together with an `EarlyStopping` callback,
+since you don't know in advance how long each configuration needs:
+
+```python title="Launching the hyperparameter search" showLineNumbers{1}
+callbacks = [tf.keras.callbacks.EarlyStopping(monitor="val_loss", patience=5)]
+
+tuner.search(
+    x_train, y_train,
+    batch_size=128,
+    epochs=100,
+    validation_data=(x_val, y_val),
+    callbacks=callbacks,
+    verbose=2,
+)
+```
+
+Once the search finishes, ask for the top configurations and either retrain fresh
+models with them (recommended, using a higher patience and the full training set) or
+take the shortcut of reloading the best weights saved during the search:
+
+```python title="Querying the best hyperparameters" showLineNumbers{1}
+top_n = 4
+best_hps = tuner.get_best_hyperparameters(top_n)   # list of HyperParameters objects
+best_hp = best_hps[0]
+
+# Rebuild and retrain a fresh model with the winning configuration
+model = build_model(best_hp)
+model.fit(x_train_full, y_train_full, batch_size=128, epochs=30)
+
+# Or, the shortcut: reload the tuner's own best-scoring models directly
+best_models = tuner.get_best_models(top_n)
+```
+
+:::caution
+Because you choose hyperparameters based on validation performance, you're
+effectively training them on the validation set — run enough trials and they'll start
+overfitting to it, the same way weights overfit to a training set. That's exactly why
+you keep a separate **test set** that never influences any tuning decision: it's your
+only unbiased read on how the final model will do on new data.
+:::
+
+## Crafting the right search space
+
+Hyperparameter tuning is automation, not magic. Search spaces grow combinatorially —
+add a third hyperparameter with 4 choices to the example above and you've tripled the
+number of configurations to try. It's not worth turning *every* decision into a
+hyperparameter; you still need to hand-pick which knobs are worth searching. What
+tuning buys you is a shift in what you spend your time on: instead of micro-decisions
+("what number of units for this layer?"), you get to reason about higher-level
+architecture choices ("should this model use residual connections at all?") — and
+those higher-level decisions tend to generalize much better across different datasets
+and problems.
+
+:::tip[From the book]
+Chollet is candid about where this is headed: hyperparameter tuning is the first step
+toward **AutoML** — automatically generating entire model architectures, not just
+tuning their knobs. Tools like AutoKeras already do this for basic problems. His take:
+automation won't make deep learning engineers obsolete, it will just move their work
+up the value chain, toward data curation and defining the right objectives — the parts
+a tuner can't do for you.
+:::
+
+## Model ensembling: combine, don't just pick
+
+Once you have several good models, you can often do better than any single one of
+them by **ensembling**: averaging their predictions together.
+
+The idea traces back to the parable of the blind men and the elephant — each man
+touches a different part (a leg, the trunk, an ear) and comes away with a different,
+incomplete description. No single one of them is right, but pooling their
+observations gets much closer to the truth. Each of your trained models is like one of
+those blind men: it looked at the data from a slightly different angle (different
+architecture, different random initialization) and captured part of the picture but
+not all of it.
+
+```python title="A simple average ensemble" showLineNumbers{1}
+preds_a = model_a.predict(x_val)
+preds_b = model_b.predict(x_val)
+preds_c = model_c.predict(x_val)
+preds_d = model_d.predict(x_val)
+
+# Equal-weight average - works well if all four models are roughly equally good
+final_preds = 0.25 * (preds_a + preds_b + preds_c + preds_d)
+```
+
+If one model is clearly weaker than the others, a plain average lets it drag down the
+result. A **weighted average**, with weights tuned on validation data (giving stronger
+models more say), is usually a better default:
+
+```python title="A weighted ensemble" showLineNumbers{1}
+# Weights found empirically on validation data (e.g. via random search)
+final_preds = 0.5 * preds_a + 0.25 * preds_b + 0.1 * preds_c + 0.15 * preds_d
+```
+
+The key ingredient is **diversity**. If every model in your ensemble is biased in the
+same way — say, four copies of the same architecture trained from different random
+seeds — the ensemble barely beats any single member, because they all make similar
+mistakes. Ensembling genuinely different approaches (a tree-based model alongside a
+neural net, for example) tends to help far more, even when one of them scores
+noticeably lower on its own — it may still be capturing signal the others miss
+entirely.
+
+## Mini-checkpoint
+
+- **Hyperparameters** (architecture choices) are tuned by search; **parameters**
+  (weights) are tuned by gradient descent.
+- `build_model(hp)` + a tuner (`RandomSearch`, `Hyperband`, or `BayesianOptimization`)
+  replaces hand-tuning with a systematic search over `objective="val_..."`.
+- Always tune against **validation** data, and keep a separate **test set** you never
+  touch during tuning — validation-set overfitting is a real risk.
+- Ensembling works best when the models being combined are genuinely diverse, not just
+  differently-seeded copies of the same architecture.
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Sample values from a search space
+
+<DataCampExercise
+  lang="python"
+  hint={`\`range(min_value, max_value + 1, step)\` produces exactly the values \`hp.Int\` would sample from.`}
+  code={`# Task: Exercise 1 - Sample values from a search space
+def hp_int_choices(min_value, max_value, step):
+    return list(range(min_value, max_value + 1, step))
+
+units_space = hp_int_choices(16, 64, ___)   # replace ___ with 16
+print(units_space)
+
+# ── Expected Output ───────────────────────────────────────────
+# [16, 32, 48, 64]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`def hp_int_choices(min_value, max_value, step):
+    return list(range(min_value, max_value + 1, step))
+
+units_space = hp_int_choices(16, 64, 16)
+print(units_space)`}
+  sct={`test_output_contains("[16, 32, 48, 64]")
+success_msg("That is exactly the set of values hp.Int(min_value=16, max_value=64, step=16) would sample from!")`}
+  height={150}
+/>
+
+### Exercise 2 – Count the size of a search space
+
+<DataCampExercise
+  lang="python"
+  hint={`The total number of configurations is the product of the number of choices for each hyperparameter - use \`len()\` on the second list too.`}
+  code={`# Task: Exercise 2 - Count the size of a search space
+units_choices = [16, 32, 48, 64]
+optimizer_choices = ["rmsprop", "adam"]
+
+search_space_size = len(units_choices) * ___(optimizer_choices)   # replace ___ with len
+print("Search space size:", search_space_size)
+
+# ── Expected Output ───────────────────────────────────────────
+# Search space size: 8
+# ──────────────────────────────────────────────────────────────`}
+  solution={`units_choices = [16, 32, 48, 64]
+optimizer_choices = ["rmsprop", "adam"]
+
+search_space_size = len(units_choices) * len(optimizer_choices)
+print("Search space size:", search_space_size)`}
+  sct={`test_output_contains("Search space size: 8")
+success_msg("Add just one more 4-value hyperparameter and this jumps to 32 configurations - that is the combinatorial growth the book warns about.")`}
+  height={150}
+/>
+
+### Exercise 3 – Weighted ensembling of model predictions
+
+<DataCampExercise
+  lang="python"
+  hint={`The two weights should sum to how much you trust each model - use \`weights[1]\` for the second model's contribution.`}
+  code={`# Task: Exercise 3 - Weighted ensembling of model predictions
+import numpy as np
+
+preds_a = np.array([0.9, 0.1])   # model A's predicted probabilities
+preds_b = np.array([0.6, 0.4])   # model B's predicted probabilities
+weights = [0.7, 0.3]             # model A is trusted more than model B
+
+final_preds = weights[0] * preds_a + ___ * preds_b   # replace ___ with weights[1]
+print(np.round(final_preds, 2))
+
+# ── Expected Output ───────────────────────────────────────────
+# [0.81 0.19]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+preds_a = np.array([0.9, 0.1])
+preds_b = np.array([0.6, 0.4])
+weights = [0.7, 0.3]
+
+final_preds = weights[0] * preds_a + weights[1] * preds_b
+print(np.round(final_preds, 2))`}
+  sct={`test_output_contains("[0.81 0.19]")
+success_msg("A weighted average that favors the stronger model - the core idea behind every winning Kaggle ensemble!")`}
+  height={160}
+/>
+
+## Next
+
+Continue to **Mixed Precision and Multi-GPU Training** — tuning finds the best
+architecture; the next lever is making each individual training run faster, so you can
+afford to try more configurations in the same amount of time.

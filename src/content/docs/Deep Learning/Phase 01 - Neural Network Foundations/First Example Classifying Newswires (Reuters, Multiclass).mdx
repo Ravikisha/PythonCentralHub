@@ -1,0 +1,299 @@
+---
+title: "First Example: Classifying Newswires (Reuters, Multiclass)"
+description: Extend the binary-classification recipe to 46 classes - one-hot labels, softmax output, categorical crossentropy, and avoiding information bottlenecks.
+sidebar:
+  order: 407
+---
+
+The IMDB example had two classes. What changes when there are 46? Surprisingly
+little — but the few things that *do* change (the output layer, the loss function,
+how you encode labels) matter a lot, and they generalize to every multiclass problem
+you'll build from here on.
+
+## The Reuters dataset
+
+The Reuters dataset is a set of short newswires, each labeled with exactly one of 46
+mutually exclusive topics — a **single-label, multiclass** classification problem.
+It ships with Keras just like IMDB:
+
+```python title="Loading the Reuters dataset" showLineNumbers{1}
+from tensorflow.keras.datasets import reuters
+
+(train_data, train_labels), (test_data, test_labels) = reuters.load_data(num_words=10000)
+
+print(len(train_data), len(test_data))   # 8982 2246
+print(train_labels[10])                  # 3 -- a topic index, 0..45
+```
+
+## Preparing the data
+
+Vectorizing the inputs uses the exact same `vectorize_sequences` function from the
+IMDB example. The labels need a new trick, though: **one-hot encoding**, turning each
+topic index into an all-zero vector with a single 1 at that index:
+
+```python title="One-hot encoding the 46 topic labels" showLineNumbers{1}
+import numpy as np
+
+def vectorize_sequences(sequences, dimension=10000):
+    results = np.zeros((len(sequences), dimension))
+    for i, sequence in enumerate(sequences):
+        for j in sequence:
+            results[i, j] = 1.
+    return results
+
+def to_one_hot(labels, dimension=46):
+    results = np.zeros((len(labels), dimension))
+    for i, label in enumerate(labels):
+        results[i, label] = 1.
+    return results
+
+x_train = vectorize_sequences(train_data)
+x_test = vectorize_sequences(test_data)
+y_train = to_one_hot(train_labels)
+y_test = to_one_hot(test_labels)
+```
+
+Keras also ships a built-in helper that does the same thing:
+
+```python title="The built-in shortcut" showLineNumbers{1}
+from tensorflow.keras.utils import to_categorical
+
+y_train = to_categorical(train_labels)
+y_test = to_categorical(test_labels)
+```
+
+## Building the model: wider hidden layers
+
+The output space just grew from 1 dimension to 46. If a hidden layer is much
+narrower than the number of output classes, it can become an **information
+bottleneck** — permanently dropping information a later layer would have needed.
+That's why this model uses 64-unit hidden layers instead of the 16 units from IMDB:
+
+```python title="A wider Dense stack for 46-way classification" showLineNumbers{1}
+from tensorflow import keras
+from tensorflow.keras import layers
+
+model = keras.Sequential([
+    layers.Dense(64, activation="relu"),
+    layers.Dense(64, activation="relu"),
+    layers.Dense(46, activation="softmax"),
+])
+
+model.compile(optimizer="rmsprop",
+              loss="categorical_crossentropy",
+              metrics=["accuracy"])
+```
+
+- The output layer has **46 units** (one score per topic) and a **`softmax`**
+  activation, so the 46 outputs form a probability distribution that sums to 1.
+- **`categorical_crossentropy`** measures the distance between that predicted
+  distribution and the true one-hot distribution — the natural loss to pair with a
+  softmax output and one-hot labels.
+
+```mermaid title="Binary vs. multiclass output layers" desc="Binary classification ends in one sigmoid unit; single-label multiclass classification ends in N softmax units that sum to 1."
+flowchart LR
+  A["Hidden layers"] --> B["Dense(1, sigmoid)<br/>binary: P(positive)"]
+  A --> C["Dense(46, softmax)<br/>multiclass: P(class_0..45)"]
+```
+
+## Validating and training
+
+```python title="Holding out a validation set and training" showLineNumbers{1}
+x_val = x_train[:1000]
+partial_x_train = x_train[1000:]
+y_val = y_train[:1000]
+partial_y_train = y_train[1000:]
+
+history = model.fit(partial_x_train, partial_y_train,
+                     epochs=20, batch_size=512,
+                     validation_data=(x_val, y_val))
+```
+
+As with IMDB, validation accuracy typically peaks early (around epoch 9) and then the
+model starts overfitting. Retraining for just that many epochs and evaluating on the
+test set:
+
+```python title="Retraining for the right number of epochs" showLineNumbers{1}
+model = keras.Sequential([
+    layers.Dense(64, activation="relu"),
+    layers.Dense(64, activation="relu"),
+    layers.Dense(46, activation="softmax"),
+])
+model.compile(optimizer="rmsprop", loss="categorical_crossentropy", metrics=["accuracy"])
+model.fit(x_train, y_train, epochs=9, batch_size=512)
+
+results = model.evaluate(x_test, y_test)
+print(results)   # roughly [0.96, 0.80] -- test loss, test accuracy
+```
+
+~80% accuracy sounds modest next to IMDB's 88%, but remember the baseline is much
+lower here too: a classifier that guesses randomly among 46 unevenly sized classes
+scores only around 19%, not 50%.
+
+## An information bottleneck, made visible
+
+What happens if a hidden layer is *too* narrow to carry 46 classes' worth of
+information through? Shrinking the middle layer to 4 units makes the drop obvious:
+
+```python title="A deliberately too-narrow hidden layer" showLineNumbers{1}
+model = keras.Sequential([
+    layers.Dense(64, activation="relu"),
+    layers.Dense(4, activation="relu"),    # bottleneck: only 4 units
+    layers.Dense(46, activation="softmax"),
+])
+model.compile(optimizer="rmsprop", loss="categorical_crossentropy", metrics=["accuracy"])
+history = model.fit(partial_x_train, partial_y_train, epochs=20,
+                     batch_size=128, validation_data=(x_val, y_val))
+# validation accuracy peaks around 71% -- an ~8-point drop from the 64-unit version
+```
+
+Cramming information for 46 classes through a 4-dimensional hidden representation
+loses information no later layer can recover.
+
+## Two ways to encode labels
+
+If you'd rather keep labels as plain integers instead of one-hot vectors, use
+`sparse_categorical_crossentropy` — mathematically identical to
+`categorical_crossentropy`, just with a different label format:
+
+```python title="Integer labels + sparse loss" showLineNumbers{1}
+y_train = np.array(train_labels)   # plain integers, not one-hot
+y_test = np.array(test_labels)
+
+model.compile(optimizer="rmsprop",
+              loss="sparse_categorical_crossentropy",
+              metrics=["accuracy"])
+```
+
+:::tip[From the book]
+Chollet's rule of thumb for hidden-layer width: never make an intermediate layer's
+size much smaller than the number of output classes it ultimately has to help
+distinguish. A layer is only as useful as the information it's allowed to carry
+forward — squeeze it too hard, and no amount of extra training will recover what
+was lost.
+:::
+
+## Mini-checkpoint
+
+Your labels are one-hot vectors and your model ends in `Dense(46, activation="softmax")`.
+Which loss function should you compile with?
+
+- `categorical_crossentropy` — it expects the labels in one-hot (categorical) form.
+  Plain integer labels would need `sparse_categorical_crossentropy` instead.
+
+## Next
+
+Both examples so far predicted a *category*. **First Example: Predicting House
+Prices (Regression)** switches to predicting a continuous number, and introduces
+K-fold validation for datasets too small to safely split into train/validation once.
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – One-Hot Encode Topic Labels
+
+<DataCampExercise
+  lang="python"
+  hint={`For each label, set \`results[i, label] = 1.\` in an all-zero array.`}
+  code={`# Task: Exercise 1 - One-Hot Encode Topic Labels
+import numpy as np
+
+def to_one_hot(labels, dimension=6):
+    results = np.zeros((len(labels), dimension))
+    for i, label in enumerate(labels):
+        results[i, label] = ___   # replace ___ with 1.
+    return results
+
+y = to_one_hot([2, 0, 4])
+print(y)
+
+# ── Expected Output ───────────────────────────────────────────
+# [[0. 0. 1. 0. 0. 0.]
+#  [1. 0. 0. 0. 0. 0.]
+#  [0. 0. 0. 0. 1. 0.]]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+def to_one_hot(labels, dimension=6):
+    results = np.zeros((len(labels), dimension))
+    for i, label in enumerate(labels):
+        results[i, label] = 1.
+    return results
+
+y = to_one_hot([2, 0, 4])
+print(y)`}
+  sct={`test_output_contains("[0. 0. 1. 0. 0. 0.]")
+success_msg("Each row is all zeros except a single 1 at the label's index!")`}
+  height={170}
+/>
+
+### Exercise 2 – A 46-Way Softmax Output
+
+<DataCampExercise
+  lang="python"
+  hint={`Multiclass, single-label output layers use \`Dense(num_classes, activation="softmax")\`.`}
+  code={`# Task: Exercise 2 - A 46-Way Softmax Output
+from tensorflow import keras
+from tensorflow.keras import layers
+
+model = keras.Sequential([
+    layers.Dense(64, activation="relu"),
+    layers.Dense(64, activation="relu"),
+    layers.Dense(46, activation="___"),   # replace ___ with softmax
+])
+print("Output units:", model.layers[-1].units)
+print("Output activation:", model.layers[-1].activation.__name__)
+
+# ── Expected Output ───────────────────────────────────────────
+# Output units: 46
+# Output activation: softmax
+# ──────────────────────────────────────────────────────────────`}
+  solution={`from tensorflow import keras
+from tensorflow.keras import layers
+
+model = keras.Sequential([
+    layers.Dense(64, activation="relu"),
+    layers.Dense(64, activation="relu"),
+    layers.Dense(46, activation="softmax"),
+])
+print("Output units:", model.layers[-1].units)
+print("Output activation:", model.layers[-1].activation.__name__)`}
+  sct={`test_output_contains("Output units: 46")
+test_output_contains("Output activation: softmax")
+success_msg("46 units summing to 1 -- one probability per topic!")`}
+  height={170}
+/>
+
+### Exercise 3 – Compile for Categorical Labels
+
+<DataCampExercise
+  lang="python"
+  hint={`One-hot labels pair with \`loss="categorical_crossentropy"\`.`}
+  code={`# Task: Exercise 3 - Compile for Categorical Labels
+from tensorflow import keras
+from tensorflow.keras import layers
+
+model = keras.Sequential([
+    layers.Dense(64, activation="relu"),
+    layers.Dense(46, activation="softmax"),
+])
+model.compile(optimizer="rmsprop", loss="___", metrics=["accuracy"])  # replace ___ with categorical_crossentropy
+print("Loss:", model.loss)
+
+# ── Expected Output ───────────────────────────────────────────
+# Loss: categorical_crossentropy
+# ──────────────────────────────────────────────────────────────`}
+  solution={`from tensorflow import keras
+from tensorflow.keras import layers
+
+model = keras.Sequential([
+    layers.Dense(64, activation="relu"),
+    layers.Dense(46, activation="softmax"),
+])
+model.compile(optimizer="rmsprop", loss="categorical_crossentropy", metrics=["accuracy"])
+print("Loss:", model.loss)`}
+  sct={`test_output_contains("Loss: categorical_crossentropy")
+success_msg("Compiled and ready to classify 46 newswire topics!")`}
+  height={160}
+/>

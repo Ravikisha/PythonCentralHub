@@ -1,0 +1,283 @@
+---
+title: Transformation Pipelines & Custom Transformers
+description: Chain imputing, custom feature engineering, and scaling with Pipeline and ColumnTransformer, and write your own BaseEstimator/TransformerMixin transformer.
+sidebar:
+  order: 263
+---
+
+## What you'll learn
+
+- why hand-running each preprocessing step is error-prone
+- chaining steps with `Pipeline`
+- applying different pipelines to different columns with `ColumnTransformer`
+- writing a custom transformer with `BaseEstimator` and `TransformerMixin`
+- running the full pipeline end to end on raw data
+
+## The problem with doing it by hand
+
+By now you've written separate code for imputing, encoding, and scaling — each
+correct, but easy to apply in the wrong order, forget on the test set, or duplicate
+across notebooks. `Pipeline` chains a sequence of transformers (plus one final
+estimator) into a single object with the same `fit()` / `transform()` interface as any
+of its individual steps.
+
+```python title="A numeric pipeline" showLineNumbers{1}
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+
+num_pipeline = Pipeline([
+    ("imputer", SimpleImputer(strategy="median")),
+    ("std_scaler", StandardScaler()),
+])
+
+housing_num_tr = num_pipeline.fit_transform(housing_num)
+```
+
+Each step is a `(name, transformer)` pair. Every step except the last must implement
+`fit_transform()`; calling `fit()` on the pipeline runs `fit_transform()` on each step
+in turn, feeding the output forward, until it reaches the final estimator. Names can
+be anything unique (just avoid double underscores — they're reserved for
+hyperparameter tuning later).
+
+## Writing a custom transformer
+
+Some transformations — like the `rooms_per_household` and `bedrooms_per_room`
+combinations from earlier — aren't built into scikit-learn. Because scikit-learn
+relies on **duck typing** rather than inheritance, you only need to implement `fit()`
+(returning `self`), `transform()`, and `fit_transform()` — and you get the last one for
+free by inheriting from `TransformerMixin`. Inheriting `BaseEstimator` too (and
+avoiding `*args`/`**kwargs` in `__init__`) gives you `get_params()` / `set_params()`
+for free, which matters later for automated hyperparameter search.
+
+```python title="A custom attribute-combiner transformer" showLineNumbers{1}
+import numpy as np
+from sklearn.base import BaseEstimator, TransformerMixin
+
+rooms_ix, bedrooms_ix, population_ix, households_ix = 3, 4, 5, 6
+
+class CombinedAttributesAdder(BaseEstimator, TransformerMixin):
+    def __init__(self, add_bedrooms_per_room=True):
+        self.add_bedrooms_per_room = add_bedrooms_per_room
+
+    def fit(self, X, y=None):
+        return self  # nothing to learn
+
+    def transform(self, X):
+        rooms_per_household = X[:, rooms_ix] / X[:, households_ix]
+        population_per_household = X[:, population_ix] / X[:, households_ix]
+        if self.add_bedrooms_per_room:
+            bedrooms_per_room = X[:, bedrooms_ix] / X[:, rooms_ix]
+            return np.c_[X, rooms_per_household, population_per_household, bedrooms_per_room]
+        return np.c_[X, rooms_per_household, population_per_household]
+```
+
+The `add_bedrooms_per_room` flag is a hyperparameter with a sensible default — exactly
+the kind of on/off switch you'd want to try both ways during model tuning, without
+rewriting the transformer.
+
+```python title="Drop it into the numeric pipeline" showLineNumbers{1}
+num_pipeline = Pipeline([
+    ("imputer", SimpleImputer(strategy="median")),
+    ("attribs_adder", CombinedAttributesAdder()),
+    ("std_scaler", StandardScaler()),
+])
+
+housing_num_tr = num_pipeline.fit_transform(housing_num)
+```
+
+## ColumnTransformer: numeric and categorical, together
+
+So far, numeric and categorical columns have been handled with two separate code
+paths. `ColumnTransformer` applies a different transformer to each named list of
+columns and concatenates the results — including a mix of dense and sparse output.
+
+```python title="ColumnTransformer for the full dataset" showLineNumbers{1}
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder
+
+num_attribs = list(housing_num)
+cat_attribs = ["ocean_proximity"]
+
+full_pipeline = ColumnTransformer([
+    ("num", num_pipeline, num_attribs),
+    ("cat", OneHotEncoder(), cat_attribs),
+])
+
+housing_prepared = full_pipeline.fit_transform(housing)
+```
+
+The constructor takes a list of `(name, transformer, columns)` tuples. Numeric columns
+flow through `num_pipeline` (impute → engineer → scale); the categorical column flows
+through `OneHotEncoder`. `ColumnTransformer` runs each transformer on its own subset of
+columns and stitches the outputs back together along the column axis — automatically
+deciding whether the result should be sparse or dense based on how much of it is
+actually non-zero.
+
+```mermaid title="Pipeline + ColumnTransformer" desc="One call, from raw housing DataFrame to a model-ready matrix."
+flowchart LR
+  A["housing DataFrame"] --> B["ColumnTransformer"]
+  B --> C["num_attribs -> num_pipeline<br/>(impute, engineer, scale)"]
+  B --> D["cat_attribs -> OneHotEncoder"]
+  C --> E["Concatenate outputs"]
+  D --> E
+  E --> F["housing_prepared<br/>(model-ready matrix)"]
+```
+
+## Using the full pipeline
+
+Once fit, `full_pipeline` behaves like any other transformer — `fit_transform()` on
+the training set, `transform()` (never `fit_transform()` again!) on the test set or any
+new data:
+
+```python title="Prepare new data with the fitted pipeline" showLineNumbers{1}
+some_data = housing.iloc[:5]
+some_data_prepared = full_pipeline.transform(some_data)
+print(some_data_prepared.shape)
+```
+
+That single call reproduces every step this whole phase covered — imputing,
+engineered ratios, one-hot encoding, and scaling — consistently and in the right
+order, every time.
+
+:::tip[From the book]
+Géron's summary of why this matters: "This will allow you to reproduce these
+transformations easily on any dataset... you will gradually build a library of
+transformation functions that you can reuse in future projects... [and] make it
+possible for you to easily try various transformations and see which combination of
+transformations works best." A pipeline isn't just tidier code — it's what makes
+systematic experimentation possible.
+:::
+
+## 🧪 Try It Yourself
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+### Exercise 1 – Chain steps with Pipeline
+
+<DataCampExercise
+  lang="python"
+  hint={`\`Pipeline([(name, transformer), ...])\` runs each step's \`fit_transform()\` in order.`}
+  code={`# Task: Exercise 1 - Chain steps with Pipeline
+from sklearn.pipeline import ___   # replace ___ with Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+import numpy as np
+
+X = np.array([[1.0], [np.nan], [3.0], [5.0]])
+num_pipeline = Pipeline([
+    ("imputer", SimpleImputer(strategy="median")),
+    ("scaler", StandardScaler()),
+])
+result = num_pipeline.fit_transform(X)
+print(result.round(2).ravel())
+
+# ── Expected Output ───────────────────────────────────────────
+# [-1.16 -0.06 -0.06  1.28]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+import numpy as np
+
+X = np.array([[1.0], [np.nan], [3.0], [5.0]])
+num_pipeline = Pipeline([
+    ("imputer", SimpleImputer(strategy="median")),
+    ("scaler", StandardScaler()),
+])
+result = num_pipeline.fit_transform(X)
+print(result.round(2).ravel())`}
+  sct={`test_output_contains("-1.16")
+success_msg("Impute then scale, in one fit_transform call!")`}
+  height={165}
+/>
+
+### Exercise 2 – Write a custom transformer
+
+<DataCampExercise
+  lang="python"
+  hint={`A minimal transformer needs \`fit()\` (returning self) and \`transform()\`. Inherit \`TransformerMixin\` to get \`fit_transform()\` for free.`}
+  code={`# Task: Exercise 2 - Write a custom transformer
+from sklearn.base import BaseEstimator, TransformerMixin
+import numpy as np
+
+class DoubleColumn(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        return ___   # replace ___ with self
+    def transform(self, X):
+        return X * 2
+
+X = np.array([[1], [2], [3]])
+doubler = DoubleColumn()
+print(doubler.fit_transform(X).ravel())
+
+# ── Expected Output ───────────────────────────────────────────
+# [2 4 6]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`from sklearn.base import BaseEstimator, TransformerMixin
+import numpy as np
+
+class DoubleColumn(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        return self
+    def transform(self, X):
+        return X * 2
+
+X = np.array([[1], [2], [3]])
+doubler = DoubleColumn()
+print(doubler.fit_transform(X).ravel())`}
+  sct={`test_output_contains("[2 4 6]")
+success_msg("Your custom transformer works like any built-in one!")`}
+  height={165}
+/>
+
+### Exercise 3 – Combine pipelines with ColumnTransformer
+
+<DataCampExercise
+  lang="python"
+  hint={`\`ColumnTransformer([(name, transformer, columns), ...])\` applies each transformer to its own list of columns.`}
+  code={`# Task: Exercise 3 - Combine pipelines with ColumnTransformer
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+import pandas as pd
+
+df = pd.DataFrame({
+    "income": [3.0, 5.0, 4.0],
+    "ocean_proximity": ["INLAND", "<1H OCEAN", "INLAND"],
+})
+
+full_pipeline = ColumnTransformer([
+    ("num", StandardScaler(), ["income"]),
+    ("cat", ___(), ["ocean_proximity"]),   # replace ___ with OneHotEncoder
+])
+result = full_pipeline.fit_transform(df)
+print(result.shape)
+
+# ── Expected Output ───────────────────────────────────────────
+# (3, 3)
+# ──────────────────────────────────────────────────────────────`}
+  solution={`from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+import pandas as pd
+
+df = pd.DataFrame({
+    "income": [3.0, 5.0, 4.0],
+    "ocean_proximity": ["INLAND", "<1H OCEAN", "INLAND"],
+})
+
+full_pipeline = ColumnTransformer([
+    ("num", StandardScaler(), ["income"]),
+    ("cat", OneHotEncoder(), ["ocean_proximity"]),
+])
+result = full_pipeline.fit_transform(df)
+print(result.shape)`}
+  sct={`test_output_contains("(3, 3)")
+success_msg("One scaled column plus a 2-category one-hot encoding = 3 columns!")`}
+  height={175}
+/>
+
+## Next
+
+With `housing_prepared` ready — every column numeric, engineered, and scaled — you're
+set up for **Phase 3: Supervised Learning - Regression**, where this same data is used
+to train and evaluate an actual regression model.

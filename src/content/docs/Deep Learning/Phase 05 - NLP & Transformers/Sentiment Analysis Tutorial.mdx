@@ -1,0 +1,402 @@
+---
+title: Sentiment Analysis Tutorial
+description: Build a practical text classifier using TF-IDF + Logistic Regression and evaluate properly.
+sidebar:
+  order: 444
+---
+
+## What you'll learn
+
+- why sentiment analysis is often called the "hello world" of NLP
+- a fast, strong baseline: **TF-IDF + Logistic Regression**
+- how to go deeper with a real sequence model: **Embedding + RNN**, learned end-to-end
+- why **masking** matters once your reviews are padded to the same length
+- how to reuse someone else's pretrained embeddings instead of learning your own
+- how to read a model's raw output as a **sentiment score**
+
+## Goal
+
+Classify text as positive or negative sentiment.
+
+If MNIST is the "hello world" of computer vision, the IMDb movie reviews
+dataset plays that role for NLP: 50,000 reviews, half positive and half
+negative, simple enough to tackle on a laptop, but rewarding enough to
+actually learn from. It's a perfect first NLP project because:
+
+- **preprocessing matters** — how you turn text into numbers shapes everything downstream
+- **classic models work surprisingly well** as a baseline before you reach for deep learning
+
+## A baseline approach: TF-IDF + Logistic Regression
+
+```mermaid title="Sentiment analysis pipeline" desc="Raw text becomes numeric features, which a classifier turns into a positive/negative sentiment score."
+flowchart LR
+  T["Raw text"] --> V["TF-IDF<br/>(sparse features)"]
+  V --> C["Classifier"]
+  C --> S["Sentiment score<br/>0 = negative, 1 = positive"]
+```
+
+```python title="Sentiment model (TF-IDF + LogisticRegression)" showLineNumbers{1}
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report
+
+texts = [
+    "I love this product",
+    "This is terrible",
+    "Amazing quality",
+    "Worst purchase ever",
+]
+labels = [1, 0, 1, 0]
+
+X_train, X_test, y_train, y_test = train_test_split(
+    texts, labels, test_size=0.25, random_state=42, stratify=labels
+)
+
+model = Pipeline(
+    steps=[
+        ("tfidf", TfidfVectorizer(ngram_range=(1, 2))),
+        ("clf", LogisticRegression(max_iter=1000)),
+    ]
+)
+
+model.fit(X_train, y_train)
+
+y_pred = model.predict(X_test)
+print(classification_report(y_test, y_pred))
+```
+
+This baseline is fast, needs no GPU, and is genuinely hard to beat on small
+datasets. But it treats every word (or bigram) as an independent feature —
+it has no idea "great" and "fantastic" mean almost the same thing, and it
+can't use word *order* beyond two-word windows.
+
+## Going deeper: a sequence model that reads word by word
+
+A recurrent model reads the review one word at a time, building up a hidden
+state as it goes, and only makes its prediction once it's seen the whole
+sequence:
+
+```python title="Sentiment RNN (Embedding + GRU)" showLineNumbers{1}
+import tensorflow as tf
+
+vocab_size = 10_000       # top N most frequent words, plus out-of-vocabulary buckets
+embed_size = 128
+
+model = tf.keras.Sequential([
+    # mask_zero=True tells every downstream layer to ignore <pad> tokens (ID 0)
+    tf.keras.layers.Embedding(vocab_size, embed_size, mask_zero=True, input_shape=[None]),
+    tf.keras.layers.GRU(128, return_sequences=True),
+    tf.keras.layers.GRU(128),
+    tf.keras.layers.Dense(1, activation="sigmoid"),
+])
+
+model.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
+model.summary()
+```
+
+The `Embedding` layer turns each word ID into a dense vector, so the model
+input goes from `[batch, time steps]` to `[batch, time steps, embed_size]`.
+The first `GRU` layer keeps `return_sequences=True` so it can pass a full
+sequence of hidden states to the second `GRU`; the second `GRU` only returns
+its *last* hidden state, since sentiment is a many-to-one problem — one
+review, one label. The final `Dense(1, "sigmoid")` squashes that into a
+single probability: how positive the review is.
+
+Because reviews in a batch have different lengths, shorter ones get padded
+with token ID `0`. `mask_zero=True` on the `Embedding` layer tells every
+downstream layer to simply skip those padded positions — so the model
+never wastes capacity "learning" that padding means nothing.
+
+## Reusing pretrained embeddings
+
+Training good word embeddings from scratch takes a *lot* of text — 25,000
+reviews is a small corpus. TensorFlow Hub makes it easy to plug in
+embeddings pretrained on a much bigger corpus instead:
+
+```python title="Sentiment model with pretrained sentence embeddings" showLineNumbers{1}
+import tensorflow as tf
+import tensorflow_hub as hub
+
+model = tf.keras.Sequential([
+    hub.KerasLayer(
+        "https://tfhub.dev/google/tf2-preview/nnlm-en-dim50/1",
+        dtype=tf.string, input_shape=[], output_shape=[50],
+    ),
+    tf.keras.layers.Dense(128, activation="relu"),
+    tf.keras.layers.Dense(1, activation="sigmoid"),
+])
+
+model.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
+```
+
+This `hub.KerasLayer` takes raw strings directly — no manual tokenizing or
+padding needed. Internally it splits on spaces, embeds each word using
+weights trained on the 7-billion-word Google News corpus, and averages them
+into a single 50-dimensional sentence vector. By default the layer is
+frozen; pass `trainable=True` when creating it to fine-tune those embeddings
+for your own task.
+
+## Do you even need the RNN? A rule of thumb for IMDb
+
+Before reaching for an Embedding + RNN model, it's worth asking whether the
+TF-IDF baseline is already good enough. Chollet's rule of thumb: look at the
+ratio of **training samples ÷ average words per sample**. Below roughly
+1,500, a bag-of-bigrams model tends to win; above it, a sequence model
+tends to win.
+
+For the IMDb dataset specifically — 20,000 training reviews, averaging about
+233 words each — that ratio is only about 86. The heuristic says bag-of-words
+should win here, and in Chollet's own experiments it does: a plain bigram +
+TF-IDF model reached roughly **89-90% test accuracy**, matching or slightly
+beating an Embedding + bidirectional LSTM sequence model on the same data.
+Sequence models only pull ahead once you have a lot more (or much shorter)
+training examples to learn from.
+
+```python title="A bag-of-bigrams baseline with TextVectorization" showLineNumbers{1}
+from tensorflow.keras.layers import TextVectorization
+from tensorflow import keras
+
+text_vectorization = TextVectorization(
+    ngrams=2,             # reinject a bit of word-order information
+    max_tokens=20000,
+    output_mode="tf_idf", # term-frequency / inverse-document-frequency weighting
+)
+# text_only_train_ds yields just the raw review strings (no labels)
+text_vectorization.adapt(text_only_train_ds)
+
+# a couple of Dense layers on top of these TF-IDF vectors is often
+# every bit as accurate as a much heavier RNN, and far cheaper to train
+model = keras.Sequential([
+    keras.layers.Dense(16, activation="relu"),
+    keras.layers.Dropout(0.5),
+    keras.layers.Dense(1, activation="sigmoid"),
+])
+```
+
+## Practical tips
+
+- include bigrams (`ngram_range=(1, 2)`) with TF-IDF to capture phrases like "not good"
+- never strip out negation words like "not" during preprocessing — they flip the whole meaning
+- check class balance before trusting accuracy alone; use `classification_report` for precision/recall per class
+- you often don't need the whole review — the first sentence or two usually gives away the sentiment
+
+## Visualize it
+
+A sentiment model's raw output is a single number between 0 and 1. It helps
+to picture that number as a gauge needle sweeping from very negative to very
+positive:
+
+```p5 title="Sentiment score gauge" desc="A semi-circular gauge whose needle sweeps toward the model's predicted score as reviews auto-advance. Click to try another review." height="300"
+let reviews = [
+  { text: "Amazing story and stunning acting!", score: 0.92 },
+  { text: "It was okay, nothing special.", score: 0.52 },
+  { text: "A complete waste of two hours.", score: 0.06 },
+  { text: "Brilliant soundtrack, weak plot.", score: 0.61 },
+];
+let idx = 0;
+let displayedScore = 0.5;
+const CYCLE = 220; // frames spent on each review before auto-advancing
+
+function setup() {
+  createCanvas(600, 300);
+  textFont("monospace");
+  textAlign(CENTER, CENTER);
+  displayedScore = reviews[0].score;
+}
+
+function draw() {
+  background(13, 17, 23);
+  const cx = width / 2, cy = 210, r = 130;
+
+  // auto-advance through reviews over time; clicking jumps ahead manually
+  const cycleIndex = floor(frameCount / CYCLE) % reviews.length;
+  if (cycleIndex !== idx) {
+    idx = cycleIndex;
+  }
+
+  // ease the needle toward the current review's score instead of snapping
+  const targetScore = reviews[idx].score;
+  displayedScore = lerp(displayedScore, targetScore, 0.06);
+
+  noFill();
+  stroke(60, 66, 78);
+  strokeWeight(18);
+  arc(cx, cy, r * 2, r * 2, PI, TWO_PI);
+
+  strokeWeight(18);
+  stroke(214, 93, 93);
+  arc(cx, cy, r * 2, r * 2, PI, PI + PI / 3);
+  stroke(255, 211, 67);
+  arc(cx, cy, r * 2, r * 2, PI + PI / 3, PI + (2 * PI) / 3);
+  stroke(107, 169, 221);
+  arc(cx, cy, r * 2, r * 2, PI + (2 * PI) / 3, TWO_PI);
+
+  const angle = PI + displayedScore * PI;
+  stroke(230);
+  strokeWeight(3);
+  line(cx, cy, cx + r * 0.85 * cos(angle), cy + r * 0.85 * sin(angle));
+
+  // a gentle pulsing hub so the gauge reads as alive even mid-sweep
+  const pulse = 5 + 2 * sin(frameCount * 0.1);
+  noStroke();
+  fill(230);
+  ellipse(cx, cy, 12 + pulse * 0.4, 12 + pulse * 0.4);
+
+  noStroke();
+  fill(230);
+  textSize(13);
+  text('"' + reviews[idx].text + '"', width / 2, 40);
+  fill(255, 211, 67);
+  textSize(16);
+  text("sentiment score: " + displayedScore.toFixed(2), width / 2, 70);
+
+  fill(150);
+  textSize(11);
+  text("negative", cx - r - 6, cy + 14);
+  text("positive", cx + r + 6, cy + 14);
+
+  fill(107, 169, 221);
+  textSize(11);
+  text("click to try another review", width / 2, height - 14);
+}
+
+function mousePressed() {
+  idx = (idx + 1) % reviews.length;
+}
+```
+
+## Mini-checkpoint
+
+Why is "not good" tricky for a plain bag-of-words model?
+
+- Without bigrams, "not" and "good" are counted as two separate, unrelated
+  features — the model never sees them as one phrase, so their individual
+  signals (negative-ish "not", positive "good") can cancel out incorrectly
+  instead of combining into a clearly negative signal.
+
+:::tip[From the book]
+Géron describes watching embeddings train inside TensorBoard on this exact
+dataset: "it is fascinating to see words like 'awesome' and 'amazing'
+gradually cluster on one side of the embedding space, while words like
+'awful' and 'terrible' cluster on the other." Interestingly, the word "good"
+sometimes doesn't land as positively as you'd expect — because so many
+*negative* reviews contain the phrase "not good." It's a nice reminder that
+an embedding reflects how a word is *used*, not a fixed dictionary meaning.
+:::
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Fit a TF-IDF + Logistic Regression Classifier
+
+<DataCampExercise
+  lang="python"
+  hint={`Call \`.fit(X, y)\` on the LogisticRegression classifier after vectorizing the text with TfidfVectorizer.`}
+  code={`# Task: Exercise 1 - Fit a TF-IDF + Logistic Regression Classifier
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+
+texts = ["I love this movie", "This film was terrible", "Amazing story and acting", "Worst movie I have seen"]
+labels = [1, 0, 1, 0]
+
+vectorizer = TfidfVectorizer()
+X = vectorizer.fit_transform(texts)
+
+clf = LogisticRegression().___(X, labels)   # replace ___ with fit
+print("Train accuracy:", round(clf.score(X, labels), 2))
+
+# ── Expected Output ───────────────────────────────────────────
+# Train accuracy: 1.0
+# ──────────────────────────────────────────────────────────────`}
+  solution={`from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+
+texts = ["I love this movie", "This film was terrible", "Amazing story and acting", "Worst movie I have seen"]
+labels = [1, 0, 1, 0]
+
+vectorizer = TfidfVectorizer()
+X = vectorizer.fit_transform(texts)
+
+clf = LogisticRegression().fit(X, labels)
+print("Train accuracy:", round(clf.score(X, labels), 2))`}
+  sct={`test_output_contains("Train accuracy: 1.0")
+success_msg("A tiny, perfectly separable dataset -- but the same fit() call scales to 25,000 IMDb reviews!")`}
+  height={170}
+/>
+
+### Exercise 2 – An Embedding Layer's Output Shape
+
+<DataCampExercise
+  lang="python"
+  hint={`An Embedding layer turns [batch, time steps] into [batch, time steps, embed_size] -- pass embed_size as the second argument.`}
+  code={`# Task: Exercise 2 - An Embedding Layer's Output Shape
+import tensorflow as tf
+import numpy as np
+
+vocab_size, embed_size = 100, 8
+embedding = tf.keras.layers.Embedding(vocab_size, ___)  # replace ___ with embed_size
+
+word_ids = np.array([[3, 7, 1, 0], [2, 5, 0, 0]])  # 0 = <pad>
+output = embedding(word_ids)
+print("Output shape:", output.shape)
+
+# ── Expected Output ───────────────────────────────────────────
+# Output shape: (2, 4, 8)
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import tensorflow as tf
+import numpy as np
+
+vocab_size, embed_size = 100, 8
+embedding = tf.keras.layers.Embedding(vocab_size, embed_size)
+
+word_ids = np.array([[3, 7, 1, 0], [2, 5, 0, 0]])
+output = embedding(word_ids)
+print("Output shape:", output.shape)`}
+  sct={`test_output_contains("Output shape: (2, 4, 8)")
+success_msg("Two reviews, four time steps each, eight numbers per word!")`}
+  height={190}
+/>
+
+### Exercise 3 – Averaging Word Vectors Into a Sentence Vector
+
+<DataCampExercise
+  lang="python"
+  hint={`A simple sentence embedding is just the mean of its word vectors -- use \`np.mean(..., axis=0)\` to average across words.`}
+  code={`# Task: Exercise 3 - Averaging Word Vectors Into a Sentence Vector
+import numpy as np
+
+# Toy 3D word vectors for a 3-word review: "great acting quality"
+word_vectors = np.array([
+    [0.8, 0.1, 0.2],   # great
+    [0.2, 0.6, 0.3],   # acting
+    [0.7, 0.2, 0.1],   # quality
+])
+
+sentence_vector = np.___(word_vectors, axis=0)  # replace ___ with mean
+print("Sentence vector:", np.round(sentence_vector, 2))
+
+# ── Expected Output ───────────────────────────────────────────
+# Sentence vector: [0.57 0.3  0.2 ]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+word_vectors = np.array([
+    [0.8, 0.1, 0.2],
+    [0.2, 0.6, 0.3],
+    [0.7, 0.2, 0.1],
+])
+
+sentence_vector = np.mean(word_vectors, axis=0)
+print("Sentence vector:", np.round(sentence_vector, 2))`}
+  sct={`test_output_contains("Sentence vector: [0.57 0.3  0.2 ]")
+success_msg("That is essentially what TF Hub's nnlm-en-dim50 module does under the hood!")`}
+  height={190}
+/>
+
+## Next
+
+Continue to **Named Entity Recognition (NER)** — instead of one label per
+review, learn to label every single token in a sentence.

@@ -1,0 +1,366 @@
+---
+title: How Neural Networks Learn (Gradient-Based Optimization)
+description: Derivatives, gradients, the chain rule, backpropagation, and a tiny GradientTape example - how a network actually updates its weights.
+sidebar:
+  order: 405.5
+---
+
+You've built MLPs and compiled them with `model.compile(optimizer="sgd", ...)` — but
+what does the optimizer actually *do*? This page opens that black box: derivative →
+gradient → chain rule → backpropagation, ending with the same four lines of code
+TensorFlow runs millions of times during every `model.fit()` call.
+
+## The training loop, once more
+
+Every neural network trains the same way, on repeat, until the loss is low enough:
+
+1. Draw a batch of training samples `x` and targets `y_true`.
+2. Run the model on `x` — the **forward pass** — to get predictions `y_pred`.
+3. Compute the **loss**: how far `y_pred` is from `y_true`.
+4. Update every weight a little, in the direction that makes the loss smaller.
+
+Steps 1–3 are just tensor operations you already know. Step 4 — figuring out *which
+direction* reduces the loss, for potentially millions of weights at once — is the
+hard part, and it's what the rest of this page is about.
+
+```mermaid title="One training step" desc="Forward pass produces a prediction, the loss compares it to the target, and the gradient tells the optimizer how to nudge every weight."
+flowchart LR
+  X["Batch x"] --> F["Forward pass"] --> P["Prediction"]
+  P --> L["Loss(prediction, target)"]
+  Y["Target y_true"] --> L
+  L --> G["Gradient (backward pass)"]
+  G --> U["Optimizer updates weights"]
+  U -.-> F
+```
+
+## What's a derivative?
+
+For a smooth function `f(x)`, a tiny change in `x` (call it `epsilon_x`) produces a
+tiny, *predictable* change in `f(x)`. Near any point, `f` can be approximated by a
+straight line with some slope `a`:
+
+`f(x + epsilon_x) ≈ f(x) + a * epsilon_x`
+
+That slope `a` is the **derivative** of `f` at that point. If `a` is negative,
+increasing `x` decreases `f(x)` — so to minimize `f`, you move `x` in the *opposite*
+direction from the derivative.
+
+```python title="Approximating a derivative with a tiny epsilon" showLineNumbers{1}
+def f(x):
+    return x ** 2
+
+x = 3.0
+epsilon = 1e-4
+slope = (f(x + epsilon) - f(x)) / epsilon
+print(round(slope, 2))   # 6.0  -- matches the true derivative, 2*x
+```
+
+## From derivative to gradient
+
+Now imagine `f` doesn't take a single number but a whole tensor `W` (a model's
+weights). The generalization of "derivative" to tensor inputs is called the
+**gradient**: `grad(loss_value, W)` is a tensor the same shape as `W`, where each entry
+tells you the direction and size of the loss's change if you nudge that one weight.
+
+Just like the 1D case, you reduce the loss by moving `W` a small step in the
+*opposite* direction from its gradient:
+
+`W_new = W - learning_rate * grad(loss, W)`
+
+`learning_rate` controls how big that step is. Too small, and training crawls (or
+gets stuck); too large, and updates can bounce around randomly instead of settling
+down.
+
+## Mini-batch stochastic gradient descent (SGD)
+
+Solving for the exact minimum analytically is impossible for a network with millions
+of weights, so instead you take small, repeated steps downhill:
+
+1. Draw a batch of training samples `x` and targets `y_true`.
+2. Run the forward pass to get `y_pred`.
+3. Compute the loss between `y_pred` and `y_true`.
+4. Compute the gradient of the loss with respect to every weight (the **backward
+   pass**).
+5. Move every weight a little against its gradient: `w -= learning_rate * gradient`.
+
+Because each batch is a random sample of the data, this is called **stochastic**
+(random) **gradient descent** — mini-batch SGD when you use small batches instead of
+one sample or the whole dataset at once.
+
+:::tip[From the book]
+Chollet's mental model for **momentum**: picture optimization as a small ball rolling
+down the loss curve. Plain SGD with a small learning rate can get stuck in a shallow
+local dip. A ball with enough momentum rolls straight through it, driven by its
+built-in velocity rather than only the current slope — which is exactly what
+optimizers like SGD-with-momentum, RMSprop, and Adam add on top of plain gradient
+descent.
+:::
+
+## Visualize it
+
+A single learnable parameter and its loss trace out a curve. Gradient descent is
+nothing more than repeatedly stepping downhill along that curve, using the local
+slope to decide which way "downhill" is:
+
+```p5 title="A ball descending a loss surface" desc="The white ball starts high on the loss curve and steps downhill each frame, using the local slope (gradient) to decide which way to move -- then eases back to the start and does it again." height="300"
+function lossFn(p) {
+  return 0.02 * (p - 300) * (p - 300) / 40 + 20 * Math.sin(p / 45) * 0.3 + 60;
+}
+const START_X = 90;
+let paramX = START_X;
+let lr = 6;
+let phase = "descend";   // descend -> hold -> rewind -> descend ...
+let holdTimer = 0;
+let settledX = START_X;
+let rewindT = 0;
+
+function setup() {
+  createCanvas(600, 300);
+  textFont("monospace");
+  frameRate(20);
+}
+
+function slopeAt(p) {
+  const eps = 1.0;
+  return (lossFn(p + eps) - lossFn(p - eps)) / (2 * eps);
+}
+
+function easeInOut(x) {
+  return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+}
+
+function draw() {
+  background(13, 17, 23);
+
+  stroke(70, 80, 96);
+  strokeWeight(1);
+  noFill();
+  beginShape();
+  for (let px = 20; px <= 580; px += 4) {
+    vertex(px, 250 - lossFn(px));
+  }
+  endShape();
+
+  let status;
+  if (phase === "descend") {
+    const g = slopeAt(paramX);
+    paramX -= lr * Math.sign(g) * Math.min(Math.abs(g), 4);
+    status = "stepping opposite the gradient";
+    if (Math.abs(g) < 0.05) {
+      phase = "hold";
+      holdTimer = 0;
+      settledX = paramX;
+    }
+  } else if (phase === "hold") {
+    status = "settled near a minimum";
+    holdTimer++;
+    if (holdTimer > 30) {
+      phase = "rewind";
+      rewindT = 0;
+    }
+  } else {
+    status = "resetting for another descent...";
+    rewindT += 0.035;
+    paramX = lerp(settledX, START_X, easeInOut(constrain(rewindT, 0, 1)));
+    if (rewindT >= 1) {
+      phase = "descend";
+      paramX = START_X;
+    }
+  }
+
+  const py = 250 - lossFn(paramX);
+  noStroke();
+  fill(255, 211, 67);
+  ellipse(paramX, py, 16, 16);
+
+  fill(107, 169, 221);
+  textSize(12);
+  text("parameter value ->", 220, 280);
+  fill(150);
+  textSize(11);
+  text(status, 20, 20);
+}
+```
+
+## The chain rule and backpropagation
+
+A neural network is a chain of simple, differentiable operations: `dot`, `+`, `relu`,
+`softmax`. Calculus gives you a shortcut for differentiating a chain of functions —
+the **chain rule**: if `fg(x) = f(g(x))`, then
+
+`grad(y, x) == grad(y, x1) * grad(x1, x)`
+
+Applying this repeatedly, back through every layer of a network, from the loss all
+the way to the very first weight, is exactly what **backpropagation** does. It's not
+a separate algorithm bolted onto neural networks — it's just the chain rule, applied
+mechanically to a chain of tensor operations.
+
+Consider a tiny computation graph: `x1 = w * x`, `x2 = x1 + b`, `loss = abs(y_true -
+x2)`. With `x = 2, w = 3, b = 1, y_true = 4`, the forward pass gives `x1 = 6`,
+`x2 = 7`, `loss = 3`. Walking *backward* through the graph and multiplying local
+derivatives along the way:
+
+`grad(loss, w) = grad(loss, x2) * grad(x2, x1) * grad(x1, w) = 1 * 1 * 2 = 2`
+
+`grad(loss, b) = grad(loss, x2) * grad(x2, b) = 1 * 1 = 1`
+
+Modern frameworks never make you do this by hand — they implement **automatic
+differentiation**: record every operation as it runs, then walk the recording
+backward applying the chain rule for you.
+
+## The GradientTape in TensorFlow
+
+TensorFlow's automatic differentiation API is `tf.GradientTape` — a scope that
+records every tensor operation run inside it, so you can later ask for the gradient
+of any result with respect to any `tf.Variable`:
+
+```python title="A tiny GradientTape example" showLineNumbers{1}
+import tensorflow as tf
+
+x = tf.Variable(0.)
+with tf.GradientTape() as tape:
+    y = 2 * x + 3
+
+grad_of_y_wrt_x = tape.gradient(y, x)
+print(grad_of_y_wrt_x)   # 2.0 -- the slope of y = 2x + 3
+```
+
+It works just as well with whole weight tensors:
+
+```python title="GradientTape over a weight matrix and bias" showLineNumbers{1}
+import tensorflow as tf
+
+W = tf.Variable(tf.random.uniform((2, 2)))
+b = tf.Variable(tf.zeros((2,)))
+x = tf.random.uniform((2, 2))
+
+with tf.GradientTape() as tape:
+    y = tf.matmul(x, W) + b
+
+grad_of_y_wrt_W_and_b = tape.gradient(y, [W, b])
+print(grad_of_y_wrt_W_and_b[0].shape)   # (2, 2) -- same shape as W
+```
+
+In practice you'd never write the weight update by hand either — a Keras optimizer
+does it for you:
+
+```python title="One manual training step, the way an optimizer does it" showLineNumbers{1}
+import tensorflow as tf
+from tensorflow.keras import optimizers
+
+optimizer = optimizers.SGD(learning_rate=1e-3)
+
+def one_training_step(model, x, y_true):
+    with tf.GradientTape() as tape:
+        y_pred = model(x)
+        loss = tf.keras.losses.mean_squared_error(y_true, y_pred)
+        loss = tf.reduce_mean(loss)
+    gradients = tape.gradient(loss, model.trainable_weights)
+    optimizer.apply_gradients(zip(gradients, model.trainable_weights))
+    return loss
+```
+
+This is precisely what happens inside `model.fit()`, once per batch, for every epoch.
+
+## Mini-checkpoint
+
+If the learning rate is far too large, what typically happens to training?
+
+- Weight updates overshoot the minimum and the loss can bounce around or even
+  increase instead of settling down.
+
+## Next
+
+You now understand what `model.fit()` is really doing under the hood. Time to put
+the whole toolkit to work: **First Example: Classifying Movie Reviews (IMDB,
+Binary)** — a complete, small Keras project from raw data to a trained classifier.
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Approximate a Derivative
+
+<DataCampExercise
+  lang="python"
+  hint={`The finite-difference approximation is \`(f(x + eps) - f(x)) / eps\` for a small \`eps\`.`}
+  code={`# Task: Exercise 1 - Approximate a Derivative
+def f(x):
+    return x ** 2
+
+x = 3.0
+epsilon = 1e-4
+slope = (f(x + epsilon) - f(x)) / ___   # replace ___ with epsilon
+print("Slope:", round(slope, 2))
+
+# ── Expected Output ───────────────────────────────────────────
+# Slope: 6.0
+# ──────────────────────────────────────────────────────────────`}
+  solution={`def f(x):
+    return x ** 2
+
+x = 3.0
+epsilon = 1e-4
+slope = (f(x + epsilon) - f(x)) / epsilon
+print("Slope:", round(slope, 2))`}
+  sct={`test_output_contains("Slope: 6.0")
+success_msg("That matches the true derivative of x**2 at x=3, which is 2*x = 6!")`}
+  height={150}
+/>
+
+### Exercise 2 – One Manual SGD Step
+
+<DataCampExercise
+  lang="python"
+  hint={`Move the weight against the gradient: \`w - learning_rate * gradient\`.`}
+  code={`# Task: Exercise 2 - One Manual SGD Step
+w = 0.3
+gradient = 4.0
+learning_rate = 0.01
+
+w_new = w ___ learning_rate * gradient   # replace ___ with -
+print("Updated weight:", round(w_new, 3))
+
+# ── Expected Output ───────────────────────────────────────────
+# Updated weight: 0.26
+# ──────────────────────────────────────────────────────────────`}
+  solution={`w = 0.3
+gradient = 4.0
+learning_rate = 0.01
+w_new = w - learning_rate * gradient
+print("Updated weight:", round(w_new, 3))`}
+  sct={`test_output_contains("Updated weight: 0.26")
+success_msg("You just did one step of gradient descent by hand!")`}
+  height={150}
+/>
+
+### Exercise 3 – GradientTape Basics
+
+<DataCampExercise
+  lang="python"
+  hint={`Open the scope with \`tf.GradientTape() as tape\`, then call \`tape.gradient(y, x)\`.`}
+  code={`# Task: Exercise 3 - GradientTape Basics
+import tensorflow as tf
+
+x = tf.Variable(3.)
+with tf.___() as tape:   # replace ___ with GradientTape
+    y = x ** 2
+
+grad = tape.gradient(y, x)
+print("Gradient:", grad.numpy())
+
+# ── Expected Output ───────────────────────────────────────────
+# Gradient: 6.0
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import tensorflow as tf
+
+x = tf.Variable(3.)
+with tf.GradientTape() as tape:
+    y = x ** 2
+
+grad = tape.gradient(y, x)
+print("Gradient:", grad.numpy())`}
+  sct={`test_output_contains("Gradient: 6.0")
+success_msg("The gradient of x**2 at x=3 is 2*x = 6 -- TensorFlow computed it automatically!")`}
+  height={150}
+/>

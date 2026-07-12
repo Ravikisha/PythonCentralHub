@@ -1,0 +1,408 @@
+---
+title: Interpreting What Convnets Learn (Grad-CAM)
+description: Open the "black box" - visualize intermediate activations, convnet filters, and Grad-CAM class activation heatmaps to see what your CNN is actually looking at.
+sidebar:
+  order: 427
+---
+
+## What you'll learn
+
+- why convnets are much easier to interpret than people assume — their
+  features are visual, so you can literally look at them
+- how to visualize a layer's **intermediate activations** on a real image
+- how to visualize what a single **filter** is looking for, via gradient ascent
+- how **Grad-CAM** produces a heatmap showing exactly which pixels drove a
+  prediction
+
+## Convnets aren't really black boxes
+
+Deep learning models are often called "black boxes" — hard to inspect, hard
+to explain. That reputation is mostly undeserved for convnets. Because their
+filters detect *visual* concepts (edges, textures, eyes, wheels), the
+representations they learn are unusually amenable to visualization: you can
+point a technique at a trained convnet and literally see what it's paying
+attention to. That matters whenever a wrong prediction needs debugging, or
+whenever deep learning is meant to support (not replace) a human expert —
+like in medical imaging.
+
+Three techniques cover most of what you need:
+
+1. **Intermediate activations** — what does each layer's output look like for
+   a given input?
+2. **Filter visualization** — what pattern is a specific filter maximally
+   receptive to?
+3. **Grad-CAM heatmaps** — which pixels of *this* image caused *this*
+   prediction?
+
+## Visualizing intermediate activations
+
+Every convolution and pooling layer in a trained model produces an
+*activation* — its output for a given input. Since each activation is a 3D
+volume `(height, width, channels)`, and each channel is roughly independent,
+you can plot every channel of every layer as its own small grayscale image.
+Feed in a real photo of a cat and look at the third or fourth convolutional
+layer, and you'll typically see feature maps that light up on edges, then
+textures, then increasingly abstract "cat-like" blobs the deeper you go —
+exactly the hierarchy Hubel and Wiesel described in the visual cortex.
+
+```python title="peek_at_activations.py" showLineNumbers{1}
+from tensorflow import keras
+
+model = keras.models.load_model("convnet_from_scratch_with_augmentation.keras")
+
+# Build a model that outputs every Conv2D / MaxPooling2D activation,
+# instead of just the final prediction
+layer_outputs = [layer.output for layer in model.layers[1:] if "conv2d" in layer.name or "pooling" in layer.name]
+activation_model = keras.Model(inputs=model.input, outputs=layer_outputs)
+
+activations = activation_model.predict(img_tensor)   # img_tensor: shape (1, 180, 180, 3)
+first_layer_activation = activations[0]
+print(first_layer_activation.shape)   # e.g. (1, 178, 178, 32) -- 32 feature maps
+```
+
+## Visualizing what a filter looks for
+
+Instead of feeding in a real photo, you can ask a filter directly: "what
+image would make you fire the hardest?" Starting from random noise, you
+repeatedly nudge the pixels (via gradient ascent, not descent — you're
+*maximizing* the filter's activation instead of minimizing a loss) until you
+land on an image the filter responds to strongly. Do this for every filter
+in a layer of a pretrained Xception model, and you'll see the same pattern
+every time: early layers respond to simple edges and colors, middle layers
+to textures (stripes, dots, waves), and deep layers to combinations that
+start looking like eyes, fur, or leaves.
+
+```python title="filter_visualization_sketch.py" showLineNumbers{1}
+import tensorflow as tf
+from tensorflow import keras
+
+model = keras.applications.xception.Xception(weights="imagenet", include_top=False)
+layer = model.get_layer(name="block3_sepconv1")
+feature_extractor = keras.Model(inputs=model.input, outputs=layer.output)
+
+def compute_loss(image, filter_index):
+    activation = feature_extractor(image)
+    return tf.reduce_mean(activation[:, 2:-2, 2:-2, filter_index])  # avoid border artifacts
+
+@tf.function
+def gradient_ascent_step(image, filter_index, learning_rate):
+    with tf.GradientTape() as tape:
+        tape.watch(image)
+        loss = compute_loss(image, filter_index)
+    grads = tape.gradient(loss, image)
+    grads = tf.math.l2_normalize(grads)
+    return image + learning_rate * grads
+```
+
+## Grad-CAM: which pixels caused this prediction?
+
+The most practical of the three techniques answers a very concrete question:
+"the model says this is an African elephant — which part of the picture
+convinced it?" This family of techniques is called **class activation map
+(CAM)** visualization, and the specific version below is **Grad-CAM**
+(Selvaraju et al., 2017).
+
+The idea: take the output feature map of the model's **last convolutional
+layer**, and weigh every channel in it by "how important that channel is to
+the predicted class" — measured as the gradient of the class score with
+respect to that channel. Intuitively, you're combining two spatial maps:
+"how strongly does each location activate each channel" weighted by "how
+much does each channel matter for this class," giving you "how strongly does
+each location support this class."
+
+```mermaid title="Grad-CAM pipeline" desc="Gradients of the predicted class flow back only as far as the last convolutional layer, where they become per-channel importance weights."
+flowchart LR
+  I["Input image"] --> B["Conv layers<br/>(feature extractor)"]
+  B --> L["Last conv layer output<br/>(H, W, channels)"]
+  L --> P["Classifier head"]
+  P --> C["Predicted class score"]
+  C -->|"gradient"| G["Per-channel importance<br/>(pooled gradients)"]
+  G --> W["Weight each channel<br/>by its importance"]
+  L --> W
+  W --> H["Heatmap<br/>(mean over channels, ReLU, normalize)"]
+  H --> O["Overlay on original image"]
+```
+
+```python title="grad_cam.py" showLineNumbers{1}
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+
+model = keras.applications.xception.Xception(weights="imagenet")
+
+img_array = get_img_array(img_path, target_size=(299, 299))   # preprocessed, shape (1, 299, 299, 3)
+
+last_conv_layer_name = "block14_sepconv2_act"
+classifier_layer_names = ["avg_pool", "predictions"]
+
+last_conv_layer = model.get_layer(last_conv_layer_name)
+last_conv_layer_model = keras.Model(model.inputs, last_conv_layer.output)
+
+classifier_input = keras.Input(shape=last_conv_layer.output.shape[1:])
+x = classifier_input
+for layer_name in classifier_layer_names:
+    x = model.get_layer(layer_name)(x)
+classifier_model = keras.Model(classifier_input, x)
+
+# Gradient of the top predicted class w.r.t. the last conv layer's output
+with tf.GradientTape() as tape:
+    last_conv_layer_output = last_conv_layer_model(img_array)
+    tape.watch(last_conv_layer_output)
+    preds = classifier_model(last_conv_layer_output)
+    top_pred_index = tf.argmax(preds[0])
+    top_class_channel = preds[:, top_pred_index]
+
+grads = tape.gradient(top_class_channel, last_conv_layer_output)
+
+# Pool the gradients into one "importance" number per channel
+pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2)).numpy()
+last_conv_layer_output = last_conv_layer_output.numpy()[0]
+for i in range(pooled_grads.shape[-1]):
+    last_conv_layer_output[:, :, i] *= pooled_grads[i]
+heatmap = np.mean(last_conv_layer_output, axis=-1)
+
+# Keep only positive contributions, then scale to [0, 1]
+heatmap = np.maximum(heatmap, 0)
+heatmap /= np.max(heatmap)
+```
+
+Feed in a photo of two African elephants and this produces a heatmap that
+lights up almost entirely around the elephants' heads and ears — the exact
+regions a person would point to and say "that's clearly an elephant."
+
+## Visualize it
+
+The heatmap below is a toy Grad-CAM: a simple shape sits in a noisy
+background, and the "importance" heatmap glows brightest exactly over the
+shape the (fake) classifier is keying on. The heatmap continuously pulses in
+intensity, fading down and re-focusing on a new random shape every few
+seconds — the same "re-run Grad-CAM, see where it looks" loop you'd get
+pointing this technique at a real convnet. Click to jump to a new shape right
+away:
+
+```p5 title="A Grad-CAM heatmap over an image grid" desc="The jet-colored heatmap pulses and periodically re-focuses on a new random shape -- brightest right over the object, fading toward the edges and background. Click to reroll immediately." height="380"
+const gridSize = 20;
+const cell = 16;
+const originX = 40, originY = 50;
+let cx, cy, r0;
+
+const PERIOD = 240;
+const FADE_EDGE = 26;
+let tCounter = 0;
+
+function reroll() {
+  cx = floor(random(6, gridSize - 6));
+  cy = floor(random(6, gridSize - 6));
+  r0 = random(3, 5);
+}
+function setup() {
+  createCanvas(620, 380);
+  textFont("monospace");
+  textAlign(CENTER, CENTER);
+  colorMode(RGB);
+  reroll();
+}
+function jet(t) {
+  // crude jet colormap: blue -> cyan -> yellow -> red
+  t = constrain(t, 0, 1);
+  const r = constrain(1.5 - Math.abs(4 * t - 3), 0, 1);
+  const g = constrain(1.5 - Math.abs(4 * t - 2), 0, 1);
+  const b = constrain(1.5 - Math.abs(4 * t - 1), 0, 1);
+  return color(r * 255, g * 255, b * 255);
+}
+function draw() {
+  const localT = tCounter % PERIOD;
+  if (localT === 0) reroll();
+
+  const fadeIn = constrain(localT / FADE_EDGE, 0, 1);
+  const fadeOut = constrain((PERIOD - localT) / FADE_EDGE, 0, 1);
+  const envelope = min(fadeIn, fadeOut);
+  const pulse = 0.72 + 0.28 * Math.sin(tCounter * 0.09);
+  const intensity = envelope * pulse;
+
+  background(13, 17, 23);
+  noStroke();
+  fill(230);
+  textSize(13);
+  text("Original image", originX + (gridSize * cell) / 2, 22);
+  text("Grad-CAM heatmap overlay", originX + (gridSize * cell) / 2 + 20, 22 + 0);
+
+  for (let r = 0; r < gridSize; r++) {
+    for (let c = 0; c < gridSize; c++) {
+      const dx = c - cx, dy = r - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const isShape = dist < r0;
+
+      const base = isShape ? 200 : 60 + noise(r * 0.3, c * 0.3) * 40;
+      const x = originX + c * cell, y = originY + r * cell;
+      fill(base);
+      rect(x, y, cell, cell);
+
+      // importance falls off smoothly from the shape's center, pulsing in intensity
+      const importance = Math.exp(-(dist * dist) / (2 * (r0 + 2) * (r0 + 2)));
+      const heat = jet(importance);
+      heat.setAlpha(importance * 200 * intensity);
+      fill(heat);
+      rect(x, y, cell, cell);
+    }
+  }
+
+  fill(107, 169, 221);
+  textSize(12);
+  text("brightest (red/yellow) = strongest support for the predicted class", width / 2, height - 16);
+
+  tCounter++;
+}
+function mousePressed() {
+  tCounter = 0;
+  reroll();
+}
+```
+
+## Mini-checkpoint
+
+Why does Grad-CAM use the *gradient* of the class score, and not just the
+raw activations, to weigh each channel?
+
+- Raw activations only tell you "how strongly did this channel fire here" —
+  not whether firing strongly actually helped or hurt the predicted class.
+  The gradient tells you exactly that: how sensitive the class score is to
+  each channel, so channels the model actually relies on get weighted more
+  heavily than channels that just happened to activate.
+
+:::tip[From the book]
+Chollet frames Grad-CAM's math in one sentence worth memorizing: you're
+"weighting a spatial map of *how intensely the input image activates
+different channels* by *how important each channel is with regard to the
+class*, resulting in a spatial map of *how intensely the input image
+activates the class*." He also points out Grad-CAM answers two questions at
+once — *why* did the network predict this class, and *where* in the image
+is the evidence — which is exactly what makes it useful for debugging a
+misclassification, not just admiring a correct one.
+:::
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+These exercises reproduce Grad-CAM's math offline in NumPy — the same three
+steps used inside `grad_cam.py` above, on tiny arrays so they run instantly.
+
+### Exercise 1 – Pool Gradients Into Channel Importance
+
+<DataCampExercise
+  lang="python"
+  hint={`\`grads.mean(axis=(0, 1, 2))\` averages over the batch, height, and width axes, leaving one importance score per channel.`}
+  code={`# Task: Exercise 1 - Pool Gradients Into Channel Importance
+import numpy as np
+
+grads = np.array([
+    [[1.0, 2.0], [3.0, 4.0]],
+    [[5.0, 6.0], [7.0, 8.0]],
+]).reshape(1, 2, 2, 2)   # shape (batch=1, height=2, width=2, channels=2)
+
+pooled_grads = grads.___(axis=(0, 1, 2))   # replace ___ with mean
+print("pooled grads:", pooled_grads)
+
+# ── Expected Output ───────────────────────────────────────────
+# pooled grads: [4. 5.]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+grads = np.array([
+    [[1.0, 2.0], [3.0, 4.0]],
+    [[5.0, 6.0], [7.0, 8.0]],
+]).reshape(1, 2, 2, 2)
+
+pooled_grads = grads.mean(axis=(0, 1, 2))
+print("pooled grads:", pooled_grads)`}
+  sct={`test_output_contains("pooled grads: [4. 5.]")
+success_msg("Each channel now has one importance score, from the gradient!")`}
+  height={170}
+/>
+
+### Exercise 2 – Weight the Feature Map by Channel Importance
+
+<DataCampExercise
+  lang="python"
+  hint={`Multiply each channel of the feature map by its matching entry in \`pooled_grads\`, then average across channels with \`.mean(axis=-1)\`.`}
+  code={`# Task: Exercise 2 - Weight the Feature Map by Channel Importance
+import numpy as np
+
+feature_map = np.array([
+    [[1.0, 1.0], [2.0, 1.0]],
+    [[1.0, 2.0], [1.0, 1.0]],
+])   # shape (height=2, width=2, channels=2)
+pooled_grads = np.array([2.0, 3.0])
+
+for i in range(pooled_grads.shape[-1]):
+    feature_map[:, :, i] *= ___[i]   # replace ___ with pooled_grads
+
+heatmap = feature_map.mean(axis=-1)
+print("heatmap:")
+print(heatmap)
+
+# ── Expected Output ───────────────────────────────────────────
+# heatmap:
+# [[2.5 3.5]
+#  [4.  2.5]]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+feature_map = np.array([
+    [[1.0, 1.0], [2.0, 1.0]],
+    [[1.0, 2.0], [1.0, 1.0]],
+])
+pooled_grads = np.array([2.0, 3.0])
+
+for i in range(pooled_grads.shape[-1]):
+    feature_map[:, :, i] *= pooled_grads[i]
+
+heatmap = feature_map.mean(axis=-1)
+print("heatmap:")
+print(heatmap)`}
+  sct={`test_output_contains("[[2.5 3.5]")
+test_output_contains(" [4.  2.5]]")
+success_msg("That is the raw class activation heatmap, before cleanup!")`}
+  height={190}
+/>
+
+### Exercise 3 – Clean Up the Heatmap (ReLU + Normalize)
+
+<DataCampExercise
+  lang="python"
+  hint={`\`np.maximum(heatmap, 0)\` zeroes out negative values (keeping only positive support for the class), then dividing by the max rescales everything into [0, 1].`}
+  code={`# Task: Exercise 3 - Clean Up the Heatmap (ReLU + Normalize)
+import numpy as np
+
+heatmap = np.array([[-1.0, 3.5], [4.0, 2.5]])
+
+heatmap = np.maximum(heatmap, ___)   # replace ___ with 0
+heatmap /= np.max(heatmap)
+print("normalized heatmap:")
+print(heatmap)
+
+# ── Expected Output ───────────────────────────────────────────
+# normalized heatmap:
+# [[0.    0.875]
+#  [1.    0.625]]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+heatmap = np.array([[-1.0, 3.5], [4.0, 2.5]])
+
+heatmap = np.maximum(heatmap, 0)
+heatmap /= np.max(heatmap)
+print("normalized heatmap:")
+print(heatmap)`}
+  sct={`test_output_contains("[[0.    0.875]")
+test_output_contains(" [1.    0.625]]")
+success_msg("That is a normalized Grad-CAM heatmap, ready to overlay on the original image!")`}
+  height={190}
+/>
+
+## Next
+
+Continue to **Object Detection (Bounding Boxes and YOLO)** — go from "what
+is in this image" to "what's in it, and exactly where," by predicting
+bounding boxes and cleaning them up with non-max suppression.

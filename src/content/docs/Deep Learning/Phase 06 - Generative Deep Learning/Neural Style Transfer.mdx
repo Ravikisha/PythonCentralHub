@@ -1,0 +1,416 @@
+---
+title: Neural Style Transfer
+description: Learn how neural style transfer blends a content image with a style reference by optimizing content loss, Gram-matrix style loss, and a total-variation smoothness loss.
+sidebar:
+  order: 457
+---
+
+## What you'll learn
+
+- what **style transfer** means: keep a target image's content, but repaint it in
+  a reference image's style
+- the **content loss** — an L2 distance between high-level convnet activations
+  that keeps the generated image's macrostructure intact
+- the **style loss**, built from the **Gram matrix** of a layer's activations —
+  a map of which features tend to fire together, capturing texture rather than
+  layout
+- the **total-variation loss** that keeps the generated image spatially smooth
+  instead of speckled
+- how these three losses combine into one objective that you optimize directly
+  on the pixels of the output image
+
+## Repainting a photo in someone else's style
+
+Neural style transfer takes two images — a **content image** (say, a photo of
+a city) and a **style reference** (say, Van Gogh's *Starry Night*) — and produces
+a third image that keeps the buildings and streets of the first while adopting
+the swirling brushstrokes and colors of the second.
+
+```mermaid title="Combining content and style into one generated image" desc="Two source images are scored by the same losses against a generated image, which is optimized until it satisfies both."
+flowchart LR
+  C["Content image"] --> CL["Content loss (high-level activations)"]
+  S["Style reference image"] --> SL["Style loss (Gram matrices)"]
+  G["Generated image (being optimized)"] --> CL
+  G --> SL
+  G --> TV["Total-variation loss (smoothness)"]
+  CL --> T["Total loss"]
+  SL --> T
+  TV --> T
+  T -->|"gradient descent on pixels"| G
+```
+
+The one idea underneath every deep learning technique applies here too: define a
+loss for what you want, then minimize it. What's unusual is *what* gets updated —
+not a model's weights, but the **pixels of the generated image itself**. You
+start the generated image as a copy of the content image, then repeatedly nudge
+its pixels downhill against a loss that rewards content-similarity to one image
+and style-similarity to another.
+
+```
+loss = distance(content(original) , content(generated))
+     + distance(style(reference)  , style(generated))
+```
+
+The whole trick is finding functions `content(...)` and `style(...)` that
+actually capture what those words mean — and a pretrained convnet (VGG19, in the
+original paper) turns out to define both beautifully.
+
+## Content loss: match the high-level activations
+
+Early convnet layers encode local detail (edges, small textures); later layers
+encode global, abstract structure — *what* is in the image rather than exactly
+*where* every pixel sits. So the **content loss** is simply the squared
+difference between one upper layer's activations for the content image and for
+the generated image: match those, and the generated image will "look like the
+same scene" to the network, even if brushstroke-level detail differs.
+
+```python title="Content loss (Keras / TensorFlow)" showLineNumbers{1}
+import tensorflow as tf
+
+def content_loss(base_image_features, combination_image_features):
+    return tf.reduce_sum(tf.square(combination_image_features - base_image_features))
+```
+
+## Style loss: match the Gram matrix, not the pixels
+
+Style is trickier — it isn't "these exact activations," it's "these
+*textures*, at every scale." Gatys et al.'s insight was to look at the **Gram
+matrix** of a layer's feature maps: flatten each channel into a vector and take
+the inner product of every channel with every other channel. The result is a
+`channels x channels` table of how correlated each pair of feature detectors is
+across the whole image — a statistical fingerprint of texture that has thrown
+away spatial layout entirely.
+
+```python title="Style loss via the Gram matrix (Keras / TensorFlow)" showLineNumbers{1}
+import tensorflow as tf
+
+def gram_matrix(x):
+    x = tf.transpose(x, (2, 0, 1))                      # (channels, height, width)
+    features = tf.reshape(x, (tf.shape(x)[0], -1))       # (channels, height*width)
+    return tf.matmul(features, tf.transpose(features))   # (channels, channels)
+
+def style_loss(style_features, combination_features, img_height, img_width):
+    S = gram_matrix(style_features)
+    C = gram_matrix(combination_features)
+    channels = 3
+    size = img_height * img_width
+    return tf.reduce_sum(tf.square(S - C)) / (4.0 * (channels ** 2) * (size ** 2))
+```
+
+Match the Gram matrices of the style image and the generated image at *several*
+layers — low ones for fine texture, high ones for larger patterns — and the
+generated image ends up sharing the reference's textures at every scale, without
+ever being forced to copy its actual layout.
+
+## Total-variation loss: keep it smooth
+
+A third, smaller term regularizes the generated image itself: it penalizes large
+differences between neighboring pixels, which discourages the noisy, speckled
+artifacts that pure gradient-based pixel optimization tends to produce.
+
+```python title="Total-variation loss (Keras / TensorFlow)" showLineNumbers{1}
+import tensorflow as tf
+
+def total_variation_loss(x, img_height, img_width):
+    a = tf.square(x[:, : img_height - 1, : img_width - 1, :] - x[:, 1:, : img_width - 1, :])
+    b = tf.square(x[:, : img_height - 1, : img_width - 1, :] - x[:, : img_height - 1, 1:, :])
+    return tf.reduce_sum(tf.pow(a + b, 1.25))
+```
+
+## Verifying the loss math with plain NumPy
+
+All three losses are simple enough to check with toy "feature maps" — small
+arrays standing in for a conv layer's output — with no TensorFlow required:
+
+```python title="Content, style, and total loss on toy feature maps (verified with NumPy)" showLineNumbers{1}
+import numpy as np
+
+np.random.seed(1)
+channels, spatial = 3, 4   # toy: 3 "feature channels", 4 "spatial locations"
+
+# --- content loss: how far is the generated image from the content image? ---
+content_feat = np.random.uniform(0, 1, size=(channels, spatial))
+combo_feat = content_feat + np.random.normal(0, 0.1, size=(channels, spatial))
+
+def content_loss(base, combination):
+    return np.sum((combination - base) ** 2)
+
+cl = content_loss(content_feat, combo_feat)
+print("content loss:", round(cl, 4))
+
+# --- style loss: how far is the generated image's Gram matrix from the style's? ---
+def gram_matrix(x):
+    return x @ x.T   # channels x channels correlation table
+
+style_feat = np.random.uniform(0, 1, size=(channels, spatial))
+combo_feat2 = style_feat + np.random.normal(0, 0.2, size=(channels, spatial))
+
+def style_loss(style, combination, size):
+    S, C = gram_matrix(style), gram_matrix(combination)
+    return np.sum((S - C) ** 2) / (4.0 * (style.shape[0] ** 2) * (size ** 2))
+
+sl = style_loss(style_feat, combo_feat2, spatial)
+print("style loss:", round(sl, 6))
+
+# --- combine with weights, exactly like the book's compute_loss ---
+content_weight, style_weight = 0.25, 1.0
+total = content_weight * cl + style_weight * sl
+print("total loss:", round(total, 4))
+```
+
+```
+content loss: 0.1043
+style loss: 0.001504
+total loss: 0.0276
+```
+
+Notice how much smaller the style loss's *contribution* would be without a
+`style_weight` correction — in the real algorithm you tune `content_weight`,
+`style_weight`, and `total_variation_weight` relative to each other until the
+result looks balanced; too much content weight and the output barely changes
+style, too much style weight and the original content dissolves.
+
+## Optimizing the generated image
+
+Unlike every other model in this phase, there's no `model.fit()` here — you set
+`combination_image` up as a `tf.Variable`, compute gradients of the combined loss
+with respect to *it*, and apply them directly with an optimizer, for thousands of
+iterations:
+
+```python title="The optimization loop (conceptual, following the book)" showLineNumbers{1}
+import tensorflow as tf
+
+optimizer = tf.keras.optimizers.SGD(
+    tf.keras.optimizers.schedules.ExponentialDecay(
+        initial_learning_rate=100.0, decay_steps=100, decay_rate=0.96
+    )
+)
+
+# combination_image = tf.Variable(preprocess_image(base_image_path))
+# for i in range(1, 4001):
+#     with tf.GradientTape() as tape:
+#         loss = compute_loss(combination_image, base_image, style_reference_image)
+#     grads = tape.gradient(loss, combination_image)
+#     optimizer.apply_gradients([(grads, combination_image)])
+```
+
+A high initial learning rate (100) makes fast early progress, decaying by 4%
+every 100 steps so the optimization settles down as it approaches a good result —
+the same warm-up-then-cool-down idea you've seen with learning-rate schedules
+elsewhere.
+
+## Visualize it
+
+Drag the slider (or watch it auto-animate) to blend a content pattern and a style
+pattern — at 0% it's pure content layout, at 100% it's pure style texture, and
+in between you get exactly what neural style transfer aims for: the content's
+shapes rendered in the style's texture:
+
+```p5 title="Blending content layout with style texture" desc="Left grid: content shapes. Right grid: style texture. Center: a blend, sliding from pure content (0%) to pure style (100%) and back — the effect neural style transfer optimizes for." height="300"
+let blend = 0;
+let dir = 1;
+const GRID = 8;
+let contentGrid = [];
+let styleGrid = [];
+
+function setup() {
+  createCanvas(600, 300);
+  noStroke();
+  textFont("monospace");
+  textAlign(CENTER, CENTER);
+  for (let i = 0; i < GRID; i++) {
+    const cRow = [], sRow = [];
+    for (let j = 0; j < GRID; j++) {
+      // content: a simple geometric shape (a ring)
+      const d = Math.hypot(i - GRID / 2 + 0.5, j - GRID / 2 + 0.5);
+      cRow.push(d > 2.2 && d < 3.6 ? 1 : 0.15);
+      // style: a busy swirl texture
+      sRow.push(0.5 + 0.5 * Math.sin(i * 1.3 + j * 1.7) * Math.cos(i * 0.7 - j * 1.1));
+    }
+    contentGrid.push(cRow);
+    styleGrid.push(sRow);
+  }
+}
+
+function drawGrid(grid, x0, y0, cell, label) {
+  for (let i = 0; i < GRID; i++) {
+    for (let j = 0; j < GRID; j++) {
+      const v = grid[i][j];
+      fill(255 * v, 211 * v, 67 + v * 100);
+      rect(x0 + j * cell, y0 + i * cell, cell - 2, cell - 2, 2);
+    }
+  }
+  fill(150, 160, 172);
+  textSize(11);
+  text(label, x0 + (cell * GRID) / 2, y0 - 12);
+}
+
+function draw() {
+  background(13, 17, 23);
+  const cell = 16;
+
+  drawGrid(contentGrid, 30, 60, cell, "content");
+  drawGrid(styleGrid, 430, 60, cell, "style");
+
+  const blended = [];
+  for (let i = 0; i < GRID; i++) {
+    const row = [];
+    for (let j = 0; j < GRID; j++) {
+      row.push((1 - blend) * contentGrid[i][j] + blend * styleGrid[i][j]);
+    }
+    blended.push(row);
+  }
+  drawGrid(blended, 230, 60, cell, "generated");
+
+  fill(220, 224, 230);
+  textSize(13);
+  text("style weight = " + Math.round(blend * 100) + "%", width / 2, 26);
+
+  const barW = 300, barX = width / 2 - barW / 2, barY = height - 30;
+  fill(40, 44, 52);
+  rect(barX, barY, barW, 8, 4);
+  fill(255, 211, 67);
+  rect(barX, barY, barW * blend, 8, 4);
+
+  blend += dir * 0.004;
+  if (blend > 1) { blend = 1; dir = -1; }
+  if (blend < 0) { blend = 0; dir = 1; }
+}
+
+function mousePressed() { blend = 0; dir = 1; }
+```
+
+:::tip[From the book]
+Chollet is candid about the limits here: "what this technique achieves is merely
+a form of image retexturing... it works best with style-reference images that
+are strongly textured and highly self-similar... don't expect it to work like
+magic!" It's a genuinely simple idea — a loss built from a frozen convnet's
+activations — not a model that "understands" art.
+:::
+
+## Mini-checkpoint
+
+Why does the style loss use the Gram matrix instead of comparing activations
+pixel-by-pixel like the content loss does?
+
+- Because style is about *texture and correlation between features*, not exact
+  spatial layout — comparing raw activations pixel-by-pixel (like content loss
+  does) would force the generated image to have the same *arrangement* as the
+  style image, which is exactly what you don't want. The Gram matrix summarizes
+  which feature detectors fire together, discarding *where* they fire, so
+  matching it transfers texture while leaving the content image's layout alone.
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Compute the Content Loss
+
+<DataCampExercise
+  lang="python"
+  hint={`Content loss is the sum of SQUARED differences between the two feature maps: \`np.sum((combination - base) ** 2)\`.`}
+  code={`# Task: Exercise 1 - Compute the Content Loss
+import numpy as np
+
+np.random.seed(1)
+channels, spatial = 3, 4
+content_feat = np.random.uniform(0, 1, size=(channels, spatial))
+combo_feat = content_feat + np.random.normal(0, 0.1, size=(channels, spatial))
+
+def content_loss(base, combination):
+    return np.sum((combination - base) ___ 2)   # replace ___ with **
+
+cl = content_loss(content_feat, combo_feat)
+print("content loss:", round(cl, 4))
+
+# ── Expected Output ───────────────────────────────────────────
+# content loss: 0.1043
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+np.random.seed(1)
+channels, spatial = 3, 4
+content_feat = np.random.uniform(0, 1, size=(channels, spatial))
+combo_feat = content_feat + np.random.normal(0, 0.1, size=(channels, spatial))
+
+def content_loss(base, combination):
+    return np.sum((combination - base) ** 2)
+
+cl = content_loss(content_feat, combo_feat)
+print("content loss:", round(cl, 4))`}
+  sct={`test_output_contains("content loss: 0.1043")
+success_msg("That's an L2 distance between two sets of activations!")`}
+  height={190}
+/>
+
+### Exercise 2 – Build the Gram Matrix
+
+<DataCampExercise
+  lang="python"
+  hint={`The Gram matrix is the inner product of a feature matrix with its own transpose: \`x @ x.T\`.`}
+  code={`# Task: Exercise 2 - Build the Gram Matrix
+import numpy as np
+
+x = np.array([[1.0, 2.0, 0.0], [0.0, 1.0, 1.0]])   # 2 channels, 3 spatial locations
+
+def gram_matrix(x):
+    return x @ x.___   # replace ___ with T
+
+G = gram_matrix(x)
+print("Gram matrix shape:", G.shape)
+print("Gram matrix:", G.tolist())
+
+# ── Expected Output ───────────────────────────────────────────
+# Gram matrix shape: (2, 2)
+# Gram matrix: [[5.0, 2.0], [2.0, 2.0]]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+x = np.array([[1.0, 2.0, 0.0], [0.0, 1.0, 1.0]])
+
+def gram_matrix(x):
+    return x @ x.T
+
+G = gram_matrix(x)
+print("Gram matrix shape:", G.shape)
+print("Gram matrix:", G.tolist())`}
+  sct={`test_output_contains("Gram matrix shape: (2, 2)")
+test_output_contains("Gram matrix: [[5.0, 2.0], [2.0, 2.0]]")
+success_msg("A channels x channels table of feature correlations — that's style!")`}
+  height={200}
+/>
+
+### Exercise 3 – Combine Content and Style Loss with Weights
+
+<DataCampExercise
+  lang="python"
+  hint={`The total loss is a WEIGHTED SUM: \`content_weight * content_loss + style_weight * style_loss\`.`}
+  code={`# Task: Exercise 3 - Combine Content and Style Loss with Weights
+content_loss_value = 0.1043
+style_loss_value = 0.001504
+content_weight = 0.25
+style_weight = 1.0
+
+total_loss = content_weight * content_loss_value ___ style_weight * style_loss_value  # replace ___ with +
+print("total loss:", round(total_loss, 4))
+
+# ── Expected Output ───────────────────────────────────────────
+# total loss: 0.0276
+# ──────────────────────────────────────────────────────────────`}
+  solution={`content_loss_value = 0.1043
+style_loss_value = 0.001504
+content_weight = 0.25
+style_weight = 1.0
+
+total_loss = content_weight * content_loss_value + style_weight * style_loss_value
+print("total loss:", round(total_loss, 4))`}
+  sct={`test_output_contains("total loss: 0.0276")
+success_msg("That's the exact weighted combination the optimizer minimizes!")`}
+  height={170}
+/>
+
+## Next
+
+That wraps up Phase 6. Continue to **Introduction to Reinforcement Learning** to
+start Phase 7 — instead of learning to generate data, an agent now learns a
+policy through trial, error, and reward.

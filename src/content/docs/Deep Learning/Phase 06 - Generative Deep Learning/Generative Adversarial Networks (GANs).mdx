@@ -1,0 +1,586 @@
+---
+title: Generative Adversarial Networks (GANs)
+description: Learn how a generator and a discriminator compete in a minimax game to produce realistic data, why that adversarial training is famously unstable, and how DCGANs stabilize it.
+sidebar:
+  order: 453
+---
+
+## What you'll learn
+
+- how a **generator** and a **discriminator** compete in a minimax game — the
+  generator tries to fool the discriminator, the discriminator tries not to be fooled
+- why training happens in **two separate phases** per step, and why the
+  discriminator's `trainable` attribute has to be toggled around `compile()`
+- why GAN training is famously unstable, what **mode collapse** is, and a couple of
+  techniques that help (experience replay, minibatch discrimination)
+- the **DCGAN** guidelines for building a stable convolutional GAN
+
+## The forger and the detective
+
+A GAN is composed of two neural networks with opposite goals:
+
+- The **generator** takes random noise (a Gaussian vector, just like a VAE's coding)
+  and turns it into fake data — typically an image.
+- The **discriminator** takes an image, real or fake, and must guess which one it is.
+
+Géron's analogy: the generator is like a criminal trying to make convincing
+counterfeit money, while the discriminator is the police investigator trying to
+spot the fakes. Neither one "solves" the problem alone — they improve only by
+competing against each other, a training style called **adversarial training**.
+Remarkably, the generator never sees a single real image; all it ever gets is the
+gradients that flow back through the discriminator. As the discriminator gets
+better at spotting fakes, those gradients carry more useful information, so the
+generator can keep improving.
+
+## Two phases per training step
+
+Because the two networks have opposing objectives, you can't just call `.fit()` —
+each training iteration needs two separate phases:
+
+1. **Train the discriminator.** Sample a batch of real images, generate an equal
+   number of fake ones, label fakes `0` and real `1`, and train the discriminator
+   for one step with binary cross-entropy. Only the discriminator's weights update.
+2. **Train the generator.** Generate another batch of fake images, but this time set
+   *all* labels to `1` — you want the generator to fool the discriminator into
+   believing its output is real. The discriminator's weights are **frozen** during
+   this phase; only the gradients flow back into the generator.
+
+```mermaid title="The two-phase GAN training loop" desc="Each step alternates between teaching the discriminator to spot fakes and teaching the generator to fool it."
+flowchart TD
+  Z["Random noise z"] --> G["Generator"]
+  G --> F["Fake image"]
+  R["Real image (from dataset)"] --> P1
+  F --> P1["Phase 1: train Discriminator<br/>labels: fake=0, real=1"]
+  P1 --> DU["Discriminator weights updated"]
+  Z2["New noise z"] --> G
+  G --> F2["Fake image"]
+  F2 --> P2["Phase 2: train Generator<br/>labels: all=1, Discriminator frozen"]
+  P2 --> GU["Generator weights updated"]
+```
+
+## Building and training a small GAN
+
+The generator looks like an autoencoder's decoder; the discriminator is a plain
+binary classifier. The combined `gan` model exists only so phase 2 can send
+gradients through the (frozen) discriminator back into the generator:
+
+```python title="Generator, discriminator, and the combined GAN" showLineNumbers{1}
+import tensorflow as tf
+
+codings_size = 8
+
+generator = tf.keras.models.Sequential([
+    tf.keras.layers.Dense(24, activation="selu", input_shape=[codings_size]),
+    tf.keras.layers.Dense(16, activation="sigmoid"),
+    tf.keras.layers.Reshape([4, 4]),
+])
+discriminator = tf.keras.models.Sequential([
+    tf.keras.layers.Flatten(input_shape=[4, 4]),
+    tf.keras.layers.Dense(16, activation="selu"),
+    tf.keras.layers.Dense(1, activation="sigmoid"),
+])
+gan = tf.keras.models.Sequential([generator, discriminator])
+
+discriminator.compile(loss="binary_crossentropy", optimizer="rmsprop")
+discriminator.trainable = False
+gan.compile(loss="binary_crossentropy", optimizer="rmsprop")
+
+print("discriminator.trainable (after freezing):", discriminator.trainable)
+```
+
+```
+discriminator.trainable (after freezing): False
+```
+
+:::caution[Gotcha]
+Keras only applies the `trainable` attribute **at `compile()` time**. So the
+discriminator stays trainable when you call `discriminator.train_on_batch(...)`
+directly (it was `True` when *it* was compiled), even though the exact same layers
+are frozen inside `gan` (which was compiled after `trainable = False`). This is
+exactly why the custom loop below flips `discriminator.trainable` back and forth
+before each `train_on_batch()` call.
+:::
+
+Since the training loop is unusual, you write it by hand instead of calling
+`.fit()`:
+
+```python title="The custom two-phase training loop" showLineNumbers{1}
+import numpy as np
+import tensorflow as tf
+
+# Toy dataset: 64 tiny random "images" (stand-ins for real Fashion MNIST images)
+X_train = np.random.rand(64, 4, 4).astype("float32")
+batch_size = 16
+dataset = tf.data.Dataset.from_tensor_slices(X_train).shuffle(64)
+dataset = dataset.batch(batch_size, drop_remainder=True).prefetch(1)
+
+def train_gan(gan, dataset, batch_size, codings_size, n_epochs=1):
+    generator, discriminator = gan.layers
+    for epoch in range(n_epochs):
+        for X_batch in dataset:
+            # phase 1: train the discriminator on real + fake
+            noise = tf.random.normal(shape=[batch_size, codings_size])
+            generated_images = generator(noise)
+            X_fake_and_real = tf.concat([generated_images, X_batch], axis=0)
+            y1 = tf.constant([[0.]] * batch_size + [[1.]] * batch_size)
+            discriminator.trainable = True
+            discriminator.train_on_batch(X_fake_and_real, y1)
+            # phase 2: train the generator to fool the (frozen) discriminator
+            noise = tf.random.normal(shape=[batch_size, codings_size])
+            y2 = tf.constant([[1.]] * batch_size)
+            discriminator.trainable = False
+            gan.train_on_batch(noise, y2)
+
+train_gan(gan, dataset, batch_size, codings_size)
+print("batches per epoch:", len(dataset))
+print("generator output shape:", generator.output_shape)
+```
+
+```
+batches per epoch: 4
+generator output shape: (None, 4, 4)
+```
+
+## Why GAN training is so unstable
+
+In theory, a GAN converges to a **Nash equilibrium**: the generator produces
+perfectly realistic images, and the discriminator is reduced to a coin flip (50%
+real, 50% fake). In practice, nothing guarantees you'll ever reach it.
+
+The biggest failure mode is **mode collapse**: the generator discovers one type of
+output that reliably fools the discriminator (say, shoes) and starts producing
+*only* that, forgetting every other class. The discriminator, seeing nothing but
+fake shoes, eventually learns to catch them — so the generator is forced to jump to
+a different class, and the cycle repeats without either network ever getting
+consistently good. On top of that, because the two networks are constantly pushing
+against each other, their parameters can start oscillating and training can diverge
+for no obvious reason — which is why GANs are notoriously sensitive to
+hyperparameters.
+
+Two techniques that help:
+
+- **Experience replay** — keep a buffer of recently generated fake images and train
+  the discriminator on a mix of real images, current fakes, and *older* fakes from
+  the buffer, so it can't just overfit to whatever the generator produces right now.
+- **Minibatch discrimination** — give the discriminator a statistic describing how
+  similar the images in a batch are to each other, so it can reject an entire batch
+  of fakes that all look alike, discouraging mode collapse.
+
+## Deep Convolutional GANs (DCGAN)
+
+Plain dense layers work for tiny toy images, but real images need convolutions.
+Radford et al.'s **DCGAN** guidelines for stable convolutional GANs:
+
+- Replace pooling with **strided convolutions** (discriminator) and **transposed
+  convolutions** (generator).
+- Use **Batch Normalization** in both networks, except the generator's output layer
+  and the discriminator's input layer.
+- Drop fully connected hidden layers for deeper architectures.
+- Use **ReLU** in the generator (except **tanh** on the output layer).
+- Use **leaky ReLU** everywhere in the discriminator.
+
+```python title="A small DCGAN for 28x28 images" showLineNumbers{1}
+import tensorflow as tf
+
+codings_size = 100
+
+generator = tf.keras.models.Sequential([
+    tf.keras.layers.Dense(7 * 7 * 8, input_shape=[codings_size]),
+    tf.keras.layers.Reshape([7, 7, 8]),
+    tf.keras.layers.BatchNormalization(),
+    tf.keras.layers.Conv2DTranspose(8, kernel_size=5, strides=2, padding="same", activation="selu"),
+    tf.keras.layers.BatchNormalization(),
+    tf.keras.layers.Conv2DTranspose(1, kernel_size=5, strides=2, padding="same", activation="tanh"),
+])
+discriminator = tf.keras.models.Sequential([
+    tf.keras.layers.Conv2D(8, kernel_size=5, strides=2, padding="same",
+                            activation=tf.keras.layers.LeakyReLU(0.2), input_shape=[28, 28, 1]),
+    tf.keras.layers.Dropout(0.4),
+    tf.keras.layers.Conv2D(16, kernel_size=5, strides=2, padding="same",
+                            activation=tf.keras.layers.LeakyReLU(0.2)),
+    tf.keras.layers.Dropout(0.4),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(1, activation="sigmoid"),
+])
+print("generator output shape:", generator.output_shape)
+print("discriminator output shape:", discriminator.output_shape)
+```
+
+```
+generator output shape: (None, 28, 28, 1)
+discriminator output shape: (None, 1)
+```
+
+Since the generator's output layer uses `tanh`, its outputs range from -1 to 1 —
+remember to rescale your real training images to that same range before training
+(`X_train = X_train * 2. - 1.`, assuming they start in `[0, 1]`).
+
+## More stabilization tricks (Chollet's "bag of tricks")
+
+Chollet's *Deep Learning with Python* adds a few more heuristics on top of the
+DCGAN guidelines above — none of them theory-backed, all of them known to help
+empirically:
+
+- **Add noise to the discriminator's labels.** Instead of hard `0`/`1` targets,
+  add a small amount of random noise to them. GAN training is a dynamic
+  equilibrium, easy to get stuck in — a bit of stochasticity in the labels
+  discourages the discriminator from ever becoming too confident, which keeps
+  gradients flowing to the generator.
+- **Avoid sparse gradients.** Both max pooling and plain `relu` zero out large
+  chunks of the gradient, which starves GAN training of the signal it needs.
+  That's exactly why the DCGAN guidelines above replace pooling with strided
+  convolutions and swap `relu` for **leaky ReLU** (which lets small negative
+  values through instead of clamping them to zero).
+- **Match kernel size to stride to avoid checkerboard artifacts.** When a
+  strided `Conv2DTranspose` or `Conv2D`'s kernel size isn't evenly divisible by
+  its stride, different pixels in the output get covered by a different number
+  of overlapping kernel applications — visible as a faint checkerboard pattern
+  in generated images. Notice the DCGAN code above uses `kernel_size=5` with
+  `strides=2`; picking sizes like this (or `kernel_size=4, strides=2`) sidesteps
+  the artifact.
+- **Dropout in the discriminator guards against a generator stuck on noise.**
+  One common GAN failure mode is the generator getting permanently stuck
+  producing images that look like pure static. Adding `Dropout` to the
+  discriminator — as the DCGAN code above already does — makes it harder for
+  the discriminator to overfit to any one kind of fake, which in turn keeps
+  useful gradient signal flowing back to the generator instead of it collapsing
+  onto a lazy local optimum.
+
+```python title="Adding label noise to the discriminator's targets" showLineNumbers{1}
+import tensorflow as tf
+
+batch_size = 16
+y_real = tf.ones((batch_size, 1))
+y_fake = tf.zeros((batch_size, 1))
+
+# A small amount of random noise makes the labels less than perfectly confident
+y_real_noisy = y_real - 0.05 * tf.random.uniform((batch_size, 1))
+y_fake_noisy = y_fake + 0.05 * tf.random.uniform((batch_size, 1))
+
+print("real label range: ", round(float(tf.reduce_min(y_real_noisy)), 3),
+      "to", round(float(tf.reduce_max(y_real_noisy)), 3))
+print("fake label range: ", round(float(tf.reduce_min(y_fake_noisy)), 3),
+      "to", round(float(tf.reduce_max(y_fake_noisy)), 3))
+```
+
+```
+real label range:  0.95 to 1.0
+fake label range:  0.0 to 0.05
+```
+
+:::tip[From the book]
+Chollet is upfront about how empirical all of this is: "the process of training
+GANs and tuning GAN implementations is notoriously difficult... like most things
+in deep learning, it's more alchemy than science: these tricks are heuristics,
+not theory-backed guidelines." Treat every item on this list as "known to often
+help," not as a guarantee.
+:::
+
+## Scaling up: progressive growing and StyleGAN
+
+Everything above trains a GAN at one fixed resolution. Getting to convincing
+*high-resolution* faces took two more ideas from the same Nvidia team behind DCGAN.
+
+**Progressive growing** (Karras et al., 2018) starts training at a tiny 4x4
+resolution, then gradually **adds matching layers to both networks** to grow the
+output to 8x8, 16x16, and so on up to 1024x1024 — much like greedily stacking an
+autoencoder layer by layer. Each time a new layer is added, it isn't switched in
+abruptly: its output is **faded in** as a weighted blend with the old (upsampled)
+output, with the blend weight ramping from 0 to 1 over training so the
+already-trained layers aren't shocked by a sudden change:
+
+```python title="The progressive-growing fade-in blend (conceptual)" showLineNumbers{1}
+import numpy as np
+
+# toy stand-ins for the "old" (upsampled) output and the "new", higher-res output
+old_output_upsampled = np.full((8, 8), 0.3)
+new_output = np.full((8, 8), 0.9)
+
+for alpha in [0.0, 0.25, 0.5, 0.75, 1.0]:
+    blended = alpha * new_output + (1 - alpha) * old_output_upsampled
+    print(f"alpha={alpha}: blended value = {blended[0, 0]:.2f}")
+```
+
+```
+alpha=0.0: blended value = 0.30
+alpha=0.25: blended value = 0.45
+alpha=0.5: blended value = 0.60
+alpha=0.75: blended value = 0.75
+alpha=1.0: blended value = 0.90
+```
+
+At `alpha=0` the new layer contributes nothing (pure old output); at `alpha=1` it
+has fully taken over. The same paper adds a few more tricks aimed squarely at mode
+collapse and training stability: a **minibatch standard-deviation layer** near the
+end of the discriminator (so it can directly see how little variety a batch of
+fakes has), an **equalized learning rate** (weights are rescaled at runtime instead
+of only at initialization, so every parameter learns at the same effective speed),
+and a **pixelwise normalization layer** in the generator to keep activations from
+exploding as the two networks compete.
+
+**StyleGAN** (Karras et al., 2018) rebuilds the *generator* on top of progressive
+growing, borrowing an idea from neural style transfer. It splits the generator into
+two networks:
+
+- A **mapping network** — an 8-layer MLP — turns the codings `z` into an
+  intermediate vector `w`, which is then passed through several affine
+  ("A") transforms to produce one **style vector** per resolution level, from
+  coarse (pose, face shape) to fine (hair color, freckles).
+- A **synthesis network** starts from a *learned constant* (not from `z` at all)
+  and repeatedly applies: add independent noise, then an **Adaptive Instance
+  Normalization (AdaIN)** layer that standardizes each feature map and rescales it
+  using that level's style vector.
+
+```python title="Adaptive Instance Normalization (AdaIN), the core StyleGAN op" showLineNumbers{1}
+import numpy as np
+
+np.random.seed(0)
+feature_map = np.random.normal(5, 2, size=8)    # toy: one channel's activations
+style_scale, style_bias = 1.5, -0.5             # from the mapping network's style vector
+
+standardized = (feature_map - feature_map.mean()) / (feature_map.std() + 1e-8)
+styled = style_scale * standardized + style_bias
+
+print("standardized mean/std:", round(standardized.mean(), 4), round(standardized.std(), 4))
+print("styled mean/std:      ", round(styled.mean(), 4), round(styled.std(), 4))
+```
+
+```
+standardized mean/std: 0.0 1.0
+styled mean/std:       -0.5 1.5
+```
+
+Standardizing first strips out whatever mean/spread the raw activations happened
+to have; rescaling by the style vector's `(scale, bias)` is what actually injects
+"style" at that level. Feeding noise in *separately* from `z` matters too: earlier
+GANs had to smuggle fine random detail (the exact position of a freckle) through
+the codings themselves, which wasted representational capacity and could produce
+artifacts. Letting the generator draw fresh noise at every layer frees `z` up to
+encode only the meaningful, structured attributes of the image.
+
+## Visualize it
+
+Watch the generator's fake shape start as a noisy blob and slowly sharpen toward a
+circle as training progresses, while the discriminator's confidence that the fake is
+real drifts toward 50% — the Nash equilibrium — but wobbles the whole way there,
+occasionally relapsing. That's adversarial training in miniature:
+
+```p5 title="The generator vs. discriminator game" desc="Left: the generator's fake shape slowly sharpens. Right: the discriminator's confidence that the fake is real drifts toward 50% (the amber line), wobbling along the way." height="320"
+let iter = 0;
+let phase = 0;
+let wobble = 1.0;
+let confidence = 0.05;
+let hist = [];
+
+function setup() {
+  createCanvas(600, 320);
+  noStroke();
+  textFont("monospace");
+  textAlign(CENTER, CENTER);
+}
+
+function draw() {
+  background(13, 17, 23);
+
+  if (frameCount % 12 === 0) {
+    iter++;
+    phase = iter % 2;
+    const relapse = (iter % 37 === 0) ? 0.5 : 0;
+    wobble = Math.max(0.08, wobble * 0.94 + relapse - 0.01);
+    const target = 0.5 - wobble * 0.3;
+    confidence += (target - confidence) * 0.3 + (Math.random() - 0.5) * 0.08;
+    confidence = Math.min(0.95, Math.max(0.02, confidence));
+    hist.push(confidence);
+    if (hist.length > 80) hist.shift();
+  }
+
+  fill(150, 160, 172);
+  textSize(13);
+  text("Generator", 130, 22);
+  text("Discriminator", 470, 22);
+
+  push();
+  translate(130, 130);
+  fill(255, 211, 67);
+  beginShape();
+  const N = 24;
+  for (let i = 0; i <= N; i++) {
+    const a = (i / N) * TWO_PI;
+    const r = 55 + 55 * wobble * Math.sin(a * 5 + iter * 0.3) * 0.5;
+    vertex(r * Math.cos(a), r * Math.sin(a));
+  }
+  endShape(CLOSE);
+  pop();
+  fill(150, 160, 172);
+  textSize(11);
+  text("fake image", 130, 210);
+
+  push();
+  translate(130, 260);
+  noFill();
+  stroke(90, 200, 120);
+  strokeWeight(1.5);
+  circle(0, 0, 50);
+  noStroke();
+  pop();
+  fill(90, 200, 120);
+  textSize(10);
+  text("real image (reference)", 130, 292);
+
+  const barX = 400, barY = 90, barW = 140, barH = 18;
+  fill(40, 44, 52);
+  rect(barX, barY, barW, barH, 4);
+  fill(75, 139, 190);
+  rect(barX, barY, barW * confidence, barH, 4);
+  stroke(255, 211, 67);
+  strokeWeight(1.5);
+  line(barX + barW * 0.5, barY - 6, barX + barW * 0.5, barY + barH + 6);
+  noStroke();
+  fill(220, 224, 230);
+  textSize(11);
+  text("P(this fake looks real) = " + confidence.toFixed(2), barX + barW / 2, barY + barH + 22);
+  fill(120, 130, 142);
+  textSize(9);
+  text("amber line = 50% (Nash equilibrium)", barX + barW / 2, barY + barH + 36);
+
+  stroke(75, 139, 190);
+  strokeWeight(1.5);
+  noFill();
+  beginShape();
+  for (let i = 0; i < hist.length; i++) {
+    vertex(barX + i * (barW / 80), 250 - hist[i] * 80);
+  }
+  endShape();
+  noStroke();
+  fill(150, 160, 172);
+  textSize(9);
+  text("confidence over time", barX + barW / 2, 260);
+
+  fill(phase === 0 ? color(230, 130, 120) : color(120, 200, 255));
+  textSize(12);
+  text(
+    "iteration " + iter + " - " + (phase === 0 ? "Phase 1: training Discriminator" : "Phase 2: training Generator"),
+    width / 2, height - 14
+  );
+}
+
+function mousePressed() {
+  iter = 0; wobble = 1.0; confidence = 0.05; hist = [];
+}
+```
+
+:::tip[From the book]
+Géron: "The generator never actually sees any real images, yet it gradually learns
+to produce convincing fake images! All it gets is the gradients flowing back
+through the discriminator." He also credits Yann LeCun for calling adversarial
+training "the most interesting idea in the last 10 years in Machine Learning."
+:::
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Build a Tiny Generator
+
+<DataCampExercise
+  lang="python"
+  hint={`The generator's first layer takes the random noise vector as input — its \`input_shape\` should match \`codings_size\`.`}
+  code={`# Task: Exercise 1 - Build a Tiny Generator
+import tensorflow as tf
+
+generator = tf.keras.models.Sequential([
+    tf.keras.layers.Dense(___, activation="selu", input_shape=[5]),   # replace ___ with 16
+])
+print("generator output units:", generator.layers[-1].units)
+
+# ── Expected Output ───────────────────────────────────────────
+# generator output units: 16
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import tensorflow as tf
+
+generator = tf.keras.models.Sequential([
+    tf.keras.layers.Dense(16, activation="selu", input_shape=[5]),
+])
+print("generator output units:", generator.layers[-1].units)`}
+  sct={`test_output_contains("generator output units: 16")
+success_msg("A generator is just a network that turns noise into data!")`}
+  height={140}
+/>
+
+### Exercise 2 – Freeze the Discriminator Before Compiling the GAN
+
+<DataCampExercise
+  lang="python"
+  hint={`Phase 2 only trains the generator, so the discriminator must be frozen (\`trainable = False\`) before you compile the combined \`gan\` model.`}
+  code={`# Task: Exercise 2 - Freeze the Discriminator Before Compiling the GAN
+import tensorflow as tf
+
+generator = tf.keras.models.Sequential([tf.keras.layers.Dense(16, activation="selu", input_shape=[5])])
+discriminator = tf.keras.models.Sequential([tf.keras.layers.Dense(1, activation="sigmoid", input_shape=[16])])
+
+discriminator.compile(loss="binary_crossentropy", optimizer="rmsprop")
+discriminator.trainable = ___          # replace ___ with False
+gan = tf.keras.models.Sequential([generator, discriminator])
+gan.compile(loss="binary_crossentropy", optimizer="rmsprop")
+
+print("discriminator.trainable:", discriminator.trainable)
+
+# ── Expected Output ───────────────────────────────────────────
+# discriminator.trainable: False
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import tensorflow as tf
+
+generator = tf.keras.models.Sequential([tf.keras.layers.Dense(16, activation="selu", input_shape=[5])])
+discriminator = tf.keras.models.Sequential([tf.keras.layers.Dense(1, activation="sigmoid", input_shape=[16])])
+
+discriminator.compile(loss="binary_crossentropy", optimizer="rmsprop")
+discriminator.trainable = False
+gan = tf.keras.models.Sequential([generator, discriminator])
+gan.compile(loss="binary_crossentropy", optimizer="rmsprop")
+
+print("discriminator.trainable:", discriminator.trainable)`}
+  sct={`test_output_contains("discriminator.trainable: False")
+success_msg("Now only the generator updates during phase 2!")`}
+  height={170}
+/>
+
+### Exercise 3 – Generate a Batch of Fake Data
+
+<DataCampExercise
+  lang="python"
+  hint={`The generator's input is random Gaussian noise — use \`tf.random.normal\` to create the noise batch.`}
+  code={`# Task: Exercise 3 - Generate a Batch of Fake Data
+import tensorflow as tf
+
+codings_size = 5
+generator = tf.keras.models.Sequential([
+    tf.keras.layers.Dense(8, activation="selu", input_shape=[codings_size]),
+])
+
+noise = tf.random.___(shape=[4, codings_size])   # replace ___ with normal
+generated = generator(noise)
+print("fake batch shape:", generated.shape)
+
+# ── Expected Output ───────────────────────────────────────────
+# fake batch shape: (4, 8)
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import tensorflow as tf
+
+codings_size = 5
+generator = tf.keras.models.Sequential([
+    tf.keras.layers.Dense(8, activation="selu", input_shape=[codings_size]),
+])
+
+noise = tf.random.normal(shape=[4, codings_size])
+generated = generator(noise)
+print("fake batch shape:", generated.shape)`}
+  sct={`test_output_contains("fake batch shape: (4, 8)")
+success_msg("That's a batch of freshly generated fake data!")`}
+  height={160}
+/>
+
+## Next
+
+Continue to **Diffusion Models (Introduction)** — a newer generative approach that
+trains far more stably than a GAN by learning to reverse a gradual noising process,
+one small step at a time.

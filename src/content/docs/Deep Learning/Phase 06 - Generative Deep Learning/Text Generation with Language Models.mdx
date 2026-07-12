@@ -1,0 +1,435 @@
+---
+title: Text Generation with Language Models
+description: Learn how a language model predicts the next token, and how the softmax sampling temperature lets you dial generated text from repetitive to chaotic.
+sidebar:
+  order: 455
+---
+
+## What you'll learn
+
+- what a **language model** actually is — a network that predicts a probability
+  distribution over the next token, given the tokens that came before it
+- the difference between **character-level** and **word-level** generation
+- the text-generation loop: predict, sample, append, repeat
+- why **greedy sampling** produces boring, repetitive text, and why pure random
+  sampling produces gibberish
+- the **softmax temperature** knob that sits between those two extremes, and how
+  to implement it in a few lines of NumPy
+
+## A network that finishes your sentence
+
+Every model you've built so far answers a question about existing data: is this
+email spam, what digit is this, what's the sentiment of this review? A **language
+model** flips the task around — given some text so far, it predicts what's likely
+to come *next*.
+
+Concretely, feed the model the tokens `"the cat sat on the"` and it doesn't output
+a single word. It outputs a full probability distribution over your entire
+vocabulary: maybe `mat` gets 60%, `floor` gets 15%, `roof` gets 5%, and thousands
+of other words share the rest. Tokens can be whole words (**word-level**) or single
+characters (**char-level**) — the mechanics are identical either way, just the
+vocabulary size changes (tens of thousands of words vs. a few dozen characters).
+
+Once you have that distribution, generating new text is a loop: pick a token from
+the distribution, glue it onto the end of your text, feed the *new*, longer text
+back into the model, and repeat. Do that fifty times and you have fifty new tokens
+of machine-written text.
+
+```mermaid title="The text-generation loop" desc="Predict a distribution over the next token, sample one, append it, and feed the longer sequence back in."
+flowchart LR
+  P["Prompt: the cat sat on the"] --> M["Language model"]
+  M --> D["Probability distribution over next token"]
+  D --> S["Sampling strategy (temperature)"]
+  S --> T["Sampled token: mat"]
+  T --> A["Append to prompt"]
+  A -->|"loop"| M
+```
+
+## Building the training data: offset by one
+
+You train a language model with completely ordinary supervised learning — the
+trick is *how you build the labels*. Take any sentence, and the target sequence is
+just the input sequence shifted over by one token:
+
+```python title="Turning raw text into next-token training pairs" showLineNumbers{1}
+import numpy as np
+
+text = "the cat sat on the mat and the dog sat on the rug"
+tokens = text.split()
+vocab = sorted(set(tokens))
+token_to_id = {t: i for i, t in enumerate(vocab)}
+ids = np.array([token_to_id[t] for t in tokens])
+
+# Input = tokens 0..N-1, Target = the SAME tokens shifted by one position
+X = ids[:-1]
+y = ids[1:]
+
+print("vocab size:", len(vocab))
+print("input tokens: ", tokens[:5])
+print("target tokens:", tokens[1:6])
+```
+
+```
+vocab size: 9
+input tokens:  ['the', 'cat', 'sat', 'on', 'the']
+target tokens: ['cat', 'sat', 'on', 'the', 'mat']
+```
+
+At every position `i`, the model sees tokens `0..i` and is trained to predict
+token `i+1`. A tiny Keras model for this looks like an embedding layer feeding an
+RNN or a Transformer decoder, ending in a `Dense(vocab_size, activation="softmax")`
+layer — the softmax is what turns raw scores into the probability distribution
+you sample from:
+
+```python title="A minimal char-level language model (conceptual)" showLineNumbers{1}
+import tensorflow as tf
+
+vocab_size = 40         # e.g. lowercase letters + space + punctuation
+sequence_length = 20
+
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Embedding(vocab_size, 32, input_length=sequence_length),
+    tf.keras.layers.LSTM(64, return_sequences=True),
+    tf.keras.layers.Dense(vocab_size, activation="softmax"),
+])
+model.compile(loss="sparse_categorical_crossentropy", optimizer="adam")
+print("output shape (batch, timesteps, vocab):", model.output_shape)
+```
+
+```
+output shape (batch, timesteps, vocab): (None, 20, 40)
+```
+
+Every one of the 20 timesteps outputs its own 40-value probability distribution —
+one prediction of "what comes next" per position in the sequence.
+
+## The sampling strategy: how do you pick a token?
+
+Given a probability distribution, there are two obvious strategies, and both are
+bad:
+
+- **Greedy sampling** — always pick the single most likely token. This sounds
+  safe, but it makes the model repeat itself: once it's in a locally-likely loop
+  (`"it is a movie that is so bad that it is a"`), greedy sampling has no way to
+  break out, because the most likely next word keeps leading back into the same
+  loop.
+- **Uniform random sampling** — ignore the model's probabilities entirely and pick
+  any token with equal odds. This has maximum randomness (maximum *entropy*) and
+  produces word salad, because it throws away everything the model learned.
+
+The useful strategy sits between these two extremes: **sample proportionally to
+the model's own probabilities.** If the model says `mat` has 60% probability,
+you pick `mat` 60% of the time — but the other 40% of the time, you let something
+less likely (and more surprising) through. This is **stochastic sampling**, and
+greedy sampling is really just its zero-randomness special case (one token gets
+probability 1, everything else gets 0).
+
+## Softmax temperature: a dial between boring and chaotic
+
+Stochastic sampling from the raw model distribution is a fixed point — it gives
+you no control over *how* random the output is. The **softmax temperature** fixes
+that: it's a single number that reweights a distribution to be more confident
+(lower temperature) or more uniform (higher temperature) before you sample from
+it.
+
+```python title="Reweighting a distribution by temperature (verified live)" showLineNumbers{1}
+import numpy as np
+
+def reweight_distribution(original_distribution, temperature=0.5):
+    distribution = np.log(original_distribution) / temperature
+    distribution = np.exp(distribution)
+    return distribution / np.sum(distribution)   # renormalize to sum to 1
+
+# A toy 5-word distribution: "mat" is the clear favorite at 60%
+probs = np.array([0.05, 0.10, 0.60, 0.15, 0.10])
+
+for temp in [0.5, 1.0, 2.0]:
+    reweighted = reweight_distribution(probs, temperature=temp)
+    print(f"temperature={temp}:", np.round(reweighted, 3))
+```
+
+```
+temperature=0.5: [0.006 0.025 0.889 0.056 0.025]
+temperature=1.0: [0.05  0.1   0.6   0.15  0.1  ]
+temperature=2.0: [0.111 0.157 0.384 0.192 0.157]
+```
+
+Watch what happens to the favorite word (`mat`, index 2, 60% originally):
+
+- **Low temperature (0.5)** squeezes almost all the probability mass onto it
+  (89%) — the output gets *more* predictable, edging toward greedy sampling.
+- **Temperature = 1.0** leaves the distribution untouched — this is exactly the
+  model's own softmax output, with no reweighting at all.
+- **High temperature (2.0)** flattens the distribution (38%, with everyone else
+  much closer to even) — the output gets *more* surprising, edging toward uniform
+  random sampling.
+
+Low temperature narrows the distribution (lower entropy, more predictable, can
+get stuck in loops); high temperature flattens it (higher entropy, more creative,
+can degrade into nonsense at extremes). There's no universally "correct"
+temperature — Géron's book and Chollet's own experiments both land on something
+around 0.5–0.8 as a practical sweet spot, but it's always worth trying a range.
+
+## Sampling a token at a given temperature
+
+Once you've reweighted the distribution, drawing an actual token is just one call
+to a categorical sampler — `np.random.multinomial` treats the reweighted
+distribution as a set of dice-roll odds and returns which face came up:
+
+```python title="Sampling one token at a chosen temperature" showLineNumbers{1}
+import numpy as np
+
+def sample_next(predictions, temperature=1.0):
+    predictions = np.asarray(predictions).astype("float64")
+    predictions = np.log(predictions) / temperature
+    exp_preds = np.exp(predictions)
+    predictions = exp_preds / np.sum(exp_preds)
+    probas = np.random.multinomial(1, predictions, 1)
+    return int(np.argmax(probas))
+
+vocab = ["floor", "roof", "mat", "sofa", "rug"]
+probs = np.array([0.05, 0.10, 0.60, 0.15, 0.10])
+
+np.random.seed(42)
+picks = [sample_next(probs, temperature=1.0) for _ in range(10)]
+print("10 samples at temperature=1.0:", [vocab[i] for i in picks])
+```
+
+```
+10 samples at temperature=1.0: ['roof', 'mat', 'rug', 'rug', 'mat', 'mat', 'mat', 'mat', 'mat', 'mat']
+```
+
+`mat` still wins most of the time (it has 60% probability), but `roof` and `rug`
+sneak in too — that occasional surprise is exactly what keeps generated text from
+sounding like a broken record.
+
+## Visualize it
+
+Watch the same 6-word probability distribution reshape as the temperature slides
+from near-zero up to 2.0: at low temperature almost the entire bar chart collapses
+onto the single most likely word; as temperature rises the bars flatten out
+toward one another, until at high temperature every word is nearly equally
+likely:
+
+```p5 title="Softmax temperature reshaping a probability distribution" desc="The bars show P(word) for a fixed 6-word distribution. As temperature rises, the tall bar shrinks and the short bars grow — the distribution flattens from confident to chaotic." height="320"
+let temp = 0.1;
+let dir = 1;
+const baseLogits = [0.4, 1.8, 3.2, 0.9, 1.2, 0.6];   // fixed unnormalized scores
+const words = ["mat", "floor", "cat", "rug", "sofa", "roof"];
+
+function softmaxTemp(logits, t) {
+  const scaled = logits.map(v => v / t);
+  const m = Math.max(...scaled);
+  const exps = scaled.map(v => Math.exp(v - m));
+  const s = exps.reduce((a, b) => a + b, 0);
+  return exps.map(v => v / s);
+}
+
+function setup() {
+  createCanvas(600, 320);
+  noStroke();
+  textFont("monospace");
+  textAlign(CENTER, CENTER);
+}
+
+function draw() {
+  background(13, 17, 23);
+
+  const probs = softmaxTemp(baseLogits, temp);
+  const n = words.length;
+  const barW = 60, gap = 20;
+  const totalW = n * barW + (n - 1) * gap;
+  const x0 = (width - totalW) / 2;
+  const baseY = height - 60;
+  const maxH = 190;
+
+  for (let i = 0; i < n; i++) {
+    const x = x0 + i * (barW + gap);
+    const h = probs[i] * maxH;
+    const hot = i === 2; // "cat" has the highest base logit -> track it
+    fill(hot ? color(255, 211, 67) : color(75, 139, 190));
+    rect(x, baseY - h, barW, h, 4);
+    fill(200, 206, 214);
+    textSize(11);
+    text(words[i], x + barW / 2, baseY + 16);
+    fill(150, 160, 172);
+    textSize(10);
+    text((probs[i] * 100).toFixed(1) + "%", x + barW / 2, baseY - h - 12);
+  }
+
+  fill(220, 224, 230);
+  textSize(14);
+  const label = temp < 0.4 ? "low temperature: confident, repetitive"
+    : temp > 1.3 ? "high temperature: flat, surprising/chaotic"
+    : "medium temperature: balanced";
+  text("temperature = " + temp.toFixed(2) + "  —  " + label, width / 2, 26);
+
+  const barX = 150, barY = 56, barLen = 300;
+  fill(40, 44, 52);
+  rect(barX, barY, barLen, 6, 3);
+  const frac = (temp - 0.1) / (2.0 - 0.1);
+  fill(255, 211, 67);
+  circle(barX + frac * barLen, barY + 3, 10);
+
+  temp += dir * 0.006;
+  if (temp > 2.0) { temp = 2.0; dir = -1; }
+  if (temp < 0.1) { temp = 0.1; dir = 1; }
+}
+
+function mousePressed() { temp = 0.1; dir = 1; }
+```
+
+:::tip[From the book]
+Chollet frames this precisely: "sampling from the softmax output of the model is
+neat: it allows even unlikely words to be sampled some of the time... but there's
+one issue: it doesn't offer a way to control the amount of randomness." Softmax
+temperature is the fix — and he adds a very concrete rule of thumb from his own
+experiments: "a good generation temperature would seem to be about 0.7. Always
+experiment with multiple sampling strategies!"
+:::
+
+## Mini-checkpoint
+
+Why does a temperature of exactly `1.0` leave the distribution unchanged?
+
+- Because `reweight_distribution` divides `log(p)` by the temperature before
+  exponentiating and renormalizing. Dividing by `1.0` is a no-op, so
+  `exp(log(p) / 1.0)` is just `p` again (up to floating-point renormalization) —
+  temperature 1.0 *is* the model's original softmax output, untouched.
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Reweight a Distribution by Temperature
+
+<DataCampExercise
+  lang="python"
+  hint={`The reweighting formula divides \`log(p)\` by \`temperature\` before exponentiating: \`np.exp(np.log(p) / temperature)\`.`}
+  code={`# Task: Exercise 1 - Reweight a Distribution by Temperature
+import numpy as np
+
+def reweight_distribution(original_distribution, temperature=0.5):
+    distribution = np.log(original_distribution) / ___   # replace ___ with temperature
+    distribution = np.exp(distribution)
+    return distribution / np.sum(distribution)
+
+probs = np.array([0.05, 0.10, 0.60, 0.15, 0.10])
+reweighted = reweight_distribution(probs, temperature=0.5)
+print("reweighted:", np.round(reweighted, 3))
+
+# ── Expected Output ───────────────────────────────────────────
+# reweighted: [0.006 0.025 0.889 0.056 0.025]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+def reweight_distribution(original_distribution, temperature=0.5):
+    distribution = np.log(original_distribution) / temperature
+    distribution = np.exp(distribution)
+    return distribution / np.sum(distribution)
+
+probs = np.array([0.05, 0.10, 0.60, 0.15, 0.10])
+reweighted = reweight_distribution(probs, temperature=0.5)
+print("reweighted:", np.round(reweighted, 3))`}
+  sct={`test_output_contains("reweighted: [0.006 0.025 0.889 0.056 0.025]")
+success_msg("Low temperature squeezed almost all the probability onto the favorite word!")`}
+  height={170}
+/>
+
+### Exercise 2 – Compare Entropy at Low vs. High Temperature
+
+<DataCampExercise
+  lang="python"
+  hint={`Entropy is \`-sum(p * log(p))\`. A LOWER temperature makes the distribution more confident, which means LOWER entropy — so \`entropy_low\` should end up smaller than \`entropy_high\`.`}
+  code={`# Task: Exercise 2 - Compare Entropy at Low vs. High Temperature
+import numpy as np
+
+def reweight_distribution(original_distribution, temperature=0.5):
+    distribution = np.log(original_distribution) / temperature
+    distribution = np.exp(distribution)
+    return distribution / np.sum(distribution)
+
+def entropy(p):
+    return -np.sum(p * np.log(p))
+
+probs = np.array([0.05, 0.10, 0.60, 0.15, 0.10])
+entropy_low = entropy(reweight_distribution(probs, temperature=0.5))
+entropy_high = entropy(reweight_distribution(probs, temperature=___))   # replace ___ with 2.0
+
+print("low-temp entropy is smaller:", entropy_low < entropy_high)
+
+# ── Expected Output ───────────────────────────────────────────
+# low-temp entropy is smaller: True
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+def reweight_distribution(original_distribution, temperature=0.5):
+    distribution = np.log(original_distribution) / temperature
+    distribution = np.exp(distribution)
+    return distribution / np.sum(distribution)
+
+def entropy(p):
+    return -np.sum(p * np.log(p))
+
+probs = np.array([0.05, 0.10, 0.60, 0.15, 0.10])
+entropy_low = entropy(reweight_distribution(probs, temperature=0.5))
+entropy_high = entropy(reweight_distribution(probs, temperature=2.0))
+
+print("low-temp entropy is smaller:", entropy_low < entropy_high)`}
+  sct={`test_output_contains("low-temp entropy is smaller: True")
+success_msg("Lower temperature means lower entropy — more predictable text!")`}
+  height={190}
+/>
+
+### Exercise 3 – Sample Tokens at a Chosen Temperature
+
+<DataCampExercise
+  lang="python"
+  hint={`\`np.random.multinomial(1, predictions, 1)\` draws one categorical sample given a probability array — \`np.argmax\` on its result tells you which index "won."`}
+  code={`# Task: Exercise 3 - Sample Tokens at a Chosen Temperature
+import numpy as np
+
+def sample_next(predictions, temperature=1.0):
+    predictions = np.asarray(predictions).astype("float64")
+    predictions = np.log(predictions) / temperature
+    exp_preds = np.exp(predictions)
+    predictions = exp_preds / np.sum(exp_preds)
+    probas = np.random.multinomial(1, predictions, 1)
+    return int(np.___(probas))   # replace ___ with argmax
+
+vocab = ["floor", "roof", "mat", "sofa", "rug"]
+probs = np.array([0.05, 0.10, 0.60, 0.15, 0.10])
+
+np.random.seed(42)
+picks = [sample_next(probs, temperature=1.0) for _ in range(10)]
+print("sampled words:", [vocab[i] for i in picks])
+
+# ── Expected Output ───────────────────────────────────────────
+# sampled words: ['roof', 'mat', 'rug', 'rug', 'mat', 'mat', 'mat', 'mat', 'mat', 'mat']
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+def sample_next(predictions, temperature=1.0):
+    predictions = np.asarray(predictions).astype("float64")
+    predictions = np.log(predictions) / temperature
+    exp_preds = np.exp(predictions)
+    predictions = exp_preds / np.sum(exp_preds)
+    probas = np.random.multinomial(1, predictions, 1)
+    return int(np.argmax(probas))
+
+vocab = ["floor", "roof", "mat", "sofa", "rug"]
+probs = np.array([0.05, 0.10, 0.60, 0.15, 0.10])
+
+np.random.seed(42)
+picks = [sample_next(probs, temperature=1.0) for _ in range(10)]
+print("sampled words:", [vocab[i] for i in picks])`}
+  sct={`test_output_contains("sampled words: ['roof', 'mat', 'rug', 'rug', 'mat', 'mat', 'mat', 'mat', 'mat', 'mat']")
+success_msg("That's stochastic sampling — mat wins most of the time, but not always!")`}
+  height={200}
+/>
+
+## Next
+
+Continue to **DeepDream** — instead of generating text, run a convnet *in
+reverse*, doing gradient ascent on an image to amplify the patterns it already
+half-sees.

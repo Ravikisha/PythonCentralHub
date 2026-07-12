@@ -1,0 +1,359 @@
+---
+title: Building Neural Networks with Keras (Sequential and Functional API)
+description: Three ways to build a Keras model - Sequential, Functional, and Subclassing - plus compile/fit/evaluate/predict, saving, and callbacks.
+sidebar:
+  order: 405
+---
+
+You've already built a couple of `keras.Sequential` models in this phase. That covers
+a *lot* of ground, but not everything — what if two layers need to skip past a third,
+or a model needs two inputs, or its forward pass involves a loop? Keras gives you two
+more ways to describe a model, plus the tools to actually run, save, and babysit
+training once the architecture is built.
+
+## Three ways to build a model
+
+- **Sequential API** — a plain stack of layers, one feeding the next. Simple, but
+  every layer must have exactly one input and one output, in a straight line.
+- **Functional API** — you call each layer like a function on a previous layer's
+  output, so you can branch, merge, and reuse layers freely. Still **declarative**:
+  you describe the graph first, then feed it data.
+- **Subclassing API** — you write the forward pass yourself, in ordinary Python,
+  inside a `call()` method. **Imperative**, and the most flexible of the three.
+
+```mermaid title="Three ways to build a Keras model" desc="Sequential stacks layers in a line; Functional connects layers like function calls, allowing branches; Subclassing writes the forward pass as code."
+flowchart TB
+  A["Sequential API<br/>keras.Sequential([...])"] --> D["compile → fit → evaluate → predict"]
+  B["Functional API<br/>layer(input) chains, branches, merges"] --> D
+  C["Subclassing API<br/>class MyModel(keras.Model): def call(...)"] --> D
+```
+
+## The Functional API: Wide & Deep
+
+A **Wide & Deep** network (Cheng et al., 2016) sends the raw input straight to the
+output through a short "wide" path, *and* through a stack of hidden layers via a
+"deep" path, then concatenates both before the final prediction. The wide path can
+memorize simple rules; the deep path can learn more complex patterns — and a plain
+`Sequential` stack can't express this, because the input has two separate places to
+go.
+
+```python title="A Wide & Deep model with the Functional API" showLineNumbers{1}
+from tensorflow import keras
+
+input_ = keras.layers.Input(shape=[8])
+hidden1 = keras.layers.Dense(30, activation="relu")(input_)
+hidden2 = keras.layers.Dense(30, activation="relu")(hidden1)
+concat = keras.layers.Concatenate()([input_, hidden2])
+output = keras.layers.Dense(1)(concat)
+
+model = keras.Model(inputs=[input_], outputs=[output])
+model.compile(loss="mse", optimizer="sgd")
+```
+
+Notice `hidden1 = keras.layers.Dense(30, activation="relu")(input_)` — you create the
+layer, then immediately call it *like a function*, passing in the previous layer's
+output. Keras is just recording how the layers connect; no data is processed yet.
+That's the "Functional" in Functional API.
+
+You can also give a model **multiple inputs** — say five features through the wide
+path and six (possibly overlapping) through the deep path:
+
+```python title="A Wide & Deep model with two separate inputs" showLineNumbers{1}
+from tensorflow import keras
+
+input_A = keras.layers.Input(shape=[5], name="wide_input")
+input_B = keras.layers.Input(shape=[6], name="deep_input")
+hidden1 = keras.layers.Dense(30, activation="relu")(input_B)
+hidden2 = keras.layers.Dense(30, activation="relu")(hidden1)
+concat = keras.layers.concatenate([input_A, hidden2])
+output = keras.layers.Dense(1, name="output")(concat)
+
+model = keras.Model(inputs=[input_A, input_B], outputs=[output])
+model.compile(loss="mse", optimizer=keras.optimizers.SGD(learning_rate=1e-3))
+
+# fit/evaluate/predict now take a tuple or list, one array per input
+# history = model.fit((X_train_A, X_train_B), y_train, epochs=20)
+```
+
+Multiple **outputs** work the same way — useful when a task naturally has more than
+one target, or when an auxiliary output (attached to an earlier layer) acts as a
+regularizer that forces the underlying layers to learn something useful on their own:
+
+```python title="Adding an auxiliary output" showLineNumbers{1}
+from tensorflow import keras
+
+output = keras.layers.Dense(1, name="main_output")(concat)
+aux_output = keras.layers.Dense(1, name="aux_output")(hidden2)
+model = keras.Model(inputs=[input_A, input_B], outputs=[output, aux_output])
+
+# each output needs its own loss; give the main one more weight
+model.compile(loss=["mse", "mse"], loss_weights=[0.9, 0.1], optimizer="sgd")
+```
+
+## The Subclassing API
+
+Both APIs above are **declarative** — the whole architecture is a static graph before
+any data flows through it, which is exactly why Keras can validate shapes early,
+draw the model, and save it easily. But some architectures involve loops, branching
+`if` statements, or shapes that change at runtime. For that (or just a more
+imperative coding style), subclass `keras.Model` directly: create the layers in
+`__init__`, and use them in `call()`.
+
+```python title="The same Wide & Deep model, as a subclass" showLineNumbers{1}
+from tensorflow import keras
+
+class WideAndDeepModel(keras.Model):
+    def __init__(self, units=30, activation="relu", **kwargs):
+        super().__init__(**kwargs)
+        self.hidden1 = keras.layers.Dense(units, activation=activation)
+        self.hidden2 = keras.layers.Dense(units, activation=activation)
+        self.main_output = keras.layers.Dense(1)
+        self.aux_output = keras.layers.Dense(1)
+
+    def call(self, inputs):
+        input_A, input_B = inputs
+        hidden1 = self.hidden1(input_B)
+        hidden2 = self.hidden2(hidden1)
+        concat = keras.layers.concatenate([input_A, hidden2])
+        main_output = self.main_output(concat)
+        aux_output = self.aux_output(hidden2)
+        return main_output, aux_output
+
+model = WideAndDeepModel()
+model.compile(loss=["mse", "mse"], loss_weights=[0.9, 0.1], optimizer="sgd")
+```
+
+The trade-off: inside `call()` you can write ordinary Python — `for` loops, `if`
+statements, anything — but Keras can no longer inspect the architecture ahead of
+time. `model.summary()` only lists the layers, with no information on how they
+connect, and the model can't be cloned or (fully) saved the way a Sequential or
+Functional model can. Géron's advice: unless you genuinely need that flexibility,
+stick to the Sequential or Functional API.
+
+## compile, fit, evaluate, predict — same for all three
+
+Whichever API built the model, the training loop looks identical:
+
+```python title="The standard Keras workflow" showLineNumbers{1}
+from tensorflow import keras
+
+# model = ... (built with any of the three APIs above)
+model.compile(loss="sparse_categorical_crossentropy",
+              optimizer="sgd",
+              metrics=["accuracy"])
+
+history = model.fit(X_train, y_train, epochs=10,
+                     validation_data=(X_valid, y_valid))
+
+model.evaluate(X_test, y_test)
+y_pred = model.predict(X_new)
+```
+
+`history.history` is a dictionary of per-epoch metrics (`loss`, `val_loss`,
+`accuracy`, ...) — the raw data behind every learning-curve plot you'll draw in this
+module.
+
+## Saving and loading a model
+
+For Sequential and Functional models, saving is a single call — Keras stores the
+architecture, every layer's weights, and the optimizer's state together:
+
+```python title="Save and reload a full model" showLineNumbers{1}
+from tensorflow import keras
+
+# model.fit(...)
+model.save("my_keras_model.h5")
+
+# ...later, possibly in a different script
+reloaded = keras.models.load_model("my_keras_model.h5")
+```
+
+`load_model()` only works for Sequential and Functional models. A **Subclassing**
+model's architecture lives inside `call()`, which Keras can't serialize — use
+`model.save_weights(...)` / `model.load_weights(...)` instead, and you'll need to
+rebuild the class yourself before restoring the weights into it.
+
+## Callbacks: checkpointing and early stopping
+
+If training runs for hours, you don't want to lose everything to a crash — and you
+don't want to babysit the terminal to know when to stop. The `fit()` method's
+`callbacks` argument lets Keras call your code at key points during training.
+
+```python title="Checkpoint the best model and stop early" showLineNumbers{1}
+from tensorflow import keras
+
+checkpoint_cb = keras.callbacks.ModelCheckpoint(
+    "my_keras_model.h5", save_best_only=True)
+early_stopping_cb = keras.callbacks.EarlyStopping(
+    patience=10, restore_best_weights=True)
+
+history = model.fit(X_train, y_train, epochs=100,
+                     validation_data=(X_valid, y_valid),
+                     callbacks=[checkpoint_cb, early_stopping_cb])
+```
+
+- `ModelCheckpoint(save_best_only=True)` only overwrites the saved file when
+  validation performance improves — so the file on disk is always your best model.
+- `EarlyStopping(patience=10)` interrupts training once validation performance
+  hasn't improved for 10 epochs in a row, and `restore_best_weights=True` rolls the
+  in-memory model back to its best epoch automatically. Since training now stops
+  itself, it's safe to set `epochs` to a very large number.
+
+You can write your own callback too, by subclassing `keras.callbacks.Callback` and
+overriding hooks like `on_epoch_end`:
+
+```python title="A tiny custom callback" showLineNumbers{1}
+from tensorflow import keras
+
+class PrintValTrainRatioCallback(keras.callbacks.Callback):
+    def on_epoch_end(self, epoch, logs):
+        print(f"\nval/train loss ratio: {logs['val_loss'] / logs['loss']:.2f}")
+```
+
+## Mini-checkpoint
+
+You need a model with two separate inputs that get concatenated before a shared
+hidden layer. Which API do you reach for — and why not Sequential?
+
+- The **Functional API** — Sequential only supports a single straight-line stack of
+  layers with one input and one output; it can't express two inputs merging.
+
+:::tip[From the book]
+Géron's warning about `EarlyStopping` + `ModelCheckpoint`: if you only use
+`ModelCheckpoint(save_best_only=True)`, you still have to remember to reload the
+saved file after training ends to get the best weights back. Combine it with
+`EarlyStopping(restore_best_weights=True)` instead, and the in-memory model is
+already the best one the moment `fit()` returns — one less step to forget.
+:::
+
+:::tip[From the book]
+Chollet frames it simply: "Everything in Keras is either a `Layer` or something that
+closely interacts with a `Layer`." A `Dense` layer is really just a small object that
+holds two pieces of state (a weight matrix `W` and a bias `b`, created in `build()`)
+and one computation (`activation(dot(inputs, W) + b)`, defined in `call()`). Every
+API on this page - Sequential, Functional, Subclassing - is just a different way of
+wiring those same `Layer` objects together.
+:::
+
+## Next
+
+Continue to **How Neural Networks Learn (Gradient-Based Optimization)** to see how
+backpropagation and `GradientTape` actually compute the gradients that `compile()`
+and `fit()` use to update every weight you just wired up.
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Build a Functional Wide & Deep Model
+
+<DataCampExercise
+  lang="python"
+  hint={`Call each layer like a function on the previous layer's output: \`keras.layers.Dense(30, activation="relu")(input_)\`.`}
+  code={`# Task: Exercise 1 - Build a Functional Wide & Deep Model
+from tensorflow import keras
+
+input_ = keras.layers.Input(shape=[8])
+hidden1 = keras.layers.Dense(30, activation="relu")(input_)
+hidden2 = keras.layers.Dense(30, activation="relu")(hidden1)
+concat = keras.layers.Concatenate()([input_, hidden2])
+output = keras.layers.Dense(1)(concat)
+
+model = keras.___(inputs=[input_], outputs=[output])   # replace ___ with Model
+print("Number of layers:", len(model.layers))
+
+# ── Expected Output ───────────────────────────────────────────
+# Number of layers: 5
+# ──────────────────────────────────────────────────────────────`}
+  solution={`from tensorflow import keras
+
+input_ = keras.layers.Input(shape=[8])
+hidden1 = keras.layers.Dense(30, activation="relu")(input_)
+hidden2 = keras.layers.Dense(30, activation="relu")(hidden1)
+concat = keras.layers.Concatenate()([input_, hidden2])
+output = keras.layers.Dense(1)(concat)
+
+model = keras.Model(inputs=[input_], outputs=[output])
+print("Number of layers:", len(model.layers))`}
+  sct={`test_output_contains("Number of layers: 5")
+success_msg("That's Input, Dense, Dense, Concatenate, and Dense - a full Functional graph!")`}
+  height={165}
+/>
+
+### Exercise 2 – A Subclassed Model
+
+<DataCampExercise
+  lang="python"
+  hint={`Create the layers in __init__ with keras.layers.Dense(...), and use them inside call().`}
+  code={`# Task: Exercise 2 - A Subclassed Model
+from tensorflow import keras
+
+class WideAndDeepModel(keras.Model):
+    def __init__(self, units=30, activation="relu", **kwargs):
+        super().__init__(**kwargs)
+        self.hidden1 = keras.layers.Dense(units, activation=activation)
+        self.hidden2 = keras.layers.Dense(units, activation=activation)
+        self.main_output = keras.layers.___(1)   # replace ___ with Dense
+
+    def call(self, inputs):
+        input_A, input_B = inputs
+        hidden1 = self.hidden1(input_B)
+        hidden2 = self.hidden2(hidden1)
+        concat = keras.layers.concatenate([input_A, hidden2])
+        return self.main_output(concat)
+
+model = WideAndDeepModel()
+print("Hidden1 units:", model.hidden1.units)
+
+# ── Expected Output ───────────────────────────────────────────
+# Hidden1 units: 30
+# ──────────────────────────────────────────────────────────────`}
+  solution={`from tensorflow import keras
+
+class WideAndDeepModel(keras.Model):
+    def __init__(self, units=30, activation="relu", **kwargs):
+        super().__init__(**kwargs)
+        self.hidden1 = keras.layers.Dense(units, activation=activation)
+        self.hidden2 = keras.layers.Dense(units, activation=activation)
+        self.main_output = keras.layers.Dense(1)
+
+    def call(self, inputs):
+        input_A, input_B = inputs
+        hidden1 = self.hidden1(input_B)
+        hidden2 = self.hidden2(hidden1)
+        concat = keras.layers.concatenate([input_A, hidden2])
+        return self.main_output(concat)
+
+model = WideAndDeepModel()
+print("Hidden1 units:", model.hidden1.units)`}
+  sct={`test_output_contains("Hidden1 units: 30")
+success_msg("Layers created in __init__, wired together in call() - that's the Subclassing API!")`}
+  height={190}
+/>
+
+### Exercise 3 – Configure Early Stopping
+
+<DataCampExercise
+  lang="python"
+  hint={`Pass patience=10 and restore_best_weights=True to keras.callbacks.EarlyStopping.`}
+  code={`# Task: Exercise 3 - Configure Early Stopping
+from tensorflow import keras
+
+early_stopping_cb = keras.callbacks.___(patience=10, restore_best_weights=True)   # replace ___ with EarlyStopping
+print("patience:", early_stopping_cb.patience)
+print("restore best weights:", early_stopping_cb.restore_best_weights)
+
+# ── Expected Output ───────────────────────────────────────────
+# patience: 10
+# restore best weights: True
+# ──────────────────────────────────────────────────────────────`}
+  solution={`from tensorflow import keras
+
+early_stopping_cb = keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True)
+print("patience:", early_stopping_cb.patience)
+print("restore best weights:", early_stopping_cb.restore_best_weights)`}
+  sct={`test_output_contains("patience: 10")
+test_output_contains("restore best weights: True")
+success_msg("EarlyStopping configured - training will now stop itself once progress stalls!")`}
+  height={165}
+/>

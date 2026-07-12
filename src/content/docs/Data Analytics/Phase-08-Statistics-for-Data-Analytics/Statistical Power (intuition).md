@@ -1,0 +1,207 @@
+---
+title: Statistical Power (intuition)
+description: Understand power, effect size, and why many tests fail to detect real changes.
+sidebar:
+  order: 14
+---
+
+## Power in one sentence
+
+**Power** is the probability your test detects a real effect.
+
+\[ \text{Power} = 1 - \beta \]
+
+Where \(\beta\) is the Type II error rate.
+
+## What controls power
+
+1. **Sample size (n)**: larger n → higher power
+2. **Effect size**: bigger effect → easier to detect
+3. **Noise/variance**: more noise → lower power
+4. **Significance level (alpha)**: smaller alpha → lower power
+
+## Why it matters in analytics
+
+You might conclude “no effect” when:
+
+- sample size was too small
+- metric variance was high
+
+## Quick simulation idea
+
+You can estimate power by simulation:
+
+- simulate A/B outcomes under a known effect
+- run the test repeatedly
+- measure how often p < 0.05
+
+```python title="Power simulation sketch" showLineNumbers{1}
+# This is a conceptual sketch.
+# For real experiments, use statsmodels or a dedicated power calculator.
+
+import numpy as np
+
+rng = np.random.default_rng(0)
+
+def run_once(n=2000, p1=0.03, p2=0.031):
+    A = rng.binomial(1, p1, size=n)
+    B = rng.binomial(1, p2, size=n)
+    # compute a simple z-test here (see A/B page)
+    return A.mean(), B.mean()
+
+# Repeat many times and track rejection rate.
+```
+
+## Practical guidance
+
+- If you can’t increase n, reduce noise (better logging, stronger metric).
+- Pre-register hypotheses and expected effect sizes.
+
+## What feeds into power
+
+```mermaid title="What determines statistical power" desc="Sample size, effect size, noise, and alpha all combine to determine whether a test can detect a real effect."
+flowchart TD
+  A["Sample size (n)"] --> E["Power<br/>(1 - beta)"]
+  B["Effect size"] --> E
+  C["Noise / variance"] --> E
+  D["Significance level (alpha)"] --> E
+```
+
+:::tip[From the book]
+A useful mental model borrowed from classic frequentist statistics: power is really about
+how much two distributions overlap. The "null" distribution (no effect) and the "true
+effect" distribution sit side by side; the more they overlap, the more often your test
+mistakenly fails to detect a real difference. Bigger samples and bigger effects push the
+distributions apart and shrink that overlap.
+:::
+
+## Visualize it
+
+The null distribution (no real effect) and the true-effect distribution always overlap a
+little. That shaded overlap is where your test fails to detect the effect — a Type II
+error. Bigger effect sizes push the curves apart and shrink the overlap:
+
+```p5 title="Overlap between null and true-effect distributions" desc="The shaded overlap between two bell curves shows where a real effect goes undetected (low power)." height="240"
+function bell(x, mean, sd) {
+  return Math.exp(-((x - mean) ** 2) / (2 * sd * sd));
+}
+function setup() {
+  createCanvas(600, 240);
+  textFont("monospace");
+  noLoop();
+}
+function draw() {
+  background(13, 17, 23);
+  const gx = 40, gy = 190, gw = width - 80, gh = 150;
+  const mean0 = 250, mean1 = 380, sd = 55;
+  const lo = 80, hi = 560;
+  const toX = (v) => gx + (v - lo) / (hi - lo) * gw;
+
+  stroke(60, 70, 84);
+  strokeWeight(1);
+  line(gx, gy, gx + gw, gy);
+
+  noStroke();
+  for (let x = lo; x <= hi; x += 2) {
+    const y0 = bell(x, mean0, sd);
+    const y1 = bell(x, mean1, sd);
+    const overlap = Math.min(y0, y1);
+    if (overlap > 0.02) {
+      fill(255, 211, 67, 90);
+      rect(toX(x), gy - overlap * gh, (gw / (hi - lo)) * 2 + 1, overlap * gh);
+    }
+  }
+
+  noFill();
+  stroke(75, 139, 190);
+  strokeWeight(2.5);
+  beginShape();
+  for (let x = lo; x <= hi; x += 2) vertex(toX(x), gy - bell(x, mean0, sd) * gh);
+  endShape();
+
+  stroke(120, 200, 120);
+  strokeWeight(2.5);
+  beginShape();
+  for (let x = lo; x <= hi; x += 2) vertex(toX(x), gy - bell(x, mean1, sd) * gh);
+  endShape();
+
+  noStroke();
+  fill(75, 139, 190);
+  textSize(13);
+  textAlign(CENTER, BOTTOM);
+  text("H0: no effect", toX(mean0), gy - gh - 6);
+  fill(120, 200, 120);
+  text("true effect", toX(mean1), gy - gh - 6);
+  fill(255, 211, 67);
+  textAlign(CENTER, TOP);
+  text("overlap = missed detections (Type II)", width / 2, gy + 12);
+}
+```
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Larger n narrows the noise band
+
+```python
+# Task: show that standard error (a proxy for overlap width) shrinks with n
+import numpy as np
+
+std = 20
+for n in [30, 120, 480]:
+    se = std / np.sqrt(n)
+    print(f"n={n}: SE={round(se, 2)}")
+
+# Expected output:
+# n=30: SE=3.65
+# n=120: SE=1.83
+# n=480: SE=0.91
+```
+
+### Exercise 2 – Bigger effect size is easier to detect
+
+```python
+# Task: compare a small effect vs. a large effect using a standardized measure (Cohen's d)
+mean_diff_small = 1
+mean_diff_large = 8
+pooled_std = 10
+
+d_small = mean_diff_small / pooled_std
+d_large = mean_diff_large / pooled_std
+
+print("small effect size (d):", d_small)
+print("large effect size (d):", d_large)
+
+# Expected output:
+# small effect size (d): 0.1
+# large effect size (d): 0.8
+```
+
+### Exercise 3 – Estimate power by simulation
+
+```python
+# Task: run many simulated A/B tests with a known real effect and count how often p < 0.05
+import numpy as np
+from scipy import stats
+
+rng = np.random.default_rng(0)
+significant = 0
+trials = 500
+
+for _ in range(trials):
+    A = rng.normal(loc=50, scale=10, size=40)
+    B = rng.normal(loc=54, scale=10, size=40)  # true effect: +4
+    _, p = stats.ttest_ind(A, B)
+    if p < 0.05:
+        significant += 1
+
+power_estimate = significant / trials
+print("estimated power:", power_estimate)
+
+# Expected output (will vary slightly by run):
+# estimated power: <somewhere around 0.4-0.6 for this sample size and effect>
+```
+
+## Next
+
+Continue to **Statistics Mini Project (Analyze a Marketing Campaign)** to apply power,
+confidence intervals, and hypothesis tests to a real end-to-end analysis.

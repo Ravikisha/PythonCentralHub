@@ -1,0 +1,286 @@
+---
+title: Distributed Training with tf.distribute
+description: Speed up training across multiple GPUs and machines with data parallelism, model parallelism, and TensorFlow's Distribution Strategies API.
+sidebar:
+  order: 473
+---
+
+## What you'll learn
+
+- the difference between **model parallelism** (splitting the model) and **data
+  parallelism** (splitting the data)
+- how the **mirrored strategy** replicates a model across GPUs and keeps every copy
+  in sync using **AllReduce**
+- the trade-off between synchronous and asynchronous updates, and what "stale
+  gradients" are
+- how to use `tf.distribute.MirroredStrategy` on one machine, and
+  `MultiWorkerMirroredStrategy` / `TPUStrategy` across many
+- why adding more GPUs eventually stops helping (bandwidth saturation)
+
+## Two ways to split the work
+
+Training a large neural network on a single CPU can take days or weeks. Once you've
+squeezed out the easy wins — good initialization, Batch Normalization, a solid
+optimizer — the next lever is **more hardware**. There are two fundamentally
+different ways to spread one training job across multiple devices:
+
+- **Model parallelism** — chop the model itself into pieces, and run each piece on a
+  different device.
+- **Data parallelism** — keep a full copy of the model on every device, and give each
+  copy a different slice of the data.
+
+## Model parallelism: tempting, but tricky
+
+It seems natural to put each layer on its own device. It doesn't work well: layer 2
+can't start until layer 1 finishes, so devices sit idle waiting for each other. Splitting
+each layer down the middle (half the neurons on one device, half on another) lets both
+halves compute in parallel, but the next layer needs *both* halves' output — so you
+pay for constant cross-device communication, which is slow, especially across
+machines. Fully connected networks generally gain little from this.
+
+Some architectures split more naturally: convolutional layers are only partially
+connected to the layer below, so chunks of a CNN can be distributed with much less
+cross-device chatter. In short: model parallelism *can* help, but it depends heavily on
+the architecture and needs careful, model-specific tuning. Data parallelism is simpler
+and usually the better first choice.
+
+## Data parallelism: replicate the model, split the data
+
+Instead of splitting the model, **copy the whole model onto every device**, run each
+copy on a different mini-batch, then combine the gradients before updating any
+weights.
+
+```mermaid title="Data parallelism with the mirrored strategy" desc="Each GPU holds an identical copy of the model; gradients are averaged (AllReduce) and the same update is applied everywhere."
+flowchart TD
+  X["Training batch"] --> S["Split across replicas"]
+  S --> R1["Replica 1 (GPU 0): forward + backward pass"]
+  S --> R2["Replica 2 (GPU 1): forward + backward pass"]
+  S --> R3["Replica 3 (GPU 2): forward + backward pass"]
+  R1 --> AR["AllReduce: average all gradients"]
+  R2 --> AR
+  R3 --> AR
+  AR --> U1["Apply averaged gradient to Replica 1"]
+  AR --> U2["Apply averaged gradient to Replica 2"]
+  AR --> U3["Apply averaged gradient to Replica 3"]
+```
+
+The **mirrored strategy** keeps every replica byte-for-byte identical by always
+applying the exact same averaged update everywhere. Computing that average
+efficiently — and getting the result back to every device — is done with an
+**AllReduce** algorithm, which TensorFlow handles for you.
+
+An alternative is **centralized parameters**: the weights live on a separate device
+(often the CPU, called a *parameter server*), while GPU *workers* only compute
+gradients. This lets you choose:
+
+- **Synchronous updates** — wait for every worker's gradients before updating.
+  Simple and stable, but the whole system is only as fast as its slowest worker.
+- **Asynchronous updates** — apply each worker's gradients the moment they're
+  ready, no waiting. Higher throughput, but a worker may compute gradients against
+  parameters that have since changed — these are called **stale gradients**, and they
+  can add noise or even destabilize training.
+
+:::tip[From the book]
+A Google Brain benchmark found that synchronous updates with a handful of *spare*
+replicas (e.g., 18 fast replicas out of 20, ignoring the two slowest each step) beat
+plain asynchronous updates — converging faster **and** to a better model. Géron also
+notes that beyond a few dozen GPUs (for dense models) or a few hundred (for sparse
+ones), adding more GPUs actually *slows things down*: the time spent moving
+gradients across the network outweighs the extra compute.
+:::
+
+In practice, even well within that limit, adding GPUs doesn't buy a proportional
+speedup: merging gradients across devices has real overhead. Chollet reports roughly
+**2x** with 2 GPUs, **3.8x** with 4, and **7.3x** with 8 — getting close to those
+numbers also requires a large enough *global* batch size that each GPU's local slice
+still keeps it fully busy. See **Mixed Precision and Multi-GPU Training** for a way to
+speed up each individual replica further, on top of splitting the work across them.
+
+## Using MirroredStrategy on one machine
+
+TensorFlow's Distribution Strategies API hides almost all of this complexity. To train
+across every GPU on one machine with the mirrored strategy, wrap model creation and
+compilation in a `strategy.scope()`, then call `fit()` exactly as usual:
+
+```python title="Data parallelism in a few lines" showLineNumbers{1}
+import tensorflow as tf
+
+strategy = tf.distribute.MirroredStrategy()
+print(f"Replicas in sync: {strategy.num_replicas_in_sync}")
+
+with strategy.scope():
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Dense(30, activation="relu"),
+        tf.keras.layers.Dense(1),
+    ])
+    model.compile(loss="mse", optimizer="nadam")
+
+batch_size = 100  # must be divisible by the number of replicas
+history = model.fit(X_train, y_train, epochs=10, batch_size=batch_size)
+```
+
+`fit()` automatically splits each batch across the replicas — that's why the batch
+size must divide evenly by the replica count. If you only want to use some of the
+available GPUs, pass their names explicitly:
+`tf.distribute.MirroredStrategy(["/gpu:0", "/gpu:1"])`. If you'd rather use
+centralized parameters, swap in `tf.distribute.experimental.CentralStorageStrategy()`
+— same `scope()` pattern, different strategy object.
+
+## Scaling to multiple machines
+
+A **TensorFlow cluster** is a group of TF processes (called *tasks*) that talk to each
+other, usually one per machine. You describe the cluster and each task's role via the
+`TF_CONFIG` environment variable:
+
+```python title="Describing a cluster with TF_CONFIG" showLineNumbers{1}
+import os, json
+
+cluster_spec = {
+    "worker": ["machine-a.example.com:2222", "machine-b.example.com:2222"],
+}
+
+os.environ["TF_CONFIG"] = json.dumps({
+    "cluster": cluster_spec,
+    "task": {"type": "worker", "index": 0},   # this machine is worker 0
+})
+```
+
+With `TF_CONFIG` set on every machine (same cluster spec, different `index`), the
+training code barely changes — swap `MirroredStrategy` for
+`MultiWorkerMirroredStrategy`:
+
+```python title="Mirrored strategy across multiple workers" showLineNumbers{1}
+strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
+
+with strategy.scope():
+    model = tf.keras.models.Sequential([...])
+    model.compile(loss="mse", optimizer="nadam")
+
+history = model.fit(X_train, y_train, epochs=10)
+```
+
+Every worker runs this same script; they synchronize with each other at every step.
+And if you have access to Google Cloud TPUs, the pattern is identical again — just a
+different strategy object:
+
+```python title="TPUStrategy — same pattern, different hardware" showLineNumbers{1}
+resolver = tf.distribute.cluster_resolver.TPUClusterResolver()
+tf.tpu.experimental.initialize_tpu_system(resolver)
+tpu_strategy = tf.distribute.experimental.TPUStrategy(resolver)
+
+with tpu_strategy.scope():
+    model = tf.keras.models.Sequential([...])
+    model.compile(loss="mse", optimizer="nadam")
+```
+
+## Mini-checkpoint
+
+- Reach for **data parallelism** (mirrored strategy) first — it's simpler and works
+  well for most architectures.
+- Only consider **model parallelism** for architectures with naturally sparse
+  connections (like CNNs), and expect to tune it by hand.
+- Scaling from one GPU → many GPUs → many machines is (almost) just swapping the
+  strategy class: `MirroredStrategy` → `MultiWorkerMirroredStrategy` /
+  `TPUStrategy`. The `with strategy.scope():` pattern never changes.
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Create a MirroredStrategy
+
+<DataCampExercise
+  lang="python"
+  hint={`The class you want is \`tf.distribute.MirroredStrategy\`.`}
+  code={`# Task: Exercise 1 - Create a MirroredStrategy
+import tensorflow as tf
+
+strategy = tf.distribute.___()   # replace ___ with MirroredStrategy
+print("Replicas:", strategy.num_replicas_in_sync)
+
+# ── Expected Output ───────────────────────────────────────────
+# Replicas: 1
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import tensorflow as tf
+
+strategy = tf.distribute.MirroredStrategy()
+print("Replicas:", strategy.num_replicas_in_sync)`}
+  sct={`test_output_contains("Replicas: 1")
+success_msg("On a machine with no GPUs, MirroredStrategy just uses 1 replica (the CPU) - the same code scales up automatically when GPUs are present!")`}
+  height={140}
+/>
+
+### Exercise 2 – Build a model inside strategy.scope()
+
+<DataCampExercise
+  lang="python"
+  hint={`Enter the distribution context with \`strategy.scope()\` used as a \`with\` block.`}
+  code={`# Task: Exercise 2 - Build a model inside strategy.scope()
+import tensorflow as tf
+
+strategy = tf.distribute.MirroredStrategy()
+
+with strategy.___():   # replace ___ with scope
+    model = tf.keras.Sequential([tf.keras.layers.Dense(1, input_shape=(1,))])
+
+print("Layers:", len(model.layers))
+
+# ── Expected Output ───────────────────────────────────────────
+# Layers: 1
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import tensorflow as tf
+
+strategy = tf.distribute.MirroredStrategy()
+
+with strategy.scope():
+    model = tf.keras.Sequential([tf.keras.layers.Dense(1, input_shape=(1,))])
+
+print("Layers:", len(model.layers))`}
+  sct={`test_output_contains("Layers: 1")
+success_msg("Any model created inside strategy.scope() gets its variables mirrored across every replica!")`}
+  height={150}
+/>
+
+### Exercise 3 – Describe a cluster with TF_CONFIG
+
+<DataCampExercise
+  lang="python"
+  hint={`The cluster spec dictionary goes under the \`"cluster"\` key of the TF_CONFIG JSON.`}
+  code={`# Task: Exercise 3 - Describe a cluster with TF_CONFIG
+import json, os
+
+cluster_spec = {"worker": ["localhost:12345", "localhost:23456"]}
+
+os.environ["TF_CONFIG"] = json.dumps({
+    "___": cluster_spec,   # replace ___ with cluster
+    "task": {"type": "worker", "index": 0},
+})
+
+config = json.loads(os.environ["TF_CONFIG"])
+print(config["cluster"]["worker"])
+
+# ── Expected Output ───────────────────────────────────────────
+# ['localhost:12345', 'localhost:23456']
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import json, os
+
+cluster_spec = {"worker": ["localhost:12345", "localhost:23456"]}
+
+os.environ["TF_CONFIG"] = json.dumps({
+    "cluster": cluster_spec,
+    "task": {"type": "worker", "index": 0},
+})
+
+config = json.loads(os.environ["TF_CONFIG"])
+print(config["cluster"]["worker"])`}
+  sct={`test_output_contains("['localhost:12345', 'localhost:23456']")
+success_msg("Every worker reads this same TF_CONFIG to find out who else is in the cluster!")`}
+  height={160}
+/>
+
+## Next
+
+Continue to **Hyperparameter Tuning with KerasTuner** — once you can train a model
+fast, across as many devices as you have, the next question is *which* model to
+train: an automated search can try far more architectures than you'd ever have time
+to test by hand.

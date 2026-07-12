@@ -1,0 +1,238 @@
+---
+title: Mixed Precision and Multi-GPU Training
+description: Speed up training on a single GPU for free with mixed-precision float16/float32 policies, and scale further with a quick multi-GPU refresher.
+sidebar:
+  order: 473.6
+---
+
+## What you'll learn
+
+- what floating-point **precision** means, and why float16 is faster but riskier than
+  float32
+- how **mixed-precision training** keeps weights in float32 while computing in
+  float16, for a speedup that's close to free
+- how to turn mixed precision on with one line of Keras code — and where it can go
+  numerically wrong
+- a quick refresher on data-parallel multi-GPU training with `MirroredStrategy` (the
+  full deep dive lives on the **Distributed Training with tf.distribute** page)
+
+## Precision is to numbers what resolution is to images
+
+Computers can't store a real number exactly — they encode it as a fixed number of
+bits, which puts a hard limit on how finely they can distinguish nearby values. You've
+likely used three levels of this before without thinking about it:
+
+- **float16** (half precision) — 16 bits per number
+- **float32** (single precision) — 32 bits per number, the default for every tensor
+  and variable in `tf.keras`
+- **float64** (double precision) — 64 bits per number, the default for plain NumPy
+  arrays
+
+More bits means finer resolution: float32 can safely represent differences as small as
+about `1e-7`; float16 only gets you to about `1e-3`. That gap matters because a
+typical learning rate is around `1e-3`, and it's common to see individual weight
+updates on the order of `1e-6` — small enough that float16 alone would round many of
+them straight down to zero, stalling training.
+
+:::caution
+NumPy's default float type is **float64**; TensorFlow's default is **float32**.
+Converting a plain NumPy array to a tensor without specifying a dtype silently gives
+you a float64 tensor:
+
+```python title="Watch out for NumPy's default dtype" showLineNumbers{1}
+import tensorflow as tf
+import numpy as np
+
+np_array = np.zeros((2, 2))
+tf_tensor = tf.convert_to_tensor(np_array)
+print(tf_tensor.dtype)   # tf.float64 - probably not what you wanted
+
+tf_tensor = tf.convert_to_tensor(np_array, dtype="float32")
+print(tf_tensor.dtype)   # tf.float32
+```
+
+`fit()` does this conversion for you when you pass NumPy data directly, but it's worth
+knowing about the moment you start writing custom preprocessing code.
+:::
+
+## Mixed precision: float16 speed, float32 stability
+
+Full float16 training is unstable — too many small updates vanish. Full float64
+training is wasteful — matrix multiplication and addition cost roughly twice as much
+for no real benefit, since float32 was already precise enough. **Mixed precision**
+splits the difference: run the bulk of the computation in float16 (fast, and modern
+GPU/TPU hardware has specialized circuitry for it), while keeping the weights
+themselves in float32 so their updates stay accurate.
+
+```mermaid title="Mixed-precision compute inside a layer" desc="Weights are stored in float32 for stable updates; the forward pass computes in float16 for speed, then results feed back into an accurate float32 update."
+flowchart LR
+  W["Layer weights: float32 (variable_dtype)"] --> C["Cast to float16 for compute"]
+  C --> F["Forward pass runs in float16 (compute_dtype)"]
+  F --> L["Loss kept in float32 for numerical stability"]
+  L --> G["tape.gradient(...)"]
+  G --> U["Optimizer applies an accurate float32 update"]
+  U --> W
+```
+
+Turning it on is a single global setting:
+
+```python title="Enabling mixed precision" showLineNumbers{1}
+from tensorflow import keras
+
+keras.mixed_precision.set_global_policy("mixed_float16")
+```
+
+Every Keras layer has a `compute_dtype` (what it computes in) and a `variable_dtype`
+(what it stores its weights as). Normally both default to float32. Once the mixed
+policy is active, most layers switch `compute_dtype` to float16 — casting their inputs
+and running their math there — while `variable_dtype` stays float32, so the optimizer
+still applies precise updates. A few operations (softmax and cross-entropy in
+particular) are numerically unstable in float16 and are kept in float32 automatically;
+if you need to opt a specific layer out yourself, pass `dtype="float32"` to its
+constructor.
+
+The payoff: on modern NVIDIA GPUs, mixed precision can speed up training by up to
+**3x** — for one line of code. On TPUs, the gain is smaller but still worthwhile, up to
+roughly 60%.
+
+## A quick multi-GPU refresher
+
+Once one GPU isn't enough, the next lever is **data parallelism**: keep a full copy of
+the model on every GPU, split each batch across them, and merge the gradients before
+updating any weights. `tf.distribute.MirroredStrategy` handles this for you — the
+same `with strategy.scope():` pattern you'd use for a single machine with several
+GPUs:
+
+```python title="Combining mixed precision with a MirroredStrategy" showLineNumbers{1}
+import tensorflow as tf
+from tensorflow import keras
+
+keras.mixed_precision.set_global_policy("mixed_float16")
+
+strategy = tf.distribute.MirroredStrategy()
+print(f"Number of devices: {strategy.num_replicas_in_sync}")
+
+with strategy.scope():
+    model = get_compiled_model()
+
+model.fit(train_dataset, epochs=100, validation_data=val_dataset, callbacks=callbacks)
+```
+
+Everything that creates variables (model construction and `compile()`) belongs inside
+the `strategy.scope()` block; `fit()` itself is called normally, outside it.
+
+For the full picture — `MultiWorkerMirroredStrategy` across several machines,
+`TPUStrategy`, `TF_CONFIG` cluster specs, and the synchronous-vs-asynchronous update
+trade-off — see **Distributed Training with tf.distribute**. The one thing worth
+repeating here: in an ideal world N GPUs would give an N x speedup, but merging
+gradients across devices has overhead, so the real numbers look more like this:
+
+:::tip[From the book]
+Chollet reports roughly **2x** speedup with 2 GPUs, **3.8x** with 4, and **7.3x** with
+8 — the overhead of merging gradients across devices grows with the replica count.
+Getting anywhere near these numbers also requires a big enough **global batch size**
+to keep every GPU's local batch large enough to stay busy; too small a batch size and
+you're paying communication overhead without the throughput to justify it.
+:::
+
+Feed the pipeline with `tf.data` regardless of how many devices you're using —
+NumPy arrays work too (`fit()` converts them), but a `Dataset` with
+`.prefetch(tf.data.AUTOTUNE)` guarantees the CPU is never the bottleneck feeding your
+(possibly several) hungry GPUs.
+
+## Mini-checkpoint
+
+- **Mixed precision** = compute in float16 (fast), store weights in float32
+  (stable) — turned on globally with `keras.mixed_precision.set_global_policy(...)`.
+- It's close to a free lunch: up to 3x faster on GPU, up to 60% faster on TPU, for one
+  line of code.
+- **Multi-GPU** scaling is `MirroredStrategy` + `with strategy.scope():` — the two
+  techniques stack: set the precision policy once, then open the strategy scope as
+  usual.
+- Real speedups fall short of linear (2 GPUs ≈ 2x, 4 ≈ 3.8x, 8 ≈ 7.3x) because merging
+  gradients across devices isn't free.
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Be explicit about dtype when converting NumPy arrays
+
+<DataCampExercise
+  lang="python"
+  hint={`\`tf.convert_to_tensor\` takes an optional \`dtype=\` keyword argument - pass it the string \`"float32"\`.`}
+  code={`# Task: Exercise 1 - Be explicit about dtype when converting NumPy arrays
+import tensorflow as tf
+import numpy as np
+
+np_array = np.zeros((2, 2))
+tf_tensor = tf.convert_to_tensor(np_array, dtype=___)   # replace ___ with "float32"
+print(tf_tensor.dtype)
+
+# ── Expected Output ───────────────────────────────────────────
+# <dtype: 'float32'>
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import tensorflow as tf
+import numpy as np
+
+np_array = np.zeros((2, 2))
+tf_tensor = tf.convert_to_tensor(np_array, dtype="float32")
+print(tf_tensor.dtype)`}
+  sct={`test_output_contains("float32")
+success_msg("Without the explicit dtype, NumPy's float64 default would have quietly slipped into your model!")`}
+  height={150}
+/>
+
+### Exercise 2 – Inspect a mixed-precision policy's two dtypes
+
+<DataCampExercise
+  lang="python"
+  hint={`A \`Policy\` object exposes both \`compute_dtype\` and \`variable_dtype\` as attributes.`}
+  code={`# Task: Exercise 2 - Inspect a mixed-precision policy's two dtypes
+import tensorflow as tf
+
+policy = tf.keras.mixed_precision.Policy("mixed_float16")
+print(policy.___, policy.variable_dtype)   # replace ___ with compute_dtype
+
+# ── Expected Output ───────────────────────────────────────────
+# float16 float32
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import tensorflow as tf
+
+policy = tf.keras.mixed_precision.Policy("mixed_float16")
+print(policy.compute_dtype, policy.variable_dtype)`}
+  sct={`test_output_contains("float16 float32")
+success_msg("Compute happens in float16 for speed; the weights themselves stay float32 for accurate updates.")`}
+  height={150}
+/>
+
+### Exercise 3 – Look up the real-world multi-GPU speedup
+
+<DataCampExercise
+  lang="python"
+  hint={`Index the dictionary with \`num_gpus\` to get its matching speedup value.`}
+  code={`# Task: Exercise 3 - Look up the real-world multi-GPU speedup
+speedup_by_gpus = {2: 2.0, 4: 3.8, 8: 7.3}
+
+num_gpus = 4
+effective_speedup = speedup_by_gpus[___]   # replace ___ with num_gpus
+print(f"{num_gpus} GPUs -> {effective_speedup}x speedup")
+
+# ── Expected Output ───────────────────────────────────────────
+# 4 GPUs -> 3.8x speedup
+# ──────────────────────────────────────────────────────────────`}
+  solution={`speedup_by_gpus = {2: 2.0, 4: 3.8, 8: 7.3}
+
+num_gpus = 4
+effective_speedup = speedup_by_gpus[num_gpus]
+print(f"{num_gpus} GPUs -> {effective_speedup}x speedup")`}
+  sct={`test_output_contains("4 GPUs -> 3.8x speedup")
+success_msg("3.8x with 4 GPUs, not 4x - that gap is the AllReduce communication overhead.")`}
+  height={150}
+/>
+
+## Next
+
+Continue to **Serving Models with TensorFlow Serving** — once a model is tuned and
+trained as fast as your hardware allows, the next step is putting it behind an API so
+the rest of your product can use it.

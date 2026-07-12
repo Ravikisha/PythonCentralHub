@@ -1,0 +1,263 @@
+---
+title: Serving Models with TensorFlow Serving
+description: Export a trained model to the SavedModel format and serve it in production with TensorFlow Serving over REST or gRPC, with clean version rollouts.
+sidebar:
+  order: 474
+---
+
+## What you'll learn
+
+- why you'd wrap a trained model in its own service instead of calling `.predict()`
+  directly from your application code
+- how to export a `tf.keras` model to the **SavedModel** format
+- how **TensorFlow Serving** loads a model directory and serves it over REST and gRPC
+- how to query a served model from Python with a simple HTTP request
+- how TF Serving handles new model **versions** automatically — and how a rollback
+  is as simple as deleting a folder
+
+## Why not just call predict() yourself?
+
+Every model in this module so far has lived inside a Python script or notebook. That's
+fine while you're the only one using it. Once other parts of your product need
+predictions — a web backend, a mobile app, a batch job — you want a single service
+whose only job is "given input, return a prediction," reachable over the network.
+This decouples the model from everything that consumes it: you can update the model,
+scale the prediction service independently, run A/B tests between versions, and keep
+every consumer talking to the same source of truth. You *could* build this yourself
+with something like Flask — but TensorFlow already ships a purpose-built, battle-
+tested server for exactly this job: **TF Serving**.
+
+```mermaid title="From a trained model to a served prediction" desc="A client sends a request; TF Serving routes it to the loaded model version and returns a prediction."
+flowchart LR
+  C["Client app"] -->|"REST / gRPC request"| S["TF Serving"]
+  S --> V1["my_model / 0001"]
+  S --> V2["my_model / 0002 (latest)"]
+  V2 -->|"prediction"| S
+  S -->|"response"| C
+```
+
+## Exporting a SavedModel
+
+TF Serving doesn't understand Python objects or `.h5` files — it understands the
+**SavedModel** format: a directory containing the computation graph and the trained
+weights. Exporting one takes a single call:
+
+```python title="Exporting a trained model to SavedModel format" showLineNumbers{1}
+import os
+import tensorflow as tf
+
+model = tf.keras.models.Sequential([...])
+model.compile(...)
+model.fit(...)
+
+model_name = "my_mnist_model"
+model_version = "0001"
+model_path = os.path.join(model_name, model_version)
+tf.saved_model.save(model, model_path)
+```
+
+(`model.save(model_path)` works too, as long as the path doesn't end in `.h5`.) The
+result is a directory TF Serving can watch and load directly:
+
+```
+my_mnist_model/
+  0001/
+    assets/
+    saved_model.pb
+    variables/
+      variables.data-00000-of-00001
+      variables.index
+```
+
+`saved_model.pb` holds the serialized computation graph; `variables/` holds the
+trained weights. You can peek inside any SavedModel with the bundled CLI tool,
+without writing any Python:
+
+```python title="Inspecting a SavedModel from the command line" showLineNumbers{1}
+# $ saved_model_cli show --dir my_mnist_model/0001 --all
+#
+# signature_def['serving_default']:
+#   inputs['flatten_input']  shape: (-1, 28, 28)  dtype: DT_FLOAT
+#   outputs['dense_1']       shape: (-1, 10)      dtype: DT_FLOAT
+#   Method name is: tensorflow/serving/predict
+```
+
+## Running TF Serving
+
+The recommended way to run TF Serving is the official Docker image — it avoids
+fiddling with library versions on your own machine:
+
+```python title="Pulling and running TF Serving in Docker" showLineNumbers{1}
+# $ docker pull tensorflow/serving
+#
+# $ docker run -it --rm -p 8500:8500 -p 8501:8501 \
+#     -v "$ML_PATH/my_mnist_model:/models/my_mnist_model" \
+#     -e MODEL_NAME=my_mnist_model \
+#     tensorflow/serving
+#
+# ... Running gRPC ModelServer at 0.0.0.0:8500 ...
+# ... Exporting HTTP/REST API at: localhost:8501 ...
+```
+
+Port `8501` serves REST, `8500` serves gRPC. The `-v` flag mounts your local model
+directory into the container at `/models/my_mnist_model`; TF Serving watches that
+path and automatically loads whatever version it finds — including new ones that
+show up later.
+
+## Querying the REST API
+
+A REST request is just JSON over HTTP — easy to call from almost any language:
+
+```python title="Sending a prediction request over REST" showLineNumbers{1}
+import json
+import requests
+
+input_data_json = json.dumps({
+    "signature_name": "serving_default",
+    "instances": X_new.tolist(),  # NumPy arrays aren't JSON-serializable directly
+})
+
+SERVER_URL = "http://localhost:8501/v1/models/my_mnist_model:predict"
+response = requests.post(SERVER_URL, data=input_data_json)
+response.raise_for_status()
+predictions = response.json()["predictions"]
+```
+
+REST is simple and universally supported, but JSON is text-based — every float
+becomes a verbose string, which adds up for large payloads. When you're moving a lot
+of data, gRPC's compact binary protocol is faster; it takes a serialized
+`PredictRequest` protobuf as input and returns a `PredictResponse`, both defined in
+the `tensorflow-serving-api` package.
+
+## Rolling out (and rolling back) a new version
+
+Export a new version to `my_mnist_model/0002/` the same way you exported `0001`. TF
+Serving polls the model directory and, when it finds the new version, transitions to
+it gracefully — finishing any in-flight requests on the old version before unloading
+it, while new requests already go to the new one. If version `0002` turns out to be
+worse, rolling back is as simple as deleting that directory: TF Serving falls back to
+serving the highest version number it can still find.
+
+:::tip[From the book]
+TF Serving can also batch requests automatically (`--enable_batching`): if several
+prediction requests arrive within a short window, it groups them into one batch
+before running the model — a big win on GPU, since one batched forward pass is much
+more efficient than many tiny ones. You trade a little latency for a lot more
+throughput.
+:::
+
+## Mini-checkpoint
+
+- Export with `tf.saved_model.save(model, "name/version")` — the version folder name
+  (e.g., `"0001"`) is what TF Serving uses to decide which model is "latest."
+- TF Serving auto-discovers new versions in the watched directory; no restart needed.
+- Prefer REST for simplicity and small payloads, gRPC for high-throughput or
+  large-payload traffic.
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Export a model to SavedModel format
+
+<DataCampExercise
+  lang="python"
+  hint={`The export function is \`tf.saved_model.save(model, path)\`.`}
+  code={`# Task: Exercise 1 - Export a model to SavedModel format
+import os
+import tensorflow as tf
+
+model = tf.keras.Sequential([tf.keras.layers.Dense(1, input_shape=(2,))])
+model_version = "0001"
+model_path = os.path.join("my_model", model_version)
+
+tf.saved_model.___(model, model_path)   # replace ___ with save
+
+print("Saved to:", model_path)
+print("Exists:", os.path.exists(model_path))
+
+# ── Expected Output ───────────────────────────────────────────
+# Saved to: my_model/0001
+# Exists: True
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import os
+import tensorflow as tf
+
+model = tf.keras.Sequential([tf.keras.layers.Dense(1, input_shape=(2,))])
+model_version = "0001"
+model_path = os.path.join("my_model", model_version)
+
+tf.saved_model.save(model, model_path)
+
+print("Saved to:", model_path)
+print("Exists:", os.path.exists(model_path))`}
+  sct={`test_output_contains("Exists: True")
+success_msg("That directory is exactly what TF Serving would mount and load!")`}
+  height={160}
+/>
+
+### Exercise 2 – Build a REST prediction payload
+
+<DataCampExercise
+  lang="python"
+  hint={`TF Serving's REST API expects the input data under the \`"instances"\` key.`}
+  code={`# Task: Exercise 2 - Build a REST prediction payload
+import json
+import numpy as np
+
+X_new = np.array([[1.0, 2.0], [3.0, 4.0]])
+
+input_data_json = json.dumps({
+    "signature_name": "serving_default",
+    "___": X_new.tolist(),   # replace ___ with instances
+})
+
+parsed = json.loads(input_data_json)
+print(parsed["instances"])
+
+# ── Expected Output ───────────────────────────────────────────
+# [[1.0, 2.0], [3.0, 4.0]]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import json
+import numpy as np
+
+X_new = np.array([[1.0, 2.0], [3.0, 4.0]])
+
+input_data_json = json.dumps({
+    "signature_name": "serving_default",
+    "instances": X_new.tolist(),
+})
+
+parsed = json.loads(input_data_json)
+print(parsed["instances"])`}
+  sct={`test_output_contains("[[1.0, 2.0], [3.0, 4.0]]")
+success_msg("That's exactly the JSON body requests.post() would send to TF Serving!")`}
+  height={160}
+/>
+
+### Exercise 3 – Find which version TF Serving would load
+
+<DataCampExercise
+  lang="python"
+  hint={`TF Serving always serves the highest version number it finds - use \`max()\` on the list of version strings.`}
+  code={`# Task: Exercise 3 - Find which version TF Serving would load
+versions = ["0001", "0002"]
+latest = ___(versions)   # replace ___ with max
+print("Serving version:", latest)
+
+# ── Expected Output ───────────────────────────────────────────
+# Serving version: 0002
+# ──────────────────────────────────────────────────────────────`}
+  solution={`versions = ["0001", "0002"]
+latest = max(versions)
+print("Serving version:", latest)`}
+  sct={`test_output_contains("Serving version: 0002")
+success_msg("This is exactly how a rollback works too - remove 0002's folder and 0001 becomes 'latest' again!")`}
+  height={130}
+/>
+
+## Next
+
+Continue to **Deploying to Mobile & Edge with TensorFlow Lite** — TF Serving is
+great for a backend service, but phones and embedded devices need a much smaller,
+faster version of the same model.

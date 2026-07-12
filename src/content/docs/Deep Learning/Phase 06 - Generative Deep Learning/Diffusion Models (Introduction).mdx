@@ -1,0 +1,361 @@
+---
+title: Diffusion Models (Introduction)
+description: Learn the forward noising and reverse denoising process behind diffusion models (DDPM) — the idea behind Stable Diffusion and DALL-E — and how it compares to GANs and VAEs.
+sidebar:
+  order: 454
+---
+
+## What you'll learn
+
+- the **forward diffusion process**: gradually destroy an image by adding a little
+  Gaussian noise at each of many steps, until it becomes pure noise
+- the **reverse diffusion process**: a network trained to undo one small noise step
+  at a time, walking backward from pure noise to a realistic image
+- the **DDPM training objective** — predict the noise, not the image
+- why diffusion models train far more stably than GANs, at the cost of slow,
+  multi-step sampling
+
+## Melting an image down, then rebuilding it
+
+Autoencoders squeeze data through a bottleneck, and GANs pit two networks against
+each other. **Diffusion models** take a completely different route: they learn to
+*reverse a process of decay*.
+
+Imagine slowly dissolving a photograph into television static — a tiny bit of
+Gaussian noise added at each of hundreds of steps, until nothing recognizable is
+left. That's the **forward process**, and it needs no learning at all: it's just a
+fixed noise schedule you apply directly to your training images. The interesting
+part is the **reverse process**: a neural network trained to look at a noisy image
+and guess what noise was just added, so that subtracting its guess nudges the image
+one step back toward something clean. Chain enough of those small denoising steps
+together, starting from pure noise, and you can walk all the way back to a
+brand-new, realistic image that was never in the training set.
+
+```mermaid title="Forward noising vs. reverse denoising" desc="Forward (top): gradually add noise until nothing recognizable remains. Reverse (bottom): a trained network removes a little predicted noise at each step, walking back to a clean image."
+flowchart LR
+  X0["x0: clean image"] -->|"+ noise"| X1["x1"]
+  X1 -->|"+ noise"| X2["... xT-1"]
+  X2 -->|"+ noise"| XT["xT: pure noise"]
+  XT -->|"predict noise, subtract"| R2["... x1"]
+  R2 -->|"predict noise, subtract"| R1["x0': generated image"]
+```
+
+## The forward process, in closed form
+
+The forward process adds noise according to a **variance schedule** `beta_t` that
+grows slightly at each of `T` steps. The elegant part: because Gaussians combine
+nicely, you don't have to simulate all the intermediate steps one by one — there's
+a closed-form shortcut straight from the clean image `x0` to any noisy step `xt`:
+
+```
+xt = sqrt(alpha_bar_t) * x0 + sqrt(1 - alpha_bar_t) * noise
+```
+
+where `alpha_bar_t` is the running product of `(1 - beta_s)` for every step up to
+`t`. As `t` grows, `alpha_bar_t` shrinks toward 0 — meaning less and less of the
+original signal survives, and more and more of the output is pure noise:
+
+```python title="Forward diffusion: jumping straight to any noisy step" showLineNumbers{1}
+import numpy as np
+
+T = 200
+betas = np.linspace(1e-4, 0.02, T)       # variance schedule: small steps at first
+alphas = 1 - betas
+alpha_bars = np.cumprod(alphas)          # running product = closed-form shortcut
+
+print("alpha_bar at t=0:  ", round(alpha_bars[0], 4))
+print("alpha_bar at t=100:", round(alpha_bars[99], 4))
+print("alpha_bar at t=200:", round(alpha_bars[199], 4))
+print("signal fraction retained at t=200:", round(np.sqrt(alpha_bars[199]), 4))
+print("noise fraction added at t=200:    ", round(np.sqrt(1 - alpha_bars[199]), 4))
+```
+
+```
+alpha_bar at t=0:   0.9999
+alpha_bar at t=100: 0.6025
+alpha_bar at t=200: 0.1322
+signal fraction retained at t=200: 0.3636
+noise fraction added at t=200:     0.9316
+```
+
+By `t=200`, less than 40% of the original signal is left, and the rest is noise —
+after a few hundred more steps with a real schedule, essentially nothing of `x0`
+survives.
+
+## The reverse process: predict the noise, not the image
+
+Training a diffusion model doesn't require running the forward process step by
+step either. For each training image, you pick a random timestep `t`, jump straight
+to the noisy `xt` using the formula above, and ask a network to predict exactly
+which `noise` was added. The loss (from the DDPM paper) is refreshingly simple —
+just mean squared error between the real and predicted noise:
+
+```python title="A minimal noise-prediction network (the DDPM training objective)" showLineNumbers{1}
+import numpy as np
+import tensorflow as tf
+
+np.random.seed(0)
+tf.random.set_seed(0)
+
+# Toy dataset: 200 tiny 3-value "images", noised at a single fixed step (alpha_bar = 0.36)
+X0 = np.random.uniform(-1, 1, size=(200, 3)).astype("float32")
+noise = np.random.normal(size=X0.shape).astype("float32")
+Xt = (0.6 * X0 + 0.8 * noise).astype("float32")
+
+# The network's ONLY job: given a noisy sample, predict the noise that was added
+noise_predictor = tf.keras.models.Sequential([
+    tf.keras.layers.Dense(16, activation="relu", input_shape=[3]),
+    tf.keras.layers.Dense(3),
+])
+noise_predictor.compile(loss="mse", optimizer="adam")
+history = noise_predictor.fit(Xt, noise, epochs=5, verbose=0)
+
+print("loss decreased:", history.history["loss"][-1] < history.history["loss"][0])
+```
+
+```
+loss decreased: True
+```
+
+A real diffusion model also feeds the timestep `t` into the network (so it knows
+*how* noisy the input is) and uses a U-Net instead of a couple of `Dense` layers —
+but the training objective is exactly this: predict the noise, compare it to the
+real noise, backpropagate.
+
+Sampling — actually generating an image — runs this in reverse: start from pure
+Gaussian noise `xT`, repeatedly ask the network "what noise is in here?", subtract
+a (small, carefully scaled) piece of its prediction, and repeat for every one of the
+`T` steps back down to `x0`. That's also the main downside compared to a GAN or a
+VAE: generating one image takes many sequential network passes instead of one.
+
+## Why diffusion over GANs?
+
+GAN training pits two networks against each other in a minimax game that can
+diverge or mode-collapse (see the previous page). A diffusion model's training
+target is just "predict this noise" — an ordinary supervised regression problem
+with no adversary and no competing objective, so training tends to be far more
+stable and doesn't require the delicate hyperparameter balancing GANs need.
+The trade-off is speed: a GAN generates an image in a single forward pass, while a
+diffusion model needs dozens to thousands of sequential denoising steps. This
+stability-versus-speed trade-off is exactly why diffusion models (DDPMs, and their
+descendants like Stable Diffusion) overtook GANs as the state of the art for
+high-quality image generation.
+
+## Visualize it
+
+Watch a small pattern get buried under noise, step by step (forward diffusion), and
+then walk back out of the noise to the original pattern (reverse diffusion) — the
+same trip, run in both directions:
+
+```p5 title="Forward noising, then reverse denoising" desc="Forward (t increasing): a clean pattern is buried under Gaussian noise, one small step at a time. Reverse (t decreasing): a trained network undoes exactly that process, walking back from pure noise to a clean image." height="300"
+const T = 60;
+let t = 0;
+let dir = 1;
+let noiseGrid = [];
+const clean = [
+  [0, 1, 1, 0, 0, 1, 1, 0],
+  [1, 1, 1, 1, 1, 1, 1, 1],
+  [1, 1, 1, 1, 1, 1, 1, 1],
+  [1, 1, 1, 1, 1, 1, 1, 1],
+  [0, 1, 1, 1, 1, 1, 1, 0],
+  [0, 0, 1, 1, 1, 1, 0, 0],
+  [0, 0, 0, 1, 1, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0],
+];
+
+function setup() {
+  createCanvas(600, 300);
+  noStroke();
+  textFont("monospace");
+  textAlign(CENTER, CENTER);
+  regenNoise();
+}
+
+function regenNoise() {
+  noiseGrid = [];
+  for (let i = 0; i < 8; i++) {
+    const row = [];
+    for (let j = 0; j < 8; j++) row.push(Math.random());
+    noiseGrid.push(row);
+  }
+}
+
+function draw() {
+  background(13, 17, 23);
+
+  const frac = t / T;
+  const cell = 20, x0 = 220, y0 = 40;
+  for (let i = 0; i < 8; i++) {
+    for (let j = 0; j < 8; j++) {
+      const v = (1 - frac) * clean[i][j] + frac * noiseGrid[i][j];
+      fill(255 * v, 211 * v, 67 + v * 60);
+      rect(x0 + j * cell, y0 + i * cell, cell - 2, cell - 2, 2);
+    }
+  }
+
+  fill(150, 160, 172);
+  textSize(13);
+  text(dir === 1 ? "forward diffusion: adding noise" : "reverse diffusion: denoising", width / 2, 20);
+
+  fill(dir === 1 ? color(230, 130, 120) : color(120, 200, 255));
+  textSize(12);
+  text("t = " + t + " / " + T, width / 2, height - 40);
+
+  const barW = 300, barX = width / 2 - barW / 2, barY = height - 22;
+  fill(40, 44, 52);
+  rect(barX, barY, barW, 8, 4);
+  fill(dir === 1 ? color(230, 130, 120) : color(120, 200, 255));
+  rect(barX, barY, barW * frac, 8, 4);
+
+  if (frameCount % 4 === 0) {
+    t += dir;
+    if (t >= T) { t = T; dir = -1; }
+    if (t <= 0) { t = 0; dir = 1; regenNoise(); }
+  }
+}
+
+function mousePressed() { t = 0; dir = 1; regenNoise(); }
+```
+
+:::note[Beyond the 2nd-edition chapter]
+Géron's *Hands-On Machine Learning* chapter on generative deep learning centers on
+autoencoders and GANs; diffusion models (DDPM, Ho et al., 2020) are a newer family
+that later editions of the book add to the same chapter, precisely because they
+solve the training-instability problem GANs are known for. The comparison mirrors
+the book's own framing of autoencoders vs. GANs: different mechanisms, similar goal
+— learn to generate data that looks like the training set.
+:::
+
+## Mini-checkpoint
+
+If a GAN generates an image in one forward pass, why would anyone put up with a
+diffusion model's much slower, multi-step sampling?
+
+- Because GAN training is unstable and prone to mode collapse, while a diffusion
+  model's training objective is a plain regression problem (predict the noise) with
+  no adversary — it converges more reliably and tends to produce more diverse,
+  higher-quality samples. Slower sampling is the price paid for a much easier,
+  steadier training process.
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Build the Variance Schedule
+
+<DataCampExercise
+  lang="python"
+  hint={`alpha_t = 1 - beta_t, and alpha_bar_t is the running product of every alpha up to step t — that's exactly what \`np.cumprod\` computes.`}
+  code={`# Task: Exercise 1 - Build the Variance Schedule
+import numpy as np
+
+T = 50
+betas = np.linspace(1e-4, 0.02, T)
+alphas = 1 - betas
+alpha_bars = np.___(alphas)   # replace ___ with cumprod
+
+print("alpha_bar at t=50:", round(alpha_bars[-1], 3))
+
+# ── Expected Output ───────────────────────────────────────────
+# alpha_bar at t=50: 0.603
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+T = 50
+betas = np.linspace(1e-4, 0.02, T)
+alphas = 1 - betas
+alpha_bars = np.cumprod(alphas)
+
+print("alpha_bar at t=50:", round(alpha_bars[-1], 3))`}
+  sct={`test_output_contains("alpha_bar at t=50: 0.603")
+success_msg("That running product is the closed-form forward process!")`}
+  height={160}
+/>
+
+### Exercise 2 – Jump Straight to a Noisy Step
+
+<DataCampExercise
+  lang="python"
+  hint={`The closed-form forward step is \`sqrt(alpha_bar) * x0 + sqrt(1 - alpha_bar) * noise\`.`}
+  code={`# Task: Exercise 2 - Jump Straight to a Noisy Step
+import numpy as np
+
+x0 = np.array([1.0, -1.0, 1.0, -1.0])
+noise = np.zeros(4)          # zero noise, to isolate the signal term
+alpha_bar = 0.25
+
+xt = np.sqrt(___) * x0 + np.sqrt(1 - alpha_bar) * noise   # replace ___ with alpha_bar
+print("xt:", xt)
+
+# ── Expected Output ───────────────────────────────────────────
+# xt: [ 0.5 -0.5  0.5 -0.5]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+x0 = np.array([1.0, -1.0, 1.0, -1.0])
+noise = np.zeros(4)
+alpha_bar = 0.25
+
+xt = np.sqrt(alpha_bar) * x0 + np.sqrt(1 - alpha_bar) * noise
+print("xt:", xt)`}
+  sct={`test_output_contains("xt: [ 0.5 -0.5  0.5 -0.5]")
+success_msg("With alpha_bar = 0.25, only half the original signal survives!")`}
+  height={170}
+/>
+
+### Exercise 3 – Train a Tiny Noise Predictor
+
+<DataCampExercise
+  lang="python"
+  hint={`The network's target is the \`noise\` array itself, not \`Xt\` — it must learn to predict what was added, not the clean image.`}
+  code={`# Task: Exercise 3 - Train a Tiny Noise Predictor
+import numpy as np
+import tensorflow as tf
+
+np.random.seed(0)
+tf.random.set_seed(0)
+
+X0 = np.random.uniform(-1, 1, size=(200, 3)).astype("float32")
+noise = np.random.normal(size=X0.shape).astype("float32")
+Xt = (0.6 * X0 + 0.8 * noise).astype("float32")
+
+noise_predictor = tf.keras.models.Sequential([
+    tf.keras.layers.Dense(16, activation="relu", input_shape=[3]),
+    tf.keras.layers.Dense(3),
+])
+noise_predictor.compile(loss="mse", optimizer="adam")
+history = noise_predictor.fit(Xt, ___, epochs=5, verbose=0)   # replace ___ with noise
+
+print("loss decreased:", history.history["loss"][-1] < history.history["loss"][0])
+
+# ── Expected Output ───────────────────────────────────────────
+# loss decreased: True
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+import tensorflow as tf
+
+np.random.seed(0)
+tf.random.set_seed(0)
+
+X0 = np.random.uniform(-1, 1, size=(200, 3)).astype("float32")
+noise = np.random.normal(size=X0.shape).astype("float32")
+Xt = (0.6 * X0 + 0.8 * noise).astype("float32")
+
+noise_predictor = tf.keras.models.Sequential([
+    tf.keras.layers.Dense(16, activation="relu", input_shape=[3]),
+    tf.keras.layers.Dense(3),
+])
+noise_predictor.compile(loss="mse", optimizer="adam")
+history = noise_predictor.fit(Xt, noise, epochs=5, verbose=0)
+
+print("loss decreased:", history.history["loss"][-1] < history.history["loss"][0])`}
+  sct={`test_output_contains("loss decreased: True")
+success_msg("The network is learning to spot the noise!")`}
+  height={190}
+/>
+
+## Next
+
+Continue to **Text Generation with Language Models** — a completely different
+generative task (sequences instead of images) with its own key idea: the
+softmax sampling temperature.

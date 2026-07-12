@@ -1,0 +1,655 @@
+---
+title: Object Detection (Bounding Boxes and YOLO)
+description: Predict bounding boxes as a regression problem, score them with IoU, and see how sliding windows, fully convolutional networks, and YOLO turn a classifier into a real-time multi-object detector.
+sidebar:
+  order: 428
+---
+
+## What you'll learn
+
+- how **classification and localization** turns "draw a box around the
+  object" into a plain regression problem — four extra numbers per image
+- **Intersection over Union (IoU)** — the standard way to grade how good a
+  predicted bounding box actually is
+- why the old **sliding-window** approach to detecting several objects is
+  slow, and how a **fully convolutional network (FCN)** gets the same result
+  in a single pass
+- the intuition behind **YOLO** — grid cells, anchor boxes, and an
+  "objectness" score, all predicted in one shot
+- **non-max suppression (NMS)** — cleaning up the pile of duplicate boxes a
+  detector produces around the same object
+- **mean Average Precision (mAP)** — the standard metric for comparing
+  detectors
+
+## From "what" to "where"
+
+Every convnet you've built so far answers one question: "what is this a
+picture of?" **Object detection** asks a second question at the same time:
+"and *where* is it?" The simplest version of this — one object per image —
+is called **classification and localization**, and Géron makes a nice
+observation about it: localizing an object is *just a regression problem*.
+Instead of predicting one number (or a class), you predict four: the
+bounding box's center coordinates, plus its height and width. Bolt a second
+`Dense` output onto a normal classifier, train it with mean squared error
+alongside the usual classification loss, and you have a model that both
+names *and* boxes the object:
+
+```python title="classification_and_localization.py" showLineNumbers{1}
+from tensorflow import keras
+
+base_model = keras.applications.xception.Xception(weights="imagenet", include_top=False)
+avg = keras.layers.GlobalAveragePooling2D()(base_model.output)
+
+class_output = keras.layers.Dense(n_classes, activation="softmax")(avg)
+loc_output = keras.layers.Dense(4)(avg)   # bbox: center_x, center_y, height, width
+
+model = keras.Model(inputs=base_model.input, outputs=[class_output, loc_output])
+model.compile(
+    loss=["sparse_categorical_crossentropy", "mse"],
+    loss_weights=[0.8, 0.2],   # how much you care about class vs. box accuracy
+    optimizer="adam", metrics=["accuracy"],
+)
+```
+
+Two practical wrinkles from the book, worth remembering: bounding-box
+coordinates should be **normalized to the 0–1 range**, and it's common to
+predict the *square root* of the height and width rather than the raw
+values — a 10-pixel error matters a lot more on a tiny box than on a huge
+one, and the square root naturally shrinks that penalty for big boxes.
+
+## Intersection over Union: grading a box
+
+MSE trains the model fine, but it's a poor *metric* for judging how good a
+predicted box is — it doesn't tell you anything as intuitive as "percent
+overlap." The standard metric is **Intersection over Union (IoU)**: the area
+where the predicted box and the true box overlap, divided by the total area
+either one covers.
+
+```python title="iou.py" showLineNumbers{1}
+import numpy as np
+
+def iou(box_a, box_b):
+    """Each box is (x1, y1, x2, y2) -- top-left and bottom-right corners."""
+    xa1, ya1, xa2, ya2 = box_a
+    xb1, yb1, xb2, yb2 = box_b
+
+    inter_x1, inter_y1 = max(xa1, xb1), max(ya1, yb1)
+    inter_x2, inter_y2 = min(xa2, xb2), min(ya2, yb2)
+    inter_area = max(0, inter_x2 - inter_x1) * max(0, inter_y2 - inter_y1)
+
+    area_a = (xa2 - xa1) * (ya2 - ya1)
+    area_b = (xb2 - xb1) * (yb2 - yb1)
+    union_area = area_a + area_b - inter_area
+    return inter_area / union_area
+
+predicted = (50, 50, 150, 150)
+ground_truth = (70, 60, 170, 160)
+print(round(iou(predicted, ground_truth), 3))
+```
+
+```
+>>> round(iou((50, 50, 150, 150), (70, 60, 170, 160)), 3)
+0.562
+```
+
+An IoU of `1.0` means a perfect match; `0.0` means the boxes don't touch at
+all. In `tf.keras` this is built in as `tf.keras.metrics.MeanIoU`, but the
+numpy version above shows exactly what it's computing under the hood.
+
+## From one object to many
+
+Classifying and localizing a single object is nice, but real photos usually
+have *several* objects in them. The task of finding and boxing every object
+in an image is **object detection**.
+
+Until a few years ago, the standard trick was **sliding windows**: chop the
+image into a grid (say, 6 × 8), run your single-object classifier-and-
+localizer over every 3 × 3 patch of that grid, then repeat with 4 × 4
+patches, 5 × 5 patches, and so on, to catch objects of different sizes. It
+works, but it's slow — you're running the same CNN dozens or hundreds of
+times per image — and it detects the *same* object multiple times as the
+window slides past it from slightly different positions.
+
+## Fully convolutional networks: sliding without sliding
+
+There's a much faster way to get the sliding-window effect: a **fully
+convolutional network (FCN)**. The trick, from a 2015 paper by Jonathan Long
+et al., is to notice that a `Dense` layer on top of a convolutional stack can
+be *replaced* by a convolutional layer with no loss of information — as long
+as the new layer's filter size matches the input feature map exactly and
+uses `"valid"` padding.
+
+```python title="dense_to_conv.py" showLineNumbers{1}
+import tensorflow as tf
+
+# A dense head on top of a 7x7x100 feature map -- 200 output numbers
+dense_head = tf.keras.Sequential([
+    tf.keras.layers.Flatten(input_shape=(7, 7, 100)),
+    tf.keras.layers.Dense(200),
+])
+print("dense output shape:", dense_head.output_shape)
+
+# The SAME computation, expressed as a convolutional layer instead
+conv_head = tf.keras.Sequential([
+    tf.keras.layers.Conv2D(200, kernel_size=7, padding="valid", input_shape=(7, 7, 100)),
+])
+print("conv output shape:  ", conv_head.output_shape)
+
+# Feed a BIGGER feature map in -- a Dense layer could never do this,
+# but a convolutional layer just slides across the extra space
+conv_head_big = tf.keras.Sequential([
+    tf.keras.layers.Conv2D(200, kernel_size=7, padding="valid", input_shape=(14, 14, 100)),
+])
+print("bigger feature map:", conv_head_big.output_shape)
+```
+
+```
+>>> dense_head.output_shape
+(None, 200)
+>>> conv_head.output_shape
+(None, 1, 1, 200)
+>>> conv_head_big.output_shape
+(None, 8, 8, 200)
+```
+
+A `Dense` layer expects a fixed input size. A convolutional layer happily
+accepts images of *any* size — feed it a bigger feature map, and it just
+slides its filter across the extra space and produces more output cells.
+Convert every dense layer of a classification-and-localization CNN into
+convolutional layers this way, and feeding in a bigger image gives you a
+whole *grid* of predictions — 5 class scores, 1 objectness score, and 4 box
+coordinates per grid cell — in a single forward pass, exactly like sliding
+the original small CNN across the image, but computed once instead of
+dozens of times.
+
+```mermaid title="Detector architecture" desc="A shared convolutional backbone feeds two small heads: one predicts a class per grid cell, the other predicts a box (plus objectness) per grid cell."
+flowchart LR
+  I["Input image"] --> B["Convolutional backbone<br/>(feature extractor)"]
+  B --> G["Grid of feature cells<br/>(e.g. 7x7)"]
+  G --> C["Class head<br/>(softmax per cell)"]
+  G --> L["Box head<br/>(4 coords + objectness)"]
+  C --> O["Raw per-cell detections"]
+  L --> O
+  O --> N["Non-max suppression"]
+  N --> D["Final boxes"]
+```
+
+This "process the whole image once, in one grid pass" idea is exactly what
+powers **You Only Look Once (YOLO)** — the most famous one-shot detector.
+
+## YOLO: you only look once
+
+YOLO (Redmon et al.) runs an FCN over the whole image and reads off a grid
+of predictions, one cell at a time. A few details make it work well in
+practice:
+
+- Each grid cell predicts **several** candidate boxes (not just one), each
+  with its own **objectness score** — "is there really an object centered in
+  this cell?" — trained with binary cross-entropy and a sigmoid activation.
+- Box coordinates are predicted as an **offset relative to the grid cell**,
+  not absolute pixels: `(0, 0)` is the cell's top-left corner, `(1, 1)` is
+  its bottom-right, even though the predicted box itself can extend well
+  beyond that cell.
+- Before training, YOLO clusters the training set's box shapes (with
+  k-means) into a handful of representative **anchor boxes** — typical
+  width/height combinations, like "tall and narrow" for a pedestrian. The
+  network then predicts *how much to rescale* each anchor box, rather than
+  predicting a width and height from scratch.
+
+On the PASCAL VOC dataset (20 classes), YOLOv3 predicts 5 candidate boxes
+per grid cell — 4 coordinates and 1 objectness score each — plus 20 class
+probabilities shared per cell:
+
+```python title="yolo_cell_numbers.py" showLineNumbers{1}
+num_boxes_per_cell = 5
+coords_per_box = 4       # center_x, center_y, height, width
+num_classes = 20         # PASCAL VOC
+
+numbers_per_cell = num_boxes_per_cell * coords_per_box + num_boxes_per_cell + num_classes
+print("numbers per grid cell:", numbers_per_cell)
+```
+
+```
+>>> numbers_per_cell
+45
+```
+
+That single number -- 45 -- is the entire output YOLO needs per grid cell to
+describe every candidate box, its confidence, and its class, all predicted
+in one pass over the image.
+
+## Non-max suppression: cleaning up the duplicates
+
+Whether you slide a window or run YOLO's single grid pass, you end up with
+the same problem: several overlapping boxes around the *same* object. **Non-
+max suppression (NMS)** is the standard cleanup pass:
+
+1. Throw away every box whose objectness score is below some threshold —
+   these almost certainly don't contain an object at all.
+2. Take the box with the highest remaining objectness score, and discard
+   every *other* box that overlaps it a lot (IoU above some threshold, e.g.
+   `0.5`) — those are almost certainly duplicate detections of that same
+   object.
+3. Repeat step 2 with whatever boxes are left, until none remain.
+
+```python title="non_max_suppression.py" showLineNumbers{1}
+import numpy as np
+
+def iou(box_a, box_b):
+    xa1, ya1, xa2, ya2 = box_a
+    xb1, yb1, xb2, yb2 = box_b
+    ix1, iy1 = max(xa1, xb1), max(ya1, yb1)
+    ix2, iy2 = min(xa2, xb2), min(ya2, yb2)
+    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+    area_a = (xa2 - xa1) * (ya2 - ya1)
+    area_b = (xb2 - xb1) * (yb2 - yb1)
+    return inter / (area_a + area_b - inter)
+
+def non_max_suppression(boxes, scores, iou_threshold=0.5):
+    order = np.argsort(scores)[::-1]          # highest score first
+    keep = []
+    while len(order) > 0:
+        i = order[0]
+        keep.append(int(i))
+        rest = order[1:]
+        ious = np.array([iou(boxes[i], boxes[j]) for j in rest])
+        order = rest[ious <= iou_threshold]    # drop the heavy overlaps
+    return keep
+
+boxes = [(10, 10, 60, 60), (15, 12, 65, 62), (120, 100, 170, 150)]
+scores = [0.90, 0.75, 0.80]
+print("kept boxes:", non_max_suppression(boxes, scores))
+```
+
+```
+>>> non_max_suppression(boxes, scores)
+[0, 2]
+```
+
+Boxes `0` and `1` overlap heavily (they're both detecting the same object),
+so the lower-scoring one gets dropped. Box `2` doesn't overlap either one,
+so it survives untouched — exactly the "one clean box per real object"
+result NMS is supposed to give you.
+
+## Visualize it
+
+Four raw candidate boxes arrive around two flowers — three of them are
+duplicates piled around the same rose. Watch them appear one at a time, then
+watch non-max suppression run step by step: the highest-scoring box is kept,
+every box that overlaps it too much gets suppressed, and the cycle repeats
+until only one clean box per real object survives — then it resets and runs
+again:
+
+```p5 title="Bounding boxes before and after non-max suppression" desc="Candidate boxes appear one at a time, then non-max suppression keeps the highest-scoring box and prunes its overlapping duplicates, one at a time, until only clean detections remain. Click to restart." height="420"
+const gridSize = 16;
+const cell = 20;
+const originX = 60, originY = 40;
+const threshold = 0.5;
+
+const boxes = [
+  { b: [1, 2, 7, 9],   score: 0.92, label: "rose" },
+  { b: [2, 3, 8, 10],  score: 0.81, label: "rose" },
+  { b: [1, 1, 6, 8],   score: 0.77, label: "rose" },
+  { b: [10, 4, 14, 9], score: 0.88, label: "tulip" },
+];
+
+function boxIou(a, b) {
+  const ax1 = a[0], ay1 = a[1], ax2 = a[2], ay2 = a[3];
+  const bx1 = b[0], by1 = b[1], bx2 = b[2], by2 = b[3];
+  const ix1 = Math.max(ax1, bx1), iy1 = Math.max(ay1, by1);
+  const ix2 = Math.min(ax2, bx2), iy2 = Math.min(ay2, by2);
+  const interArea = Math.max(0, ix2 - ix1) * Math.max(0, iy2 - iy1);
+  const areaA = (ax2 - ax1) * (ay2 - ay1);
+  const areaB = (bx2 - bx1) * (by2 - by1);
+  return interArea / (areaA + areaB - interArea);
+}
+
+// Precompute the whole non-max-suppression run as a sequence of events:
+// { type: "keep", box } or { type: "suppress", box, by }
+let steps = [];
+function computeSteps() {
+  steps = [];
+  let order = boxes.map((_, i) => i).sort((i, j) => boxes[j].score - boxes[i].score);
+  const removed = new Array(boxes.length).fill(false);
+  while (order.length > 0) {
+    const i = order[0];
+    removed[i] = true;
+    steps.push({ type: "keep", box: i });
+    const rest = [];
+    for (const j of order.slice(1)) {
+      if (removed[j]) continue;
+      if (boxIou(boxes[i].b, boxes[j].b) > threshold) {
+        removed[j] = true;
+        steps.push({ type: "suppress", box: j, by: i });
+      } else {
+        rest.push(j);
+      }
+    }
+    order = rest;
+  }
+}
+
+const APPEAR_GAP = 20, APPEAR_DUR = 26;
+const appearEnd = boxes.length * APPEAR_GAP + APPEAR_DUR;
+const pauseDur = 26;
+const STEP_DUR = 46;
+const holdDur = 70, resetDur = 26;
+let stepsStart = 0, stepsEnd = 0, PERIOD = 0;
+let tCounter = 0;
+
+function setup() {
+  createCanvas(640, 420);
+  textFont("monospace");
+  computeSteps();
+  stepsStart = appearEnd + pauseDur;
+  stepsEnd = stepsStart + steps.length * STEP_DUR;
+  PERIOD = stepsEnd + holdDur + resetDur;
+}
+
+function easeOutBack(x) {
+  const c1 = 1.4, c3 = c1 + 1;
+  return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+}
+
+function boxState(i, t) {
+  const appearT = constrain((t - i * APPEAR_GAP) / APPEAR_DUR, 0, 1);
+  const appear = appearT <= 0 ? 0 : easeOutBack(appearT);
+  let mode = "normal";
+  let fade = 1;
+
+  if (t >= stepsStart) {
+    for (let k = 0; k < steps.length; k++) {
+      const stepT0 = stepsStart + k * STEP_DUR;
+      if (t < stepT0) break;
+      const stepT1 = stepT0 + STEP_DUR;
+      const step = steps[k];
+      if (step.box !== i) continue;
+      const localP = constrain((t - stepT0) / STEP_DUR, 0, 1);
+      if (step.type === "keep") {
+        mode = t < stepT1 ? "current" : "kept";
+        fade = 1;
+      } else {
+        mode = t < stepT1 ? "suppressing" : "gone";
+        fade = t < stepT1 ? 1 - localP : 0;
+      }
+    }
+  }
+  return { appear: constrain(appear, 0, 1.15), mode, fade };
+}
+
+function currentCaption(t) {
+  if (t < appearEnd) return "Raw candidate detections arriving...";
+  if (t < stepsStart) return "Running non-max suppression (IoU threshold 0.5)...";
+  if (t < stepsEnd) {
+    const k = Math.min(steps.length - 1, Math.floor((t - stepsStart) / STEP_DUR));
+    const step = steps[k];
+    const item = boxes[step.box];
+    if (step.type === "keep") {
+      return "keep " + item.label + " (score " + item.score.toFixed(2) + ") -- highest remaining objectness";
+    }
+    const byItem = boxes[step.by];
+    return "suppress " + item.label + " -- IoU with kept " + byItem.label + " box > 0.5 (duplicate)";
+  }
+  const keptCount = steps.filter((s) => s.type === "keep").length;
+  return keptCount + " boxes survived -- one clean box per real object";
+}
+
+function draw() {
+  const t = tCounter % PERIOD;
+  const fadeOutStart = stepsEnd + holdDur;
+  const globalFade = t < fadeOutStart ? 1 : 1 - constrain((t - fadeOutStart) / resetDur, 0, 1);
+
+  background(13, 17, 23);
+  noStroke();
+  fill(230);
+  textSize(13);
+  textAlign(CENTER, CENTER);
+  text(currentCaption(t), width / 2, 20);
+
+  for (let r = 0; r < gridSize; r++) {
+    for (let c = 0; c < gridSize; c++) {
+      fill(60 + noise(r * 0.35, c * 0.35) * 60);
+      noStroke();
+      rect(originX + c * cell, originY + r * cell, cell, cell);
+    }
+  }
+
+  textAlign(LEFT, CENTER);
+  for (let idx = 0; idx < boxes.length; idx++) {
+    const item = boxes[idx];
+    const state = boxState(idx, t);
+    if (state.appear <= 0) continue;
+
+    const x1 = item.b[0], y1 = item.b[1], x2 = item.b[2], y2 = item.b[3];
+    const cxp = originX + ((x1 + x2) / 2) * cell, cyp = originY + ((y1 + y2) / 2) * cell;
+    const pw = (x2 - x1) * cell * state.appear, ph = (y2 - y1) * cell * state.appear;
+    const px = cxp - pw / 2, py = cyp - ph / 2;
+
+    let col = item.label === "rose" ? color(255, 211, 67) : color(75, 169, 221);
+    let weight = 1 + item.score * 3;
+    let alphaVal = 255 * globalFade;
+
+    if (state.mode === "current") {
+      const pulse = 0.6 + 0.4 * Math.sin(tCounter * 0.3);
+      col = color(255, 211, 67);
+      weight = 3 + pulse * 3;
+      alphaVal = 255 * globalFade;
+    } else if (state.mode === "suppressing" || state.mode === "gone") {
+      col = color(220, 90, 90);
+      alphaVal = 255 * state.fade * globalFade;
+      if (state.fade <= 0) continue;
+    } else if (state.mode === "kept") {
+      col = color(120, 200, 120);
+      weight = 3;
+      alphaVal = 255 * globalFade;
+    }
+
+    col.setAlpha(alphaVal);
+    stroke(col);
+    strokeWeight(weight);
+    noFill();
+    rect(px, py, pw, ph);
+
+    if (alphaVal > 40) {
+      noStroke();
+      fill(red(col), green(col), blue(col), alphaVal);
+      textSize(12);
+      text(item.label + " " + item.score.toFixed(2), px, py - 10);
+    }
+  }
+
+  tCounter++;
+}
+
+function mousePressed() {
+  tCounter = 0;
+}
+```
+
+## Mean Average Precision (mAP)
+
+To compare two detectors, you need a single number. Start from precision and
+recall: recall goes up as precision goes down, and the trade-off traces out
+a precision/recall curve. Rather than reading off precision at one specific
+recall value (which can be misleadingly low, since precision sometimes ticks
+*up* as recall increases), Géron's book defines **Average Precision (AP)**
+as the mean of the *maximum* precision achievable at each recall level (0%,
+10%, 20%, ... up to 100%). With more than one class, computing AP per class
+and averaging gives the **mean Average Precision (mAP)**.
+
+Object detection adds one more wrinkle: a prediction with the right class
+but a badly placed box shouldn't count as correct. So mAP is usually computed
+with an **IoU threshold** — a detection only counts if its IoU with the true
+box is above, say, `0.5`. That's written **mAP@0.5** (or **AP50**). The COCO
+challenge goes further and averages mAP across *many* IoU thresholds (0.50,
+0.55, ..., 0.95), written **mAP@[.50:.95]** — a mean of a mean of a mean.
+
+## Mini-checkpoint
+
+Why does non-max suppression compare boxes with IoU instead of, say, just
+checking whether their centers are close together?
+
+- Two boxes can have centers that are close but still describe very
+  different-sized objects (a small box entirely inside a big one), or have
+  centers that are moderately far apart while still covering almost the
+  same region (for a large, wide object). IoU measures actual overlapping
+  *area*, which is what "these are probably the same detection" really
+  depends on — not just how close two single points happen to be.
+
+:::tip[From the book]
+Géron's framing of the sliding-window story is worth remembering: the
+"slow" version and the "fast" (FCN) version compute *the exact same
+predictions* — sliding a 7×7 CNN across a 14×14 grid of feature maps gives
+8×8 = 64 windows, and a fully convolutional network with a 7×7 valid-padded
+filter produces that identical 8×8 grid in one forward pass. FCNs aren't an
+approximation of sliding windows; they're a literal reformulation of the
+same computation that skips all the redundant re-processing — which is
+exactly the efficiency trick that makes YOLO fast enough to run on live
+video.
+:::
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Compute Intersection over Union (IoU)
+
+<DataCampExercise
+  lang="python"
+  hint={`IoU is \`inter_area / union_area\`, where \`union_area = area_a + area_b - inter_area\` (subtracting once so the overlap isn't double-counted).`}
+  code={`# Task: Exercise 1 - Compute Intersection over Union (IoU)
+def iou(box_a, box_b):
+    """Each box is (x1, y1, x2, y2)."""
+    xa1, ya1, xa2, ya2 = box_a
+    xb1, yb1, xb2, yb2 = box_b
+    ix1, iy1 = max(xa1, xb1), max(ya1, yb1)
+    ix2, iy2 = min(xa2, xb2), min(ya2, yb2)
+    inter_area = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+    area_a = (xa2 - xa1) * (ya2 - ya1)
+    area_b = (xb2 - xb1) * (yb2 - yb1)
+    union_area = area_a + area_b - inter_area
+    return inter_area / ___   # replace ___ with union_area
+
+box_a = (0, 0, 4, 4)
+box_b = (2, 2, 6, 6)
+print("IoU:", round(iou(box_a, box_b), 2))
+
+# ── Expected Output ───────────────────────────────
+# IoU: 0.14
+# ──────────────────────────────────────────────────`}
+  solution={`def iou(box_a, box_b):
+    xa1, ya1, xa2, ya2 = box_a
+    xb1, yb1, xb2, yb2 = box_b
+    ix1, iy1 = max(xa1, xb1), max(ya1, yb1)
+    ix2, iy2 = min(xa2, xb2), min(ya2, yb2)
+    inter_area = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+    area_a = (xa2 - xa1) * (ya2 - ya1)
+    area_b = (xb2 - xb1) * (yb2 - yb1)
+    union_area = area_a + area_b - inter_area
+    return inter_area / union_area
+
+box_a = (0, 0, 4, 4)
+box_b = (2, 2, 6, 6)
+print("IoU:", round(iou(box_a, box_b), 2))`}
+  sct={`test_output_contains("IoU: 0.14")
+success_msg("That is exactly what tf.keras.metrics.MeanIoU computes under the hood!")`}
+  height={190}
+/>
+
+### Exercise 2 – Filter Overlapping Boxes with Non-Max Suppression
+
+<DataCampExercise
+  lang="python"
+  hint={`Keep only the boxes whose IoU with the current highest-scoring box is at or below the threshold -- anything more overlapping is treated as a duplicate detection.`}
+  code={`# Task: Exercise 2 - Filter Overlapping Boxes with Non-Max Suppression
+def iou(box_a, box_b):
+    xa1, ya1, xa2, ya2 = box_a
+    xb1, yb1, xb2, yb2 = box_b
+    ix1, iy1 = max(xa1, xb1), max(ya1, yb1)
+    ix2, iy2 = min(xa2, xb2), min(ya2, yb2)
+    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+    area_a = (xa2 - xa1) * (ya2 - ya1)
+    area_b = (xb2 - xb1) * (yb2 - yb1)
+    return inter / (area_a + area_b - inter)
+
+boxes = [(10, 10, 60, 60), (15, 12, 65, 62), (120, 100, 170, 150)]
+scores = [0.9, 0.75, 0.8]
+
+order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+keep = []
+while order:
+    i = order[0]
+    keep.append(i)
+    order = [j for j in order[1:] if iou(boxes[i], boxes[j]) <= ___]   # replace ___ with 0.5
+
+print("kept boxes:", keep)
+
+# ── Expected Output ───────────────────────────────
+# kept boxes: [0, 2]
+# ──────────────────────────────────────────────────`}
+  solution={`def iou(box_a, box_b):
+    xa1, ya1, xa2, ya2 = box_a
+    xb1, yb1, xb2, yb2 = box_b
+    ix1, iy1 = max(xa1, xb1), max(ya1, yb1)
+    ix2, iy2 = min(xa2, xb2), min(ya2, yb2)
+    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+    area_a = (xa2 - xa1) * (ya2 - ya1)
+    area_b = (xb2 - xb1) * (yb2 - yb1)
+    return inter / (area_a + area_b - inter)
+
+boxes = [(10, 10, 60, 60), (15, 12, 65, 62), (120, 100, 170, 150)]
+scores = [0.9, 0.75, 0.8]
+
+order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+keep = []
+while order:
+    i = order[0]
+    keep.append(i)
+    order = [j for j in order[1:] if iou(boxes[i], boxes[j]) <= 0.5]
+
+print("kept boxes:", keep)`}
+  sct={`test_output_contains("kept boxes: [0, 2]")
+success_msg("Box 1 overlapped box 0 too much and got suppressed as a duplicate!")`}
+  height={210}
+/>
+
+### Exercise 3 – Convert Corner Coordinates to Center + Size
+
+<DataCampExercise
+  lang="python"
+  hint={`A box's center x-coordinate is the midpoint between its left and right edges: \`(x1 + x2) / 2\`.`}
+  code={`# Task: Exercise 3 - Convert Corner Coordinates to Center + Size
+def corners_to_center(x1, y1, x2, y2):
+    cx = (x1 + x2) / ___   # replace ___ with 2
+    cy = (y1 + y2) / 2
+    w = x2 - x1
+    h = y2 - y1
+    return cx, cy, w, h
+
+box_corners = (80, 70, 120, 90)
+cx, cy, w, h = corners_to_center(*box_corners)
+print("center:", cx, cy, "size:", w, h)
+
+# ── Expected Output ───────────────────────────────
+# center: 100.0 80.0 size: 40 20
+# ──────────────────────────────────────────────────`}
+  solution={`def corners_to_center(x1, y1, x2, y2):
+    cx = (x1 + x2) / 2
+    cy = (y1 + y2) / 2
+    w = x2 - x1
+    h = y2 - y1
+    return cx, cy, w, h
+
+box_corners = (80, 70, 120, 90)
+cx, cy, w, h = corners_to_center(*box_corners)
+print("center:", cx, cy, "size:", w, h)`}
+  sct={`test_output_contains("center: 100.0 80.0 size: 40 20")
+success_msg("That is the center-coordinate format YOLO predicts, built from plain corner coordinates!")`}
+  height={190}
+/>
+
+## Next
+
+That wraps up Phase 3. Continue to **Intro to Recurrent Neural Networks
+(RNN) for Sequences** in Phase 4 — CNNs excel at images, but sequences
+(text, time series, audio) need a network with a sense of order and memory.

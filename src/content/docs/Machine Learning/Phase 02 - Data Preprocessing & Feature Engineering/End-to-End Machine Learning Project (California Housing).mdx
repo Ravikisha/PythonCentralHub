@@ -1,0 +1,496 @@
+---
+title: End-to-End Machine Learning Project (California Housing)
+description: Walk the full Géron-style ML project roadmap - frame the problem, get and explore the data, build pipelines, select and train models, cross-validate, grid search, and evaluate on the test set.
+sidebar:
+  order: 264
+---
+
+## What you'll learn
+
+- the full roadmap of a real ML project, start to finish, in one picture
+- how the previous pages in this phase fit together into `housing_prepared`
+- training and comparing several models: Linear Regression, Decision Tree, Random Forest
+- why a model with **zero** training error is a red flag, not a win
+- evaluating models honestly with **k-fold cross-validation**
+- fine-tuning hyperparameters automatically with **GridSearchCV**
+- reading `feature_importances_` to see what the best model actually relies on
+- the one and only time you're allowed to touch the test set, plus a confidence
+  interval for the final RMSE
+
+## The whole project, in one picture
+
+Every page in this phase has been one stage of a single project. This page is the
+capstone: it strings every stage together and adds the two stages that come after
+data preparation — training models and fine-tuning them — finishing with the one
+evaluation that actually counts.
+
+```mermaid title="The end-to-end ML project pipeline" desc="Géron's roadmap for a real ML project, from a vague business question to a launched, monitored system."
+flowchart LR
+  A["Frame the problem"] --> B["Get the data"]
+  B --> C["Explore & visualize"]
+  C --> D["Prepare the data<br/>(pipelines)"]
+  D --> E["Select & train models"]
+  E --> F["Fine-tune<br/>(cross-val + grid search)"]
+  F --> G["Evaluate on test set"]
+  G --> H["Launch, monitor,<br/>maintain"]
+```
+
+## Recap: how we got to `housing_prepared`
+
+If you've worked through this phase in order, you already have everything you
+need sitting in two variables. Quick recap of where they came from:
+
+1. **Frame the problem & get the data** — a supervised, batch, multiple regression
+   problem: predict `median_house_value` from census features, measured with RMSE.
+2. **Create a test set** — `StratifiedShuffleSplit` on income brackets carves off
+   `strat_test_set` immediately, and it's **locked away** until the very end.
+3. **Explore & find correlations** — `median_income` is by far the strongest
+   predictor; engineered ratios like `bedrooms_per_room` beat the raw counts.
+4. **Clean, encode, scale** — missing `total_bedrooms` values imputed, the
+   `ocean_proximity` text column one-hot encoded, every numeric column scaled.
+5. **Pipelines** — all of the above chained into one `full_pipeline`, a
+   `ColumnTransformer` wrapping a numeric `Pipeline` and a categorical encoder.
+
+```python title="Where this page picks up" showLineNumbers{1}
+housing = strat_train_set.drop("median_house_value", axis=1)
+housing_labels = strat_train_set["median_house_value"].copy()
+
+housing_prepared = full_pipeline.fit_transform(housing)
+print(housing_prepared.shape)
+```
+
+`housing_prepared` is a plain numeric matrix — every row model-ready. From here
+on, it's finally time to train something.
+
+## Select and train a model
+
+The good news: after all that prep, training itself is almost anticlimactic. Start
+with the simplest reasonable model, **Linear Regression**:
+
+```python title="Train and check a Linear Regression model" showLineNumbers{1}
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
+import numpy as np
+
+lin_reg = LinearRegression()
+lin_reg.fit(housing_prepared, housing_labels)
+
+housing_predictions = lin_reg.predict(housing_prepared)
+lin_rmse = np.sqrt(mean_squared_error(housing_labels, housing_predictions))
+print(round(lin_rmse, 0))
+# 68628.0
+```
+
+Most districts' `median_house_value` sits between $120,000 and $265,000, so a
+typical error of ~$68,628 isn't great — a sign of **underfitting**: the model
+isn't powerful enough (or the features aren't informative enough) to capture the
+pattern. Let's try something more expressive, a **Decision Tree**:
+
+```python title="Train a Decision Tree - and get suspicious" showLineNumbers{1}
+from sklearn.tree import DecisionTreeRegressor
+
+tree_reg = DecisionTreeRegressor(random_state=42)
+tree_reg.fit(housing_prepared, housing_labels)
+
+housing_predictions = tree_reg.predict(housing_prepared)
+tree_rmse = np.sqrt(mean_squared_error(housing_labels, housing_predictions))
+print(tree_rmse)
+# 0.0
+```
+
+Zero error sounds like a win — it isn't. A Decision Tree can carve the training
+data into arbitrarily small, pure regions until every training row is predicted
+perfectly. That's **overfitting**, not skill, and you can't tell the difference by
+looking at training error alone. You need to evaluate on data the model hasn't
+memorized.
+
+## Better evaluation using cross-validation
+
+You could carve out a separate validation set with `train_test_split`, but
+**k-fold cross-validation** gets more out of the same data: it splits the training
+set into `k` folds, trains on `k - 1` of them, evaluates on the fold left out, and
+repeats until every fold has been the evaluation fold exactly once.
+
+```python title="Cross-validate the Decision Tree" showLineNumbers{1}
+from sklearn.model_selection import cross_val_score
+
+scores = cross_val_score(
+    tree_reg, housing_prepared, housing_labels,
+    scoring="neg_mean_squared_error", cv=10,
+)
+tree_rmse_scores = np.sqrt(-scores)
+
+def display_scores(scores):
+    print("Scores:", scores)
+    print("Mean:", scores.mean())
+    print("Standard deviation:", scores.std())
+
+display_scores(tree_rmse_scores)
+# Mean: ~71407   Standard deviation: ~2439
+```
+
+Scikit-learn's cross-validation tools expect a *utility* function (bigger is
+better), not a *cost* function — that's why `scoring="neg_mean_squared_error"`
+returns negative values, and the code flips the sign with `-scores` before taking
+the square root.
+
+Once you cross-validate honestly, the Decision Tree's real performance shows up:
+it's actually **worse** than plain Linear Regression (mean RMSE ≈ 71,407 vs.
+≈ 69,052) — it was simply overfitting the training set, not learning it. Cross-
+validation gives you both a performance *estimate* and a sense of how *precise*
+that estimate is (the standard deviation), something a single train/test split
+can't tell you.
+
+Try one more model, a **Random Forest** — many Decision Trees trained on random
+subsets of the data and features, with their predictions averaged (an idea called
+**Ensemble Learning**, covered in depth in Phase 5):
+
+```python title="Cross-validate a Random Forest" showLineNumbers{1}
+from sklearn.ensemble import RandomForestRegressor
+
+forest_reg = RandomForestRegressor(n_estimators=100, random_state=42)
+forest_scores = cross_val_score(
+    forest_reg, housing_prepared, housing_labels,
+    scoring="neg_mean_squared_error", cv=10,
+)
+display_scores(np.sqrt(-forest_scores))
+# Mean: ~50182   Standard deviation: ~2097
+```
+
+Random Forests are the clear winner of the three so far — but notice that its
+*training*-set error is still much lower than its cross-validated error, meaning
+it's still overfitting somewhat too. The fix isn't to panic; it's to shortlist a
+couple of promising models (don't over-tune any single one yet) and move on to
+fine-tuning.
+
+```p5 title="RMSE by model (lower is better)" desc="Linear Regression underfits; the untuned Decision Tree overfits and scores worse than it looks; watch the Random Forest bar grow in last and pulse as the winner - though there's still room to fine-tune it." height="260"
+const models = [
+  { name: "Linear Regression", rmse: 69052, col: [75, 139, 190] },
+  { name: "Decision Tree", rmse: 71407, col: [235, 140, 90] },
+  { name: "Random Forest", rmse: 50182, col: [255, 211, 67] },
+];
+
+function setup() {
+  createCanvas(600, 260);
+  textFont("monospace");
+}
+
+function ease(t) {
+  t = constrain(t, 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+function draw() {
+  background(13, 17, 23);
+
+  const maxRmse = 80000;
+  const chartTop = 30, chartH = 160, barW = 110, gap = 50;
+
+  const PERIOD = 240;
+  const t = (frameCount % PERIOD) / PERIOD;
+
+  let winnerIdx = 0;
+  for (let i = 1; i < models.length; i++) {
+    if (models[i].rmse < models[winnerIdx].rmse) winnerIdx = i;
+  }
+
+  let x = 60;
+  for (let i = 0; i < models.length; i++) {
+    const m = models[i];
+    const startT = i * 0.15; // each bar starts growing a little after the last
+    const dur = 0.3;
+
+    let growT;
+    if (t < 0.85) {
+      growT = ease((t - startT) / dur);
+    } else {
+      growT = ease(1 - (t - 0.85) / 0.15); // shrink back down before the loop restarts
+    }
+
+    let pulse = 0;
+    if (i === winnerIdx && t > 0.62 && t < 0.85) {
+      pulse = (sin(((t - 0.62) / 0.23) * TWO_PI * 3) + 1) * 3; // gentle "winner" wobble
+    }
+
+    const h = (m.rmse / maxRmse) * chartH * growT + pulse;
+
+    fill(m.col[0], m.col[1], m.col[2]);
+    noStroke();
+    rect(x, chartTop + chartH - h, barW, h, 4);
+
+    fill(230);
+    textAlign(CENTER, TOP);
+    textSize(12);
+    text(m.name, x + barW / 2, chartTop + chartH + 10);
+    if (growT > 0.03) {
+      text("~" + Math.round(m.rmse * growT).toLocaleString(), x + barW / 2, chartTop + chartH - h - 18);
+    }
+
+    x += barW + gap;
+  }
+
+  fill(180);
+  textAlign(LEFT, TOP);
+  textSize(11);
+  text("cross-validated RMSE (10-fold) - shorter bar = smaller typical error", 20, 10);
+}
+```
+
+## Fine-tune with GridSearchCV
+
+Manually trying hyperparameter combinations by hand is tedious and unsystematic.
+`GridSearchCV` does it for you: give it a grid of values per hyperparameter and it
+cross-validates *every* combination, then hands back the best one.
+
+```python title="Grid search over Random Forest hyperparameters" showLineNumbers{1}
+from sklearn.model_selection import GridSearchCV
+
+param_grid = [
+    {"n_estimators": [3, 10, 30], "max_features": [2, 4, 6, 8]},
+    {"bootstrap": [False], "n_estimators": [3, 10], "max_features": [2, 3, 4]},
+]
+
+forest_reg = RandomForestRegressor(random_state=42)
+grid_search = GridSearchCV(
+    forest_reg, param_grid, cv=5,
+    scoring="neg_mean_squared_error", return_train_score=True,
+)
+grid_search.fit(housing_prepared, housing_labels)
+
+print(grid_search.best_params_)
+# {'max_features': 8, 'n_estimators': 30}
+```
+
+The first dict tries `3 x 4 = 12` combinations; the second tries `2 x 3 = 6` more
+with `bootstrap` forced to `False` — 18 combinations total, each cross-validated
+5 times, for 90 training runs in one `.fit()` call. `GridSearchCV` defaults to
+`refit=True`, so once it finds the winner it automatically retrains it on the
+*whole* training set — `grid_search.best_estimator_` is ready to use immediately.
+
+You can also treat data-prep choices as hyperparameters — for example, searching
+over whether `add_bedrooms_per_room` should be `True` or `False` inside a custom
+transformer, right alongside `n_estimators`. If the search space gets too big for
+an exhaustive grid, `RandomizedSearchCV` samples a fixed number of random
+combinations instead of trying every single one.
+
+## Analyze the best model and its errors
+
+Before you touch the test set, it's worth digging into *why* the best model works.
+A fitted `RandomForestRegressor` exposes `feature_importances_` — a relative score
+of how much each input contributed to reducing error across the forest:
+
+```python title="Rank features by importance" showLineNumbers{1}
+feature_importances = grid_search.best_estimator_.feature_importances_
+
+extra_attribs = ["rooms_per_hhold", "pop_per_hhold", "bedrooms_per_room"]
+cat_encoder = full_pipeline.named_transformers_["cat"]
+cat_one_hot_attribs = list(cat_encoder.categories_[0])
+attributes = num_attribs + extra_attribs + cat_one_hot_attribs
+
+print(sorted(zip(feature_importances, attributes), reverse=True))
+# [(0.366, 'median_income'), (0.165, 'INLAND'), (0.109, 'pop_per_hhold'), ...]
+```
+
+`median_income` dominates, just as the correlation analysis suggested back in
+**Exploratory Data Analysis & Correlations** — and the engineered
+`pop_per_hhold` ratio beats several raw columns. Meanwhile, `ISLAND` and
+`NEAR BAY` contribute almost nothing. This kind of ranking tells you where to
+focus next: maybe drop the near-useless `ocean_proximity` categories, maybe
+engineer another ratio near the top of the list. You should also look at the
+*specific* districts your model gets most wrong and ask why — outliers, a
+missing feature, or noisy labels are all common culprits.
+
+## Evaluate your system on the test set
+
+This is the moment the whole phase has been building toward: run the **locked-away
+test set** through the fitted `full_pipeline` (`.transform()`, never
+`.fit_transform()` — the test set must never influence fitting), and score the
+final model exactly once.
+
+```python title="Final evaluation - the one and only test-set check" showLineNumbers{1}
+final_model = grid_search.best_estimator_
+
+X_test = strat_test_set.drop("median_house_value", axis=1)
+y_test = strat_test_set["median_house_value"].copy()
+
+X_test_prepared = full_pipeline.transform(X_test)
+final_predictions = final_model.predict(X_test_prepared)
+
+final_rmse = np.sqrt(mean_squared_error(y_test, final_predictions))
+print(round(final_rmse, 0))
+# 47730.0
+```
+
+The test-set RMSE (~$47,730) came out *slightly better* than the cross-validated
+estimate here — but if yours comes out a bit worse, resist the urge to keep
+tweaking hyperparameters until the test-set number looks good. Any change made
+*because of* the test set defeats its entire purpose: it stops being an honest
+estimate of how the model performs on data it has never influenced.
+
+A single RMSE number is a point estimate — it doesn't say how *precise* that
+estimate is. `scipy.stats` can compute a 95% confidence interval for the
+generalization error from the per-instance squared errors:
+
+```python title="A 95% confidence interval for the test RMSE" showLineNumbers{1}
+from scipy import stats
+
+confidence = 0.95
+squared_errors = (final_predictions - y_test) ** 2
+
+interval = np.sqrt(
+    stats.t.interval(
+        confidence, len(squared_errors) - 1,
+        loc=squared_errors.mean(), scale=stats.sem(squared_errors),
+    )
+)
+print(interval.round(0))
+# [45685. 49691.]
+```
+
+That narrow band (roughly $45,685–$49,691) is reassuring — it means the point
+estimate of ~$47,730 isn't a fluke of which rows happened to land in the test
+set. A model whose confidence interval is wide relative to its RMSE deserves
+more scrutiny before you trust the headline number.
+
+:::tip[From the book]
+Géron's test-set discipline, stated plainly: split off the test set with a
+shuffle **before** you explore anything, never train or tune on it, and touch it
+exactly once — right at the end, to report a number you're prepared to stand
+behind. Everything else — cross-validation, grid search, model comparisons — has
+to happen on the training set alone, or the test set stops measuring anything
+real.
+:::
+
+## 🧪 Try It Yourself
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+### Exercise 1 – Fit a preprocessing + model pipeline
+
+<DataCampExercise
+  lang="python"
+  hint={`A \`Pipeline\` runs each step's \`fit_transform()\` in order, then calls \`fit()\` on the final estimator - one \`.fit()\` call does everything.`}
+  code={`# Task: Exercise 1 - Fit a preprocessing + model pipeline
+import numpy as np
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression
+
+X = np.array([[1.0], [2.0], [np.nan], [4.0], [5.0]])
+y = np.array([3.0, 5.0, 7.0, 9.0, 11.0])
+
+model = Pipeline([
+    ("imputer", SimpleImputer(strategy="median")),
+    ("scaler", StandardScaler()),
+    ("lin_reg", LinearRegression()),
+])
+model.___(X, y)   # replace ___ with fit
+print(round(model.predict([[3.0]])[0], 2))
+
+# ── Expected Output ───────────────────────────────────────────
+# 7.0
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression
+
+X = np.array([[1.0], [2.0], [np.nan], [4.0], [5.0]])
+y = np.array([3.0, 5.0, 7.0, 9.0, 11.0])
+
+model = Pipeline([
+    ("imputer", SimpleImputer(strategy="median")),
+    ("scaler", StandardScaler()),
+    ("lin_reg", LinearRegression()),
+])
+model.fit(X, y)
+print(round(model.predict([[3.0]])[0], 2))`}
+  sct={`test_output_contains("7.0")
+success_msg("One fit() call ran the impute, scale, and train steps in order!")`}
+  height={175}
+/>
+
+### Exercise 2 – Cross-validate with cross_val_score
+
+<DataCampExercise
+  lang="python"
+  hint={`\`cross_val_score(..., scoring="neg_mean_squared_error", cv=5)\` returns *negative* MSE - flip the sign before taking the square root.`}
+  code={`# Task: Exercise 2 - Cross-validate with cross_val_score
+import numpy as np
+from sklearn.datasets import make_regression
+from sklearn.model_selection import cross_val_score
+from sklearn.tree import DecisionTreeRegressor
+
+X, y = make_regression(n_samples=200, n_features=4, noise=10.0, random_state=42)
+tree_reg = DecisionTreeRegressor(random_state=42)
+
+scores = cross_val_score(tree_reg, X, y, scoring="neg_mean_squared_error", cv=5)
+rmse_scores = np.sqrt(-___)   # replace ___ with scores
+print(round(rmse_scores.mean(), 2))
+
+# ── Expected Output ───────────────────────────────────────────
+# 50.74
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+from sklearn.datasets import make_regression
+from sklearn.model_selection import cross_val_score
+from sklearn.tree import DecisionTreeRegressor
+
+X, y = make_regression(n_samples=200, n_features=4, noise=10.0, random_state=42)
+tree_reg = DecisionTreeRegressor(random_state=42)
+
+scores = cross_val_score(tree_reg, X, y, scoring="neg_mean_squared_error", cv=5)
+rmse_scores = np.sqrt(-scores)
+print(round(rmse_scores.mean(), 2))`}
+  sct={`test_output_contains("50.74")
+success_msg("A cross-validated RMSE estimate, not just a training-set number!")`}
+  height={175}
+/>
+
+### Exercise 3 – Find the best hyperparameters with GridSearchCV
+
+<DataCampExercise
+  lang="python"
+  hint={`After \`grid_search.fit(X, y)\`, the winning combination is stored in \`grid_search.best_params_\`.`}
+  code={`# Task: Exercise 3 - Find the best hyperparameters with GridSearchCV
+from sklearn.datasets import make_regression
+from sklearn.model_selection import GridSearchCV
+from sklearn.ensemble import RandomForestRegressor
+
+X, y = make_regression(n_samples=150, n_features=4, noise=10.0, random_state=42)
+
+param_grid = {"n_estimators": [5, 10, 20], "max_features": [2, 4]}
+forest_reg = RandomForestRegressor(random_state=42)
+grid_search = GridSearchCV(forest_reg, param_grid, cv=3, scoring="neg_mean_squared_error")
+grid_search.fit(X, y)
+
+print(grid_search.___)   # replace ___ with best_params_
+
+# ── Expected Output ───────────────────────────────────────────
+# {'max_features': 4, 'n_estimators': 10}
+# ──────────────────────────────────────────────────────────────`}
+  solution={`from sklearn.datasets import make_regression
+from sklearn.model_selection import GridSearchCV
+from sklearn.ensemble import RandomForestRegressor
+
+X, y = make_regression(n_samples=150, n_features=4, noise=10.0, random_state=42)
+
+param_grid = {"n_estimators": [5, 10, 20], "max_features": [2, 4]}
+forest_reg = RandomForestRegressor(random_state=42)
+grid_search = GridSearchCV(forest_reg, param_grid, cv=3, scoring="neg_mean_squared_error")
+grid_search.fit(X, y)
+
+print(grid_search.best_params_)`}
+  sct={`test_output_contains("'max_features': 4, 'n_estimators': 10")
+success_msg("GridSearchCV found the best combination without any manual fiddling!")`}
+  height={185}
+/>
+
+## Next
+
+That's the full Géron Chapter 2 roadmap, start to finish. Continue to **Phase 3:
+Supervised Learning - Regression**, where you'll go much deeper into the models
+this page only introduced — starting with the math behind Linear Regression
+itself.

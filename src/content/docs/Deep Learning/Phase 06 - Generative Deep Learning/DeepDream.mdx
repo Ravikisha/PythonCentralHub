@@ -1,0 +1,440 @@
+---
+title: DeepDream
+description: Learn how DeepDream runs a convnet in reverse — using gradient ascent on the input image to amplify the patterns a layer already half-sees, processed across multiple octaves.
+sidebar:
+  order: 456
+---
+
+## What you'll learn
+
+- how DeepDream runs a pretrained convnet **in reverse**: instead of adjusting
+  weights to fit an image, it adjusts the **image** to maximize a layer's
+  activation
+- why this is just gradient *ascent* instead of gradient *descent* — you're
+  climbing toward more activation, not descending toward less loss
+- what an **octave** is, and why processing an image at several scales produces
+  richer, more detailed dreams
+- why lower layers give geometric patterns and higher layers give
+  recognizable (dog-eye, bird-feather) shapes
+
+## Running a convnet backward
+
+Every convnet you've trained so far works one direction: pixels go in, a
+prediction comes out, and training nudges the *weights* to make that prediction
+better. **DeepDream** asks a different question: what if we freeze the weights,
+and instead nudge the *pixels* to make some layer's activation as large as
+possible?
+
+That's it — that's the whole trick. Pick a pretrained convnet (Chollet's book
+uses Inception V3), pick one or more of its layers, and define a loss equal to
+the mean of the squared activations in those layers. Then run **gradient
+ascent** — repeatedly compute the gradient of that loss with respect to the
+*input image*, and add a small step in that direction. Each step nudges the
+image to contain a little more of whatever pattern already excites those layers.
+Because DeepDream starts from a real photograph instead of random noise, the
+effect looks like the image's existing edges and textures are "growing" eyes,
+feathers, and swirls out of themselves — DeepDream's convnet was trained on
+ImageNet, where dogs and birds are hugely overrepresented, so those are the
+patterns that tend to bubble up.
+
+```mermaid title="Gradient ascent on the input image" desc="Instead of updating weights to reduce a loss, DeepDream updates the input image to increase a layer's activation."
+flowchart LR
+  I["Input image"] --> N["Frozen pretrained convnet"]
+  N --> A["Layer activations (e.g. mixed4, mixed5)"]
+  A --> L["Loss = mean(activations^2)"]
+  L -->|"gradient ascent: image += lr * grad"| I
+```
+
+## The loss: maximize activation, not minimize error
+
+In a normal classifier, the loss measures *error* and you push it down. Here,
+the "loss" measures *how strongly a layer is firing* and you push it **up** — so
+every gradient step is `image += learning_rate * gradient`, addition instead of
+subtraction. Chollet's version sums a weighted combination of several layers so
+the dream mixes several kinds of pattern at once:
+
+```python title="DeepDream loss and gradient ascent step (Keras, conceptual)" showLineNumbers{1}
+import tensorflow as tf
+from tensorflow import keras
+
+model = keras.applications.inception_v3.InceptionV3(weights="imagenet", include_top=False)
+
+layer_settings = {
+    "mixed4": 1.0,
+    "mixed5": 1.5,
+    "mixed6": 2.0,
+    "mixed7": 2.5,
+}
+outputs_dict = dict(
+    (layer.name, layer.output) for layer in [model.get_layer(name) for name in layer_settings]
+)
+feature_extractor = keras.Model(inputs=model.inputs, outputs=outputs_dict)
+
+def compute_loss(input_image):
+    features = feature_extractor(input_image)
+    loss = tf.zeros(shape=())
+    for name in features:
+        coeff = layer_settings[name]
+        activation = features[name]
+        # skip border pixels to avoid edge artifacts
+        loss += coeff * tf.reduce_mean(tf.square(activation[:, 2:-2, 2:-2, :]))
+    return loss
+
+@tf.function
+def gradient_ascent_step(image, learning_rate):
+    with tf.GradientTape() as tape:
+        tape.watch(image)
+        loss = compute_loss(image)
+    grads = tf.math.l2_normalize(tape.gradient(loss, image))
+    return loss, image + learning_rate * grads
+```
+
+Two details matter: `tape.watch(image)` is required because `image` isn't a
+trainable weight — it's just a tensor, so TensorFlow needs to be told explicitly
+to track gradients through it. And the gradient is **L2-normalized** before being
+applied, exactly like the filter-visualization trick from earlier convnet
+chapters — this keeps each step a similar size regardless of how large the raw
+gradient happens to be.
+
+## Verifying the mechanism with plain NumPy
+
+You don't need a real convnet to see gradient ascent working. Swap Inception's
+layers for a tiny linear "filter bank" `W`, define the same
+sum-of-squared-activations loss, and the gradient is `2 * Wᵀ(W·image)` — pure
+NumPy, no TensorFlow required, and you can watch the loss climb step by step:
+
+```python title="Gradient ascent on a toy image (verified with plain NumPy)" showLineNumbers{1}
+import numpy as np
+
+np.random.seed(0)
+
+n = 8
+image = np.random.uniform(-1, 1, size=n)          # toy 1D "image"
+W = np.random.uniform(-0.5, 0.5, size=(4, n))     # toy "feature detectors"
+
+def compute_loss(img):
+    activations = W @ img
+    return np.sum(activations ** 2)               # mean/sum of squared activations
+
+def compute_grad(img):
+    activations = W @ img
+    return 2 * (W.T @ activations)                 # gradient of the loss w.r.t. the image
+
+lr = 0.05
+img = image.copy()
+loss_before = compute_loss(img)
+
+for step in range(10):
+    grad = compute_grad(img)
+    grad = grad / (np.sqrt(np.mean(grad ** 2)) + 1e-8)   # L2-normalize, like the book
+    img = img + lr * grad                                 # ASCENT: add, don't subtract
+
+loss_after = compute_loss(img)
+print("loss before:", round(loss_before, 4))
+print("loss after 10 ascent steps:", round(loss_after, 4))
+print("loss increased:", loss_after > loss_before)
+```
+
+```
+loss before: 0.2347
+loss after 10 ascent steps: 4.5998
+loss increased: True
+```
+
+Ten small steps nearly 20x'd the activation — that's the entire DeepDream
+mechanism, minus the convnet and the pretty pixels.
+
+## Octaves: processing the image at multiple scales
+
+A single pass of gradient ascent at one resolution tends to produce fairly
+uniform, small-scale texture. DeepDream instead processes the image at several
+**octaves** — progressively larger scales — running a handful of ascent steps
+at each one, then upscaling and re-injecting the detail that upscaling lost.
+Smaller scales tend to shape broad composition; larger scales add fine texture on
+top of it:
+
+```python title="Building the octave scale sequence" showLineNumbers{1}
+original_shape = (400, 300)   # (height, width) of the real image
+num_octave = 3
+octave_scale = 1.4
+
+successive_shapes = [original_shape]
+for i in range(1, num_octave):
+    shape = tuple(int(dim / (octave_scale ** i)) for dim in original_shape)
+    successive_shapes.append(shape)
+successive_shapes = successive_shapes[::-1]   # smallest first, so we scale UP
+
+print("octave shapes (smallest to largest):", successive_shapes)
+```
+
+```
+octave shapes (smallest to largest): [(204, 153), (285, 214), (400, 300)]
+```
+
+The outer loop runs gradient ascent at `(204, 153)` first, upscales to
+`(285, 214)` and runs more ascent steps, then upscales again to the full
+`(400, 300)` — each upscale re-injects the fine detail that a naive resize would
+have blurred away, so the final image stays sharp instead of pixelated.
+
+## Visualize it
+
+Watch a small noisy pattern get amplified step by step, exactly like repeated
+gradient-ascent steps on a real DeepDream image — with each "octave" boundary
+(dashed line) marking an upscale, after which amplification continues at a
+larger effective scale:
+
+```p5 title="Iterative pattern amplification across octaves" desc="A small pattern is repeatedly nudged (gradient ascent) to amplify its own strongest features. Dashed vertical lines mark octave boundaries, where the pattern is upscaled and amplification continues." height="300"
+let cells = [];
+const GRID = 10;
+let step = 0;
+const stepsPerOctave = 40;
+const totalOctaves = 3;
+
+function regen() {
+  cells = [];
+  for (let i = 0; i < GRID; i++) {
+    const row = [];
+    for (let j = 0; j < GRID; j++) row.push(Math.random() * 0.4 + 0.1);
+    cells.push(row);
+  }
+  step = 0;
+}
+
+function setup() {
+  createCanvas(600, 300);
+  noStroke();
+  textFont("monospace");
+  textAlign(CENTER, CENTER);
+  regen();
+}
+
+function amplify() {
+  // crude "gradient ascent": push each cell toward its local neighborhood peak
+  const next = cells.map(r => r.slice());
+  for (let i = 0; i < GRID; i++) {
+    for (let j = 0; j < GRID; j++) {
+      let neighborMax = cells[i][j];
+      for (const [di, dj] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+        const ni = i + di, nj = j + dj;
+        if (ni >= 0 && ni < GRID && nj >= 0 && nj < GRID) {
+          neighborMax = Math.max(neighborMax, cells[ni][nj]);
+        }
+      }
+      next[i][j] = Math.min(1, cells[i][j] + 0.04 * neighborMax);
+    }
+  }
+  cells = next;
+}
+
+function draw() {
+  background(13, 17, 23);
+
+  const cell = 22, x0 = 190, y0 = 30;
+  for (let i = 0; i < GRID; i++) {
+    for (let j = 0; j < GRID; j++) {
+      const v = cells[i][j];
+      fill(255 * v, 211 * v, 67 + v * 100);
+      rect(x0 + j * cell, y0 + i * cell, cell - 2, cell - 2, 2);
+    }
+  }
+
+  const octave = Math.min(totalOctaves, Math.floor(step / stepsPerOctave) + 1);
+  fill(150, 160, 172);
+  textSize(13);
+  text("octave " + octave + " / " + totalOctaves + " — gradient ascent step " + (step % stepsPerOctave), width / 2, 260);
+
+  const barW = 300, barX = width / 2 - barW / 2, barY = height - 22;
+  fill(40, 44, 52);
+  rect(barX, barY, barW, 8, 4);
+  const frac = step / (stepsPerOctave * totalOctaves);
+  fill(255, 211, 67);
+  rect(barX, barY, barW * Math.min(1, frac), 8, 4);
+  for (let o = 1; o < totalOctaves; o++) {
+    stroke(150, 160, 172);
+    strokeWeight(1);
+    const lx = barX + barW * (o / totalOctaves);
+    line(lx, barY - 6, lx, barY + 14);
+    noStroke();
+  }
+
+  if (frameCount % 3 === 0) {
+    amplify();
+    step++;
+    if (step >= stepsPerOctave * totalOctaves) regen();
+  }
+}
+
+function mousePressed() { regen(); }
+```
+
+:::tip[From the book]
+Chollet's summary is the cleanest way to remember this: "DeepDream consists of
+running a convnet in reverse to generate inputs based on the representations
+learned by the network." He also notes it isn't image-specific at all — "it can
+be done for speech, music, and more," since the mechanism only needs a
+differentiable model and something to maximize.
+:::
+
+## Mini-checkpoint
+
+Why does DeepDream start from a real photograph instead of random noise, unlike
+the filter-visualization technique it's built on?
+
+- Starting from a real image means the gradient-ascent process has existing
+  edges, textures, and shapes to *latch onto* and amplify — the resulting dream
+  distorts and exaggerates elements that were already faintly there, which is
+  what gives DeepDream its "hallucinating on top of reality" look, rather than
+  generating an abstract pattern from scratch.
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Compute the DeepDream-Style Loss
+
+<DataCampExercise
+  lang="python"
+  hint={`The DeepDream loss is the sum (or mean) of the SQUARED activations — use \`activations ** 2\`.`}
+  code={`# Task: Exercise 1 - Compute the DeepDream-Style Loss
+import numpy as np
+
+np.random.seed(0)
+n = 8
+image = np.random.uniform(-1, 1, size=n)
+W = np.random.uniform(-0.5, 0.5, size=(4, n))
+
+def compute_loss(img):
+    activations = W @ img
+    return np.sum(activations ___ 2)    # replace ___ with **
+
+loss = compute_loss(image)
+print("initial loss:", round(loss, 4))
+
+# ── Expected Output ───────────────────────────────────────────
+# initial loss: 0.2347
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+np.random.seed(0)
+n = 8
+image = np.random.uniform(-1, 1, size=n)
+W = np.random.uniform(-0.5, 0.5, size=(4, n))
+
+def compute_loss(img):
+    activations = W @ img
+    return np.sum(activations ** 2)
+
+loss = compute_loss(image)
+print("initial loss:", round(loss, 4))`}
+  sct={`test_output_contains("initial loss: 0.2347")
+success_msg("That's the DeepDream loss — mean/sum of squared activations!")`}
+  height={180}
+/>
+
+### Exercise 2 – Take a Gradient Ascent Step
+
+<DataCampExercise
+  lang="python"
+  hint={`Gradient ASCENT adds the (normalized) gradient — \`img = img + lr * grad\`, not minus.`}
+  code={`# Task: Exercise 2 - Take a Gradient Ascent Step
+import numpy as np
+
+np.random.seed(0)
+n = 8
+image = np.random.uniform(-1, 1, size=n)
+W = np.random.uniform(-0.5, 0.5, size=(4, n))
+
+def compute_loss(img):
+    return np.sum((W @ img) ** 2)
+
+def compute_grad(img):
+    activations = W @ img
+    return 2 * (W.T @ activations)
+
+lr = 0.05
+img = image.copy()
+loss_before = compute_loss(img)
+
+for step in range(10):
+    grad = compute_grad(img)
+    grad = grad / (np.sqrt(np.mean(grad ** 2)) + 1e-8)
+    img = img ___ lr * grad     # replace ___ with +
+
+loss_after = compute_loss(img)
+print("loss increased:", loss_after > loss_before)
+
+# ── Expected Output ───────────────────────────────────────────
+# loss increased: True
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+np.random.seed(0)
+n = 8
+image = np.random.uniform(-1, 1, size=n)
+W = np.random.uniform(-0.5, 0.5, size=(4, n))
+
+def compute_loss(img):
+    return np.sum((W @ img) ** 2)
+
+def compute_grad(img):
+    activations = W @ img
+    return 2 * (W.T @ activations)
+
+lr = 0.05
+img = image.copy()
+loss_before = compute_loss(img)
+
+for step in range(10):
+    grad = compute_grad(img)
+    grad = grad / (np.sqrt(np.mean(grad ** 2)) + 1e-8)
+    img = img + lr * grad
+
+loss_after = compute_loss(img)
+print("loss increased:", loss_after > loss_before)`}
+  sct={`test_output_contains("loss increased: True")
+success_msg("Gradient ASCENT — the loss climbs instead of falling!")`}
+  height={210}
+/>
+
+### Exercise 3 – Build the Octave Shape Sequence
+
+<DataCampExercise
+  lang="python"
+  hint={`Each octave's shape divides the original dimension by \`octave_scale ** i\` — use \`int(dim / (octave_scale ** i))\`.`}
+  code={`# Task: Exercise 3 - Build the Octave Shape Sequence
+original_shape = (400, 300)
+num_octave = 3
+octave_scale = 1.4
+
+successive_shapes = [original_shape]
+for i in range(1, num_octave):
+    shape = tuple(int(dim / (octave_scale ___ i)) for dim in original_shape)   # replace ___ with **
+    successive_shapes.append(shape)
+successive_shapes = successive_shapes[::-1]
+
+print("octave shapes (smallest to largest):", successive_shapes)
+
+# ── Expected Output ───────────────────────────────────────────
+# octave shapes (smallest to largest): [(204, 153), (285, 214), (400, 300)]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`original_shape = (400, 300)
+num_octave = 3
+octave_scale = 1.4
+
+successive_shapes = [original_shape]
+for i in range(1, num_octave):
+    shape = tuple(int(dim / (octave_scale ** i)) for dim in original_shape)
+    successive_shapes.append(shape)
+successive_shapes = successive_shapes[::-1]
+
+print("octave shapes (smallest to largest):", successive_shapes)`}
+  sct={`test_output_contains("octave shapes (smallest to largest): [(204, 153), (285, 214), (400, 300)]")
+success_msg("Smallest to largest — exactly the order DeepDream processes them in!")`}
+  height={200}
+/>
+
+## Next
+
+Continue to **Neural Style Transfer** — instead of amplifying one image's own
+features, blend the *content* of one image with the *style* of another by
+optimizing a combined loss.

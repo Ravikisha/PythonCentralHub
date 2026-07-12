@@ -1,0 +1,528 @@
+---
+title: Sequence-to-Sequence Learning (Machine Translation)
+description: Learn the encoder-decoder pattern behind machine translation, teacher forcing during training, and greedy decoding at inference time.
+sidebar:
+  order: 447
+---
+
+## What you'll learn
+
+- what makes a task **sequence-to-sequence** (translation, summarization, chatbots...)
+- the **encoder-decoder** framing: one model reads, another writes
+- **teacher forcing** — why training and inference feed the decoder differently
+- a **recurrent** (GRU) encoder-decoder, and why it eventually hits a wall
+- a **Transformer** encoder-decoder, and the extra attention block that makes it work
+- **greedy decoding** — generating a translation one token at a time
+
+## What makes a task "sequence-to-sequence"
+
+A sequence-to-sequence (seq2seq) model takes in one sequence and produces a
+different sequence out. It's the pattern behind most of the NLP tasks people
+actually care about:
+
+- **Machine translation** — an English paragraph in, a Spanish paragraph out
+- **Summarization** — a long article in, a short summary out
+- **Question answering** — a question in, an answer out
+- **Chatbots** — a message in, a reply out
+
+Every one of these tasks shares the same two-part shape: an **encoder** that
+reads the source sequence, and a **decoder** that generates the target
+sequence one token at a time — using both what it's generated so far *and*
+whatever the encoder produced.
+
+```mermaid title="The encoder-decoder pattern" desc="The encoder compresses the source sequence into a representation; the decoder uses that representation plus its own past output to generate the next token."
+flowchart LR
+  A["Source sequence<br/>how is the weather today"] --> ENC["Encoder"]
+  ENC --> CTX["Encoded representation<br/>(context)"]
+  CTX --> DEC["Decoder"]
+  START["start token"] --> DEC
+  DEC --> B["Target sequence<br/>que tiempo hace hoy"]
+  DEC -.->|"feed each new token back in"| DEC
+```
+
+## Training vs inference: teacher forcing
+
+During **training**, you already know the correct translation, so the decoder
+gets to see the whole target sentence at once — just shifted by one position.
+At every position *i* it's asked: "given the correct tokens 0...i-1, predict
+token *i*." Feeding the decoder the *real* previous tokens (instead of its own,
+possibly-wrong guesses) is called **teacher forcing**, and it makes training
+dramatically faster and more stable.
+
+```python title="Teacher forcing: shifting the target by one step" showLineNumbers{1}
+import numpy as np
+
+# token ids for "[start] qué tiempo hace hoy [end]"
+target_ids = np.array([2, 7, 4, 9, 3])
+
+decoder_input = target_ids[:-1]    # what the decoder SEES: [start] qué tiempo hace
+decoder_target = target_ids[1:]    # what the decoder must PREDICT: qué tiempo hace hoy [end]
+
+print("Decoder input: ", decoder_input)
+print("Decoder target:", decoder_target)
+```
+
+```
+Decoder input:  [2 7 4 9]
+Decoder target: [7 4 9 3]
+```
+
+At **inference** time, you don't have a target sentence — that's the whole
+point, you're generating one from scratch. So the decoder has to feed its own
+predictions back in as the next step's input, one token at a time, starting
+from just a `[start]` seed token. This mismatch between training (fed the
+truth) and inference (fed its own guesses) is exactly why next-token accuracy
+during training doesn't perfectly predict real translation quality.
+
+## A recurrent (GRU) encoder-decoder
+
+The classic approach: run an RNN over the source sentence and keep only its
+**final hidden state** — that single vector has to summarize the *entire*
+source sentence. Use that vector as the **initial state** of a second RNN
+(the decoder), which then generates the target sentence step by step.
+
+```python title="GRU encoder" showLineNumbers{1}
+from tensorflow import keras
+from tensorflow.keras import layers
+
+vocab_size = 15000
+embed_dim = 256
+latent_dim = 1024
+
+source = keras.Input(shape=(None,), dtype="int64", name="english")
+x = layers.Embedding(vocab_size, embed_dim, mask_zero=True)(source)
+
+# a bidirectional GRU reads the sentence forwards AND backwards, then the
+# two final states are summed into ONE vector that represents the whole sentence
+encoded_source = layers.Bidirectional(
+    layers.GRU(latent_dim), merge_mode="sum")(x)
+```
+
+```python title="GRU decoder + end-to-end model" showLineNumbers{1}
+past_target = keras.Input(shape=(None,), dtype="int64", name="spanish")
+x = layers.Embedding(vocab_size, embed_dim, mask_zero=True)(past_target)
+
+decoder_gru = layers.GRU(latent_dim, return_sequences=True)
+x = decoder_gru(x, initial_state=encoded_source)   # start the decoder from the encoded source
+x = layers.Dropout(0.5)(x)
+target_next_step = layers.Dense(vocab_size, activation="softmax")(x)
+
+seq2seq_rnn = keras.Model([source, past_target], target_next_step)
+seq2seq_rnn.compile(
+    optimizer="rmsprop", loss="sparse_categorical_crossentropy", metrics=["accuracy"]
+)
+```
+
+This works, but it has a real bottleneck: the **entire** source sentence has
+to be squeezed through one fixed-size vector before the decoder ever sees it —
+like translating an entire paragraph purely from memory, without looking back
+at the original once. Long sentences suffer the most, since RNNs gradually
+forget earlier tokens as the sequence grows.
+
+## A Transformer encoder-decoder
+
+The Transformer fixes this by never collapsing the source sentence down to a
+single vector at all — the encoder keeps a **full sequence** of context-aware
+vectors, one per source token (exactly the output of the Transformer encoder
+block from the previous page). The decoder can then look back at *every*
+source token directly, at every generation step, via a second attention block.
+
+```mermaid title="Transformer encoder-decoder for translation" desc="The decoder self-attends over what it has generated so far, then cross-attends over the full sequence of source encodings."
+flowchart TD
+  SRC["Source tokens<br/>(English)"] --> TE["Transformer Encoder"]
+  TE --> ENCOUT["Sequence of source vectors"]
+  TGT["Target tokens so far<br/>(Spanish, shifted right)"] --> SELFATT["Masked self-attention<br/>(can't see future tokens)"]
+  SELFATT --> CROSS["Cross-attention<br/>query = target, key/value = source"]
+  ENCOUT --> CROSS
+  CROSS --> FF["Feed-forward"]
+  FF --> OUT["Predicted next token"]
+```
+
+This decoder block has **two** attention layers instead of one:
+
+1. **Masked self-attention** over the target sequence generated so far — masked
+   so a token can never attend to tokens that come *after* it (a "causal
+   mask"). Without this mask the model could just copy the answer straight
+   from the input and would be useless at inference time, when future tokens
+   don't exist yet.
+2. **Cross-attention** where the *target* sequence is the query, and the
+   *encoded source* sequence plays both the key and value roles — this is the
+   query/key/value framing from the previous page, applied across two
+   different sequences instead of one sequence attending to itself.
+
+```python title="A minimal Transformer decoder block" showLineNumbers{1}
+from tensorflow import keras
+from tensorflow.keras import layers
+import tensorflow as tf
+
+class TransformerDecoder(layers.Layer):
+    def __init__(self, embed_dim, dense_dim, num_heads, **kwargs):
+        super().__init__(**kwargs)
+        self.self_attention = layers.MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim)
+        self.cross_attention = layers.MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim)
+        self.dense_proj = keras.Sequential([
+            layers.Dense(dense_dim, activation="relu"),
+            layers.Dense(embed_dim),
+        ])
+        self.norm1 = layers.LayerNormalization()
+        self.norm2 = layers.LayerNormalization()
+        self.norm3 = layers.LayerNormalization()
+
+    def call(self, target_seq, encoder_outputs, causal_mask):
+        attn1 = self.self_attention(
+            query=target_seq, value=target_seq, key=target_seq, attention_mask=causal_mask)
+        out1 = self.norm1(target_seq + attn1)
+
+        attn2 = self.cross_attention(
+            query=out1, value=encoder_outputs, key=encoder_outputs)   # query != key/value!
+        out2 = self.norm2(out1 + attn2)
+
+        proj = self.dense_proj(out2)
+        return self.norm3(out2 + proj)
+```
+
+## Greedy decoding: generating one token at a time
+
+At inference time there's no target sentence to peek at, so the decoder has
+to *generate* the translation token by token: predict the next token, append
+it to what's been generated so far, feed the whole thing back in, and repeat
+— until it produces an `[end]` token or hits a maximum length. Always picking
+the single most-likely next token (rather than sampling) is called **greedy
+decoding**:
+
+```python title="Greedy decoding loop (toy example)" showLineNumbers{1}
+import numpy as np
+
+# toy vocabulary: 0=[pad], 1=[end], 2=[start], 3="hola", 4="mundo"
+vocab = {0: "[pad]", 1: "[end]", 2: "[start]", 3: "hola", 4: "mundo"}
+
+# pretend these are the decoder's softmax outputs at each generation step
+step_probs = [
+    np.array([0.0, 0.05, 0.05, 0.85, 0.05]),   # step 1: "hola" is most likely
+    np.array([0.0, 0.05, 0.05, 0.05, 0.85]),   # step 2: "mundo" is most likely
+    np.array([0.0, 0.9, 0.03, 0.03, 0.04]),    # step 3: "[end]" is most likely
+]
+
+decoded = []
+for probs in step_probs:
+    next_id = np.argmax(probs)     # greedy: always take the top prediction
+    decoded.append(vocab[next_id])
+    if vocab[next_id] == "[end]":
+        break
+
+print("Decoded sentence:", " ".join(decoded))
+```
+
+```
+Decoded sentence: hola mundo [end]
+```
+
+In a real model, `step_probs` would come from actually calling the trained
+decoder again at every step (re-encoding the growing target sentence each
+time) — which is exactly why naive greedy decoding is slow: the whole
+sentence-so-far gets reprocessed on every new token. Production systems
+instead cache the decoder's internal state so each new step only does the
+work for the *one* new token.
+
+:::tip[From the book]
+Chollet frames the RNN-based translator's core weakness like this: it's "as
+if a human were translating a sentence entirely from memory, without looking
+twice at the source sentence while producing the translation." The
+Transformer decoder never has that problem — its cross-attention block lets
+it glance back at *any* word of the source sentence, at *any* point during
+generation, which is why sequence-to-sequence Transformers hold up so much
+better on long sentences than RNN-based ones.
+:::
+
+## Beam search: hedging against a bad first guess
+
+Greedy decoding has a real weakness: it commits to the single most likely
+token at every step, with no way to undo an early mistake — and sometimes
+the best *full* sentence doesn't start with whichever token scored highest
+in isolation. **Beam search** hedges against that by tracking the *k* most
+promising partial sequences (the "beam width") at every step, instead of
+just one:
+
+1. At step 1, keep the top *k* candidate tokens — not just the single best one.
+2. At every following step, extend each of the *k* kept sequences with every
+   possible next token, score all the resulting sequences, and keep only the
+   overall top *k*.
+3. Repeat until every kept sequence has produced an `[end]` token (or hit a
+   maximum length), then return the highest-scoring complete sequence.
+
+```python title="A tiny beam search over 2 toy decoding steps" showLineNumbers{1}
+import numpy as np
+
+vocab = {0: "[end]", 1: "hola", 2: "mundo", 3: "amigo"}
+
+# probabilities the (toy) decoder assigns at step 1, and then at step 2 --
+# keyed by whichever token was generated right before it
+step1_probs = np.array([0.05, 0.55, 0.35, 0.05])
+step2_probs_given = {
+    "hola":  np.array([0.10, 0.05, 0.80, 0.05]),
+    "mundo": np.array([0.20, 0.10, 0.05, 0.65]),
+}
+
+beam_width = 2
+
+# step 1: keep the top `beam_width` candidates, not just the single best token
+top1_ids = np.argsort(step1_probs)[::-1][:beam_width]
+beams = [([vocab[i]], step1_probs[i]) for i in top1_ids]
+
+# step 2: expand every beam, then keep only the overall top `beam_width` sequences
+candidates = []
+for tokens, score in beams:
+    next_probs = step2_probs_given[tokens[-1]]
+    for i, p in enumerate(next_probs):
+        candidates.append((tokens + [vocab[i]], score * p))
+
+candidates.sort(key=lambda c: c[1], reverse=True)
+best_sequence, best_score = candidates[0]
+print("Best sequence:", " ".join(best_sequence))
+print("Best score:", round(best_score, 4))
+```
+
+```
+Best sequence: hola mundo
+Best score: 0.44
+```
+
+Notice that greedy decoding would have made the exact same choice here — at
+step 1 `"hola"` (0.55) beats `"mundo"` (0.35), and following `"hola"` down to
+`"mundo"` is also the beam search winner. Beam search only pays off on the
+sentences where the single best-looking *first* token doesn't lead anywhere
+good — greedy decoding has no way to back out of that choice once it's made,
+while beam search was still quietly tracking the second-best opening the
+whole time.
+
+:::tip[From the book]
+Géron notes that beam search "works best when the beam is fairly narrow"
+(3 to 10 is typical) — a wider beam explores more possibilities but costs
+proportionally more compute at every step, since you're re-running the
+decoder on *k* sequences instead of one. He also points out the standard way
+to score a real machine translation system's output: the **BLEU score**,
+which compares a model's translations against one or more human reference
+translations by counting matching n-grams. Neither greedy decoding nor beam
+search guarantees the mathematically optimal sequence — both are heuristics
+for avoiding the intractable cost of scoring every possible sentence.
+:::
+
+## Mini-checkpoint
+
+Why does the Transformer decoder need a *causal mask* on its self-attention,
+when the encoder didn't need one at all?
+
+- The encoder is allowed to look at the whole source sentence at once — it's
+  already fully known. The decoder, however, is predicting the target
+  sentence token by token; at inference time, tokens after the current one
+  simply don't exist yet. The causal mask prevents the decoder from "cheating"
+  during training by peeking at future target tokens it won't actually have
+  access to when generating for real.
+
+## Visualize it
+
+Click through the greedy decoding loop from the toy example above, one
+generation step at a time:
+
+```p5 title="Greedy decoding, step by step" desc="The decoder auto-advances one token at a time, growing bars as it picks each winner. Click to skip ahead." height="260"
+let steps = [
+  { token: "[start]", probs: {} },
+  { token: "hola", probs: { hola: 0.85, mundo: 0.05, "[end]": 0.05 } },
+  { token: "mundo", probs: { hola: 0.05, mundo: 0.85, "[end]": 0.05 } },
+  { token: "[end]", probs: { hola: 0.03, mundo: 0.04, "[end]": 0.9 } },
+];
+let step = 0;
+let lastAdvance = 0;
+const STEP_DURATION = 90; // frames spent on each decoding step before auto-advancing
+
+function setup() {
+  createCanvas(600, 260);
+  textFont("monospace");
+  textAlign(CENTER, CENTER);
+}
+
+function draw() {
+  background(13, 17, 23);
+
+  // auto-advance one decoding step at a time, looping back to [start] when done
+  if (frameCount - lastAdvance > STEP_DURATION) {
+    step = step < steps.length - 1 ? step + 1 : 0;
+    lastAdvance = frameCount;
+  }
+  const growth = constrain((frameCount - lastAdvance) / 20, 0, 1);
+
+  fill(107, 169, 221);
+  textSize(13);
+  text("greedy decoding -- click to generate the next token", width / 2, 24);
+
+  // generated sentence so far
+  let sentence = steps.slice(0, step + 1).map((s) => s.token).join(" ");
+  fill(255, 211, 67);
+  textSize(16);
+  text(sentence, width / 2, 60);
+
+  // probability bars for the CURRENT step's candidates (before this token was picked)
+  const current = steps[step];
+  const entries = Object.entries(current.probs);
+  if (entries.length > 0) {
+    fill(230);
+    textSize(11);
+    text("candidates considered at this step:", width / 2, 100);
+
+    const barW = 140;
+    const startX = width / 2 - (entries.length * barW) / 2;
+    for (let i = 0; i < entries.length; i++) {
+      const [word, p] = entries[i];
+      const x = startX + i * barW + barW / 2;
+      const h = p * 120 * growth;
+      const isWinner = word === current.token;
+      const winnerGlow = 0.5 + 0.5 * sin(frameCount * 0.1);
+      fill(
+        isWinner ? color(255, 211 + winnerGlow * 30, 67) : color(75, 139, 190)
+      );
+      noStroke();
+      rect(x - 30, 220 - h, 60, h, 4);
+      fill(230);
+      textSize(11);
+      text(word, x, 235);
+      text(p.toFixed(2), x, 210 - h);
+    }
+  }
+
+  fill(150);
+  textSize(11);
+  text(
+    step < steps.length - 1 ? "click to decode the next token" : "decoding finished -- click to restart",
+    width / 2,
+    height - 12
+  );
+}
+
+function mousePressed() {
+  step = step < steps.length - 1 ? step + 1 : 0;
+  lastAdvance = frameCount;
+}
+```
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Teacher Forcing: Shifting the Target Sequence
+
+<DataCampExercise
+  lang="python"
+  hint={`Slicing \`target_ids[1:]\` drops the first element, shifting everything one step to the left -- exactly the "next token" the decoder must predict.`}
+  code={`# Task: Exercise 1 - Teacher Forcing: Shifting the Target Sequence
+import numpy as np
+
+target_ids = np.array([2, 7, 4, 9, 3])  # [start] qué tiempo hace hoy [end] (ids)
+
+decoder_input = target_ids[:-1]
+decoder_target = target_ids[___]   # replace ___ with 1:
+
+print("Decoder input: ", decoder_input)
+print("Decoder target:", decoder_target)
+
+# ── Expected Output ───────────────────────────────────────────
+# Decoder input:  [2 7 4 9]
+# Decoder target: [7 4 9 3]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+target_ids = np.array([2, 7, 4, 9, 3])
+
+decoder_input = target_ids[:-1]
+decoder_target = target_ids[1:]
+
+print("Decoder input: ", decoder_input)
+print("Decoder target:", decoder_target)`}
+  sct={`test_output_contains("Decoder input:  [2 7 4 9]")
+test_output_contains("Decoder target: [7 4 9 3]")
+success_msg("That one-step shift is the entire trick behind teacher forcing!")`}
+  height={180}
+/>
+
+### Exercise 2 – Greedy Decoding
+
+<DataCampExercise
+  lang="python"
+  hint={`\`np.argmax(probs)\` returns the index of the single highest-probability entry -- exactly what "greedy" means here.`}
+  code={`# Task: Exercise 2 - Greedy Decoding
+import numpy as np
+
+vocab = {0: "[pad]", 1: "[end]", 2: "[start]", 3: "hola", 4: "mundo"}
+step_probs = [
+    np.array([0.0, 0.05, 0.05, 0.85, 0.05]),
+    np.array([0.0, 0.05, 0.05, 0.05, 0.85]),
+    np.array([0.0, 0.9, 0.03, 0.03, 0.04]),
+]
+
+decoded = []
+for probs in step_probs:
+    next_id = np.___(probs)   # replace ___ with argmax
+    decoded.append(vocab[next_id])
+    if vocab[next_id] == "[end]":
+        break
+
+print("Decoded sentence:", " ".join(decoded))
+
+# ── Expected Output ───────────────────────────────────────────
+# Decoded sentence: hola mundo [end]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+vocab = {0: "[pad]", 1: "[end]", 2: "[start]", 3: "hola", 4: "mundo"}
+step_probs = [
+    np.array([0.0, 0.05, 0.05, 0.85, 0.05]),
+    np.array([0.0, 0.05, 0.05, 0.05, 0.85]),
+    np.array([0.0, 0.9, 0.03, 0.03, 0.04]),
+]
+
+decoded = []
+for probs in step_probs:
+    next_id = np.argmax(probs)
+    decoded.append(vocab[next_id])
+    if vocab[next_id] == "[end]":
+        break
+
+print("Decoded sentence:", " ".join(decoded))`}
+  sct={`test_output_contains("Decoded sentence: hola mundo [end]")
+success_msg("One argmax at a time -- that is the entire greedy decoding algorithm!")`}
+  height={190}
+/>
+
+### Exercise 3 – Merging a Bidirectional Encoder's States
+
+<DataCampExercise
+  lang="python"
+  hint={`With merge_mode="sum", a Bidirectional RNN combines its forward and backward final states by adding them element-wise.`}
+  code={`# Task: Exercise 3 - Merging a Bidirectional Encoder's States
+import numpy as np
+
+forward_state = np.array([0.4, -0.2, 0.9])   # final state reading left-to-right
+backward_state = np.array([0.1, 0.3, -0.5])  # final state reading right-to-left
+
+encoded_source = forward_state + ___   # replace ___ with backward_state
+print("Encoded source vector:", encoded_source)
+
+# ── Expected Output ───────────────────────────────────────────
+# Encoded source vector: [0.5 0.1 0.4]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+forward_state = np.array([0.4, -0.2, 0.9])
+backward_state = np.array([0.1, 0.3, -0.5])
+
+encoded_source = forward_state + backward_state
+print("Encoded source vector:", encoded_source)`}
+  sct={`test_output_contains("Encoded source vector: [0.5 0.1 0.4]")
+success_msg("That single vector is all the decoder gets to work with in a plain RNN seq2seq model!")`}
+  height={170}
+/>
+
+## Next
+
+Continue to **Autoencoders** — start Phase 6 by learning how a network can
+compress data through a bottleneck and reconstruct it, the foundation for
+generative deep learning.

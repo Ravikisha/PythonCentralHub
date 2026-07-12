@@ -1,0 +1,413 @@
+---
+title: Deploying to Mobile & Edge with TensorFlow Lite
+description: Shrink a trained model for phones and embedded devices with the TFLite converter, quantization, and on-device inference.
+sidebar:
+  order: 475
+---
+
+## What you'll learn
+
+- why a model that runs fine on a server can be unusable on a phone
+- how the **TFLite converter** turns a SavedModel into a compact `.tflite`
+  **FlatBuffer**, pruning and fusing operations along the way
+- how **quantization** shrinks weights from 32-bit floats down to 8-bit integers —
+  and what accuracy you trade away for it
+- how to run inference on-device with the **TFLite interpreter**
+- why some accelerator chips (like the Edge TPU) require full integer quantization,
+  and how **TensorFlow.js** targets a third runtime — the browser — instead of a phone
+
+## Why mobile needs a different model format
+
+A model that's perfectly fine on a server — gigabytes of weights, 32-bit floats
+everywhere — can be a disaster on a phone: too slow to download, too much RAM, too
+much battery drained per prediction, and a phone that gets uncomfortably warm.
+**TensorFlow Lite (TFLite)** exists to shrink models along three axes at once: smaller
+download and memory footprint, fewer computations per prediction, and support for
+device-specific constraints (some accelerator chips only support integer math).
+
+```mermaid title="From trained model to on-device inference" desc="The TFLite pipeline: train normally, convert to FlatBuffers, optionally quantize, then run with the on-device interpreter."
+flowchart LR
+  A["Train (tf.keras)"] --> B["Export SavedModel"]
+  B --> C["TFLite converter → .tflite FlatBuffer"]
+  C --> D["Quantize weights (float32 → int8)"]
+  D --> E["TFLite interpreter on-device"]
+```
+
+## Converting a model
+
+The converter takes a SavedModel (or a `tf.keras` model directly) and produces a
+`.tflite` file — a **FlatBuffer**, a serialization format designed to be loaded
+straight into RAM with no parsing step, which keeps load time and memory overhead
+low:
+
+```python title="Converting a SavedModel to a .tflite FlatBuffer" showLineNumbers{1}
+import tensorflow as tf
+
+converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_path)
+# or: converter = tf.lite.TFLiteConverter.from_keras_model(model)
+tflite_model = converter.convert()
+
+with open("converted_model.tflite", "wb") as f:
+    f.write(tflite_model)
+```
+
+While it converts, the tool also **optimizes**: it prunes operations that only exist
+for training (like the gradient computation), simplifies expressions (`3*a + 4*a + 5*a`
+becomes `(3+4+5)*a`), and fuses operations where it can — for example, folding a
+Batch Normalization layer directly into the previous layer's multiply-and-add.
+
+## Quantization: fewer bits per weight
+
+Beyond structural optimization, TFLite can also shrink the *numbers themselves*.
+Dropping from 32-bit floats to 16-bit halves the model size for a small accuracy cost.
+Going further — down to 8-bit integers — gives a **4x** size reduction over 32-bit
+floats, using **post-training quantization**: find the largest absolute weight value
+`m`, then map the float range `[-m, +m]` onto the integer range `[-127, +127]`:
+
+```python title="The symmetric quantization math (illustrated with NumPy)" showLineNumbers{1}
+import numpy as np
+
+weights = np.array([-1.5, 0.0, 0.8])
+m = np.max(np.abs(weights))          # 1.5
+
+quantized = np.round(weights / m * 127).astype(int)
+print(quantized)
+# [-127    0   68]
+```
+
+`-1.5` becomes `-127`, `0.0` stays `0`, and `0.8` becomes `68` — because `0.8` is
+about 53% of the way from `0` to `1.5`, and `68` is about 53% of the way from `0` to
+`127`. In TFLite, this one-liner turns the feature on:
+
+```python title="Enabling post-training quantization" showLineNumbers{1}
+converter.optimizations = [tf.lite.Optimize.OPTIMIZE_FOR_SIZE]
+tflite_quant_model = converter.convert()
+```
+
+This shrinks download and storage size dramatically. But by default, the quantized
+weights get converted back to floats *before* they're used in a computation — so it
+doesn't reduce RAM usage or speed up computation, only size on disk. To actually
+speed up inference and cut power use, you also need to quantize the **activations**,
+so every computation happens in integer math end to end. This requires a calibration
+step: TFLite runs a small representative sample of your training data through the
+model to measure the range of activation values it needs to quantize.
+
+:::tip[From the book]
+Quantization is equivalent to adding noise to your weights and activations, so it
+always costs *some* accuracy. If that drop is too large, Géron points to
+**quantization-aware training**: you insert fake quantization operations into the
+model *during* training, so the network learns weights that are already robust to
+the rounding it will face later — and the calibration step happens automatically as
+a side effect of training.
+:::
+
+## Running inference on-device
+
+Once the model is loaded onto the device, the lightweight **TFLite interpreter**
+(not a full TensorFlow install) executes it:
+
+```python title="Loading a .tflite model and running one prediction" showLineNumbers{1}
+import numpy as np
+import tensorflow as tf
+
+interpreter = tf.lite.Interpreter(model_path="converted_model.tflite")
+interpreter.allocate_tensors()
+
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+
+interpreter.set_tensor(input_details[0]["index"], X_new.astype(np.float32))
+interpreter.invoke()
+predictions = interpreter.get_tensor(output_details[0]["index"])
+```
+
+`allocate_tensors()` reserves memory for every tensor in the graph up front — no
+dynamic allocation during inference, which keeps latency predictable, an important
+property on constrained hardware.
+
+:::note[Why some accelerators require full quantization]
+TFLite runs perfectly well on plain CPU with weight-only quantization. But some
+dedicated inference chips — like Google's **Edge TPU**, built specifically for
+low-power on-device ML — only understand integer math at all. For those devices,
+quantizing just the weights isn't optional cost-cutting, it's a hard requirement:
+without also quantizing the activations (via the calibration step above), the model
+simply won't run on that hardware at all.
+:::
+
+## Beyond phones: running in the browser with TensorFlow.js
+
+TFLite targets phones and embedded devices, but there's a third deployment target
+that needs its own lightweight format: a model running directly **inside a user's
+browser tab**, with no server round-trip and no app install. That's what
+**TensorFlow.js** is for — a JavaScript library that loads a converted model and runs
+inference on the client's own CPU or GPU (via WebGL).
+
+This is worth reaching for when:
+
+- your users have **unreliable connectivity** (a hiking or field-work app can't
+  depend on a round-trip to your server for every prediction)
+- you need the **lowest possible latency** — an in-browser game or live camera filter
+  can't afford a network hop per frame
+- the input is **sensitive user data** that should never leave their machine — running
+  inference client-side is a simple form of privacy-by-design
+
+The `tensorflowjs_converter` tool (a separate `pip install tensorflowjs` package)
+turns a SavedModel or Keras model into the TF.js **Layers format**: a `model.json`
+describing the architecture plus a handful of sharded binary weight files, sized so
+a browser can download and cache them efficiently:
+
+```python title="Converting a SavedModel for the browser" showLineNumbers{1}
+# $ pip install tensorflowjs
+# $ tensorflowjs_converter --input_format=tf_saved_model \
+#     saved_model_path/ web_model/
+```
+
+On the page itself, loading and predicting is a handful of lines of JavaScript, not
+Python — a genuinely different runtime from everything else in this phase:
+
+```js title="Running inference in the browser (JavaScript, not Python)" showLineNumbers{1}
+import * as tf from "@tensorflow/tfjs";
+
+const model = await tf.loadLayersModel("https://example.com/web_model/model.json");
+const image = tf.browser.fromPixels(webcamElement);
+const prediction = model.predict(image.expandDims(0));
+```
+
+TFLite and TF.js solve the same underlying problem — get a trained model close to
+where its predictions are consumed — for two different runtimes: a phone's native
+code versus a browser's JavaScript engine. Pick based on where your users actually
+are, not which one sounds more advanced.
+
+## Visualize it
+
+Watch how a handful of continuous weight values collapse onto the same small set of
+8-bit integer buckets — the gaps between buckets are exactly where quantization loses
+information:
+
+```p5 title="Symmetric quantization: float32 weights → int8 buckets" desc="Weights drift continuously and snap live onto the nearest of 255 evenly-spaced integer buckets spanning -m to +m; drag any dot to override it." height="280"
+let m = 1.5;
+let baseWeights = [-1.35, -0.85, -0.3, 0.05, 0.4, 0.9, 1.3];
+let phases = [];
+let manualValue = [];
+let dragging = -1;
+
+function setup() {
+  createCanvas(600, 280);
+  textFont("monospace");
+  textAlign(CENTER, CENTER);
+  for (let i = 0; i < baseWeights.length; i++) {
+    phases.push(random(TWO_PI));
+    manualValue.push(null);
+  }
+}
+
+function xForValue(v) {
+  return map(v, -m, m, 60, width - 60);
+}
+function valueForX(x) {
+  return map(x, 60, width - 60, -m, m);
+}
+
+// The live float value for weight i: either a manual drag override, or a
+// slow sinusoidal drift around its base value - this is what keeps the
+// sketch animating on its own, with no interaction required.
+function currentValue(i) {
+  if (manualValue[i] !== null) return manualValue[i];
+  const drift = sin(frameCount * 0.015 + phases[i]) * 0.32;
+  return constrain(baseWeights[i] + drift, -m, m);
+}
+
+function draw() {
+  background(13, 17, 23);
+
+  // float axis
+  stroke(90);
+  strokeWeight(1);
+  line(60, 90, width - 60, 90);
+  noStroke();
+  fill(150);
+  textSize(11);
+  text("float32 range: -" + m + " ... +" + m, width / 2, 65);
+
+  // int8 axis with tick buckets
+  stroke(60);
+  line(60, 200, width - 60, 200);
+  noStroke();
+  for (let b = -127; b <= 127; b += 127) {
+    let x = map(b, -127, 127, 60, width - 60);
+    stroke(90);
+    line(x, 195, x, 205);
+  }
+  noStroke();
+  fill(150);
+  text("int8 range: -127 ... +127", width / 2, 220);
+
+  // draw each weight + its quantized bucket
+  for (let i = 0; i < baseWeights.length; i++) {
+    let v = currentValue(i);
+    let x = xForValue(v);
+    let q = round((v / m) * 127);
+    let qx = map(q, -127, 127, 60, width - 60);
+
+    stroke(80, 100, 120);
+    strokeWeight(1);
+    line(x, 90, qx, 200);
+
+    noStroke();
+    fill(75, 139, 190);
+    circle(x, 90, 12);
+    fill(255, 211, 67);
+    circle(qx, 200, 10);
+
+    fill(200);
+    textSize(10);
+    text(v.toFixed(2), x, 105);
+    text(q, qx, 215);
+  }
+
+  fill(150);
+  textSize(11);
+  text("Blue = drifting float32 weight   |   Amber = quantized int8 value", width / 2, 250);
+  text("Drag a blue dot to override it - it keeps snapping to the nearest bucket live.", width / 2, 266);
+}
+
+function mousePressed() {
+  for (let i = 0; i < baseWeights.length; i++) {
+    let x = xForValue(currentValue(i));
+    if (dist(mouseX, mouseY, x, 90) < 10) { dragging = i; return; }
+  }
+}
+function mouseDragged() {
+  if (dragging >= 0) {
+    manualValue[dragging] = constrain(valueForX(mouseX), -m, m);
+  }
+}
+function mouseReleased() {
+  // Rebase drifting motion around wherever the dot was dropped, instead of
+  // freezing it in place - the sketch keeps animating after you let go.
+  if (dragging >= 0 && manualValue[dragging] !== null) {
+    baseWeights[dragging] = manualValue[dragging];
+    // Phase chosen so sin(...) = 0 at this exact frame - the drift resumes
+    // from the dropped value with zero jump, instead of snapping away.
+    phases[dragging] = -frameCount * 0.015;
+    manualValue[dragging] = null;
+  }
+  dragging = -1;
+}
+```
+
+## Mini-checkpoint
+
+- `.tflite` = a FlatBuffer: prunes training-only ops, fuses what it can, loads
+  straight into RAM.
+- Post-training **weight** quantization → smaller download, no runtime speedup.
+- Post-training **weight + activation** quantization (needs calibration data) →
+  smaller *and* faster, at the cost of accuracy.
+- If accuracy drops too much, train with fake quantization ops baked in
+  (quantization-aware training) instead of quantizing after the fact.
+- Different runtime, different tool: TFLite → phones/embedded (and full
+  quantization is *required* for chips like the Edge TPU); TensorFlow.js →
+  the browser, no install and no server round-trip.
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Convert a Keras model to TFLite
+
+<DataCampExercise
+  lang="python"
+  hint={`The converter method for an in-memory Keras model is \`TFLiteConverter.from_keras_model(model)\`.`}
+  code={`# Task: Exercise 1 - Convert a Keras model to TFLite
+import tensorflow as tf
+
+model = tf.keras.Sequential([tf.keras.layers.Dense(1, input_shape=(2,))])
+
+converter = tf.lite.TFLiteConverter.___(model)   # replace ___ with from_keras_model
+tflite_model = converter.convert()
+
+print("Converted:", isinstance(tflite_model, bytes))
+
+# ── Expected Output ───────────────────────────────────────────
+# Converted: True
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import tensorflow as tf
+
+model = tf.keras.Sequential([tf.keras.layers.Dense(1, input_shape=(2,))])
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+tflite_model = converter.convert()
+
+print("Converted:", isinstance(tflite_model, bytes))`}
+  sct={`test_output_contains("Converted: True")
+success_msg("That bytes object is the FlatBuffer you'd write straight to a .tflite file!")`}
+  height={150}
+/>
+
+### Exercise 2 – Quantize weights to int8 by hand
+
+<DataCampExercise
+  lang="python"
+  hint={`Symmetric quantization rounds \`weights / m * 127\` to the nearest integer - use \`np.round(...)\`.`}
+  code={`# Task: Exercise 2 - Quantize weights to int8 by hand
+import numpy as np
+
+weights = np.array([-1.5, 0.0, 0.8])
+m = np.max(np.abs(weights))
+
+scaled = weights / m * 127
+quantized = np.___(scaled).astype(int)   # replace ___ with round
+print(quantized)
+
+# ── Expected Output ───────────────────────────────────────────
+# [-127    0   68]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+weights = np.array([-1.5, 0.0, 0.8])
+m = np.max(np.abs(weights))
+
+scaled = weights / m * 127
+quantized = np.round(scaled).astype(int)
+print(quantized)`}
+  sct={`test_output_contains("[-127    0   68]")
+success_msg("Exactly the mapping TFLite's post-training quantization performs on every weight!")`}
+  height={160}
+/>
+
+### Exercise 3 – Dequantize back to floats
+
+<DataCampExercise
+  lang="python"
+  hint={`Reverse the mapping with \`quantized / 127 * m\`, then round for display with \`np.round(..., 2)\`.`}
+  code={`# Task: Exercise 3 - Dequantize back to floats
+import numpy as np
+
+quantized = np.array([-127, 0, 68])
+m = 1.5
+
+recovered = quantized / 127 * m
+print(np.___(recovered, 2))   # replace ___ with round
+
+# ── Expected Output ───────────────────────────────────────────
+# [-1.5  0.   0.8]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+quantized = np.array([-127, 0, 68])
+m = 1.5
+
+recovered = quantized / 127 * m
+print(np.round(recovered, 2))`}
+  sct={`test_output_contains("[-1.5  0.   0.8]")
+success_msg("Notice the tiny gap between -1.5/0/0.8 and the recovered values - that gap is the accuracy TFLite trades away for a 4x smaller model!")`}
+  height={160}
+/>
+
+## Next
+
+Continue to **Limitations and the Future of Deep Learning** — you've now taken model
+training all the way from a custom `GradientTape` loop, through tuning and
+distributing it across GPUs, to serving predictions over a REST API and running the
+same model on a phone in someone's pocket. Before you close this module, it's worth a
+last look at what all of that still can't do.

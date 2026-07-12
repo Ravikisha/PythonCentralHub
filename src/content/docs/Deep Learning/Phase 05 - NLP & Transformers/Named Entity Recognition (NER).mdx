@@ -1,0 +1,249 @@
+---
+title: Named Entity Recognition (NER)
+description: Extract structured entities (names, locations, organizations) from text.
+sidebar:
+  order: 445
+---
+
+## What you'll learn
+
+- what NER is, and how it differs from a "one label per document" task like sentiment analysis
+- the **BIO tagging** scheme used to label multi-word entities
+- why NER is a **sequence labeling** problem — one prediction *per token*, not one per sentence
+- the `TimeDistributed` layer pattern for applying a classifier at every time step
+- why padding tokens must be **masked out** of both training and evaluation
+
+## What NER does
+
+Named Entity Recognition identifies and labels entities in text:
+
+- **PERSON** — "Barack Obama"
+- **ORG** — "OpenAI"
+- **GPE/LOC** — "Paris"
+- **DATE** — "January 31"
+
+```mermaid title="NER as token classification" desc="Every token gets its own tag, predicted by the same sequence model applied at each position."
+flowchart LR
+  subgraph Tokens["Input tokens"]
+    direction LR
+    W1["Barack"] --> W2["Obama"] --> W3["visited"] --> W4["Paris"]
+  end
+  Tokens --> M["Sequence model<br/>(BiLSTM / Transformer)"]
+  M --> Tags
+  subgraph Tags["Predicted tags"]
+    direction LR
+    T1["B-PER"] --> T2["I-PER"] --> T3["O"] --> T4["B-LOC"]
+  end
+```
+
+## NER is sequence labeling, not classification
+
+Sentiment analysis reads a whole review and outputs **one** label for the
+entire sequence — it's a many-to-one problem. NER is different: it has to
+label **every single token**, so it's a many-to-many problem. A four-word
+sentence needs four tags out.
+
+That's a meaningful architectural change. Instead of only keeping the RNN's
+*last* output (as a sentiment model does), an NER model needs
+`return_sequences=True` on every recurrent layer, and it needs to run a
+classifier at *every* time step — not just the final one.
+
+## The BIO tagging scheme
+
+Entities can span multiple tokens ("Barack Obama" is two words, one PERSON
+entity), so a plain per-token label isn't quite enough — you also need to
+know where an entity *starts* versus *continues*. **BIO** tagging solves this
+with a simple prefix convention:
+
+- **B-`<TYPE>`** — the first (Beginning) token of an entity
+- **I-`<TYPE>`** — a token Inside an entity, continuing the previous one
+- **O** — Outside any entity
+
+| Token     | Tag     |
+| --------- | ------- |
+| Barack    | B-PER   |
+| Obama     | I-PER   |
+| visited   | O       |
+| Paris     | B-LOC   |
+
+Notice "Obama" is `I-PER`, not a fresh `B-PER` — the `I-` prefix is what
+tells you it's a continuation of the *same* entity as the token before it,
+not a brand-new one.
+
+## Building the model: TimeDistributed for many-to-many output
+
+The book's approach to sequence-to-sequence prediction (originally shown for
+time series forecasting) applies directly here: keep `return_sequences=True`
+on every recurrent layer, then wrap the output classifier in a
+`TimeDistributed` layer so it runs independently at every time step:
+
+```python title="A token classification model for NER" showLineNumbers{1}
+import tensorflow as tf
+
+vocab_size = 5000
+num_tags = 9   # e.g. O, B-PER, I-PER, B-ORG, I-ORG, B-LOC, I-LOC, B-DATE, I-DATE
+
+model = tf.keras.Sequential([
+    # mask_zero=True tells every downstream layer to ignore <pad> tokens (ID 0)
+    tf.keras.layers.Embedding(vocab_size, 64, mask_zero=True, input_shape=[None]),
+    tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences=True)),
+    tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(num_tags, activation="softmax")),
+])
+
+model.compile(loss="sparse_categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
+model.summary()
+```
+
+A few things worth noticing:
+
+- **`Bidirectional`** wraps the LSTM so it reads the sentence both
+  forwards and backwards — knowing the word *after* "Paris" is just as
+  useful for tagging it as knowing the word before.
+- **`TimeDistributed(Dense(num_tags, "softmax"))`** reshapes the sequence
+  so the same `Dense` layer runs independently at every time step, turning
+  each token's hidden state into a probability distribution over tags.
+- **`mask_zero=True`** on the `Embedding` layer means padding tokens are
+  automatically ignored by every downstream masking-aware layer — including
+  `Bidirectional(LSTM(...))`.
+
+## Why masking matters here more than ever
+
+Sentences in a batch rarely have the same number of tokens, so shorter ones
+get padded with a `<pad>` token (ID 0) to match the longest one. Without
+masking, the model would happily learn to predict a tag for `<pad>` — wasted
+capacity, and it can even drag down accuracy metrics, since a run of correctly
+predicted "O" tags for padding looks like free accuracy that has nothing to
+do with real language understanding. Masking makes sure padded positions
+contribute **zero** to both the loss and any evaluation metric.
+
+## Practical note
+
+In Python, popular tools include **spaCy** (fast, production-ready, ships
+pretrained NER models out of the box) and **Hugging Face Transformers**
+(state-of-the-art accuracy via fine-tuned BERT-style models). You can learn
+the underlying concept — token classification with BIO tags — without
+installing either.
+
+## Mini-checkpoint
+
+What's the difference between NER and sentiment analysis, architecturally?
+
+- Sentiment analysis is many-to-one: the model reads a whole sequence and
+  outputs a single label. NER is many-to-many: it outputs one tag per
+  input token, which is why it needs `return_sequences=True` and a
+  `TimeDistributed` classifier instead of a single final `Dense` layer.
+
+:::tip[From the book]
+Géron's `TimeDistributed(Dense(n))` trick — introduced for sequence-to-sequence
+time series forecasting — is exactly the mechanism production NER systems use
+under the hood: reshape `[batch, time steps, features]` down to
+`[batch × time steps, features]`, apply one shared `Dense` layer, then reshape
+back up. It's applied at every position independently, which is precisely
+what "one tag per token" requires.
+:::
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – BIO Tagging by Lookup
+
+<DataCampExercise
+  lang="python"
+  hint={`\`dict.get(key, default)\` returns the entity tag if the word is known, or "O" (outside any entity) otherwise.`}
+  code={`# Task: Exercise 1 - BIO Tagging by Lookup
+tokens = ["Barack", "Obama", "visited", "Paris"]
+tag_lookup = {"Barack": "B-PER", "Obama": "I-PER", "Paris": "B-LOC"}
+
+tags = [tag_lookup.___(word, "O") for word in tokens]   # replace ___ with get
+print(tags)
+
+# ── Expected Output ───────────────────────────────────────────
+# ['B-PER', 'I-PER', 'O', 'B-LOC']
+# ──────────────────────────────────────────────────────────────`}
+  solution={`tokens = ["Barack", "Obama", "visited", "Paris"]
+tag_lookup = {"Barack": "B-PER", "Obama": "I-PER", "Paris": "B-LOC"}
+
+tags = [tag_lookup.get(word, "O") for word in tokens]
+print(tags)`}
+  sct={`test_output_contains("['B-PER', 'I-PER', 'O', 'B-LOC']")
+success_msg("That is the BIO scheme: B- starts an entity, I- continues it, O means no entity.")`}
+  height={160}
+/>
+
+### Exercise 2 – A Token Classification Model's Output Shape
+
+<DataCampExercise
+  lang="python"
+  hint={`Wrap the final Dense layer in \`tf.keras.layers.TimeDistributed(...)\` so it is applied at every time step, keeping the sequence dimension in the output.`}
+  code={`# Task: Exercise 2 - A Token Classification Model's Output Shape
+import tensorflow as tf
+
+num_tags = 5
+model = tf.keras.Sequential([
+    tf.keras.layers.Embedding(input_dim=200, output_dim=16, mask_zero=True, input_shape=[None]),
+    tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(32, return_sequences=True)),
+    tf.keras.layers.___(tf.keras.layers.Dense(num_tags, activation="softmax")),  # replace ___ with TimeDistributed
+])
+
+print("Output shape:", model.output_shape)
+
+# ── Expected Output ───────────────────────────────────────────
+# Output shape: (None, None, 5)
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import tensorflow as tf
+
+num_tags = 5
+model = tf.keras.Sequential([
+    tf.keras.layers.Embedding(input_dim=200, output_dim=16, mask_zero=True, input_shape=[None]),
+    tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(32, return_sequences=True)),
+    tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(num_tags, activation="softmax")),
+])
+
+print("Output shape:", model.output_shape)`}
+  sct={`test_output_contains("Output shape: (None, None, 5)")
+success_msg("One tag distribution per token, at every position in the sequence!")`}
+  height={190}
+/>
+
+### Exercise 3 – Masking Out Padding Tokens
+
+<DataCampExercise
+  lang="python"
+  hint={`Multiply the per-token loss by a 0/1 mask so padded positions (tag id 0) contribute nothing, then divide by the number of REAL tokens, not the total length.`}
+  code={`# Task: Exercise 3 - Masking Out Padding Tokens
+import numpy as np
+
+tags_true = np.array([1, 2, 3, 0, 0])   # 0 = <pad>
+per_token_loss = np.array([0.3, 0.2, 0.1, 0.9, 0.9])
+
+mask = (tags_true != 0).astype(float)
+masked_loss = per_token_loss * ___   # replace ___ with mask
+print("Real tokens:", int(mask.sum()))
+print("Average loss:", round(masked_loss.sum() / mask.sum(), 2))
+
+# ── Expected Output ───────────────────────────────────────────
+# Real tokens: 3
+# Average loss: 0.2
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+tags_true = np.array([1, 2, 3, 0, 0])
+per_token_loss = np.array([0.3, 0.2, 0.1, 0.9, 0.9])
+
+mask = (tags_true != 0).astype(float)
+masked_loss = per_token_loss * mask
+print("Real tokens:", int(mask.sum()))
+print("Average loss:", round(masked_loss.sum() / mask.sum(), 2))`}
+  sct={`test_output_contains("Real tokens: 3")
+test_output_contains("Average loss: 0.2")
+success_msg("The two padding positions were correctly excluded from the average!")`}
+  height={190}
+/>
+
+## Next
+
+Continue to **The Transformer Architecture** — see how self-attention lets a
+model look directly at any token in the sequence instead of squeezing
+everything through a single recurrent hidden state, the idea behind BERT and
+GPT.

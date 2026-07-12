@@ -1,0 +1,517 @@
+---
+title: The Transformer Architecture
+description: Understand self-attention, multi-head attention, positional encoding, and the Transformer encoder block that replaced RNNs in NLP.
+sidebar:
+  order: 446
+---
+
+## What you'll learn
+
+- why a word's embedding isn't enough — the same word can mean different things
+  depending on its neighbors
+- **self-attention**: how a model re-weights every token using every other token
+- the **query, key, value** framing that all attention mechanisms share
+- **scaled dot-product attention** — the actual formula, in NumPy
+- **multi-head attention**: why one attention pass isn't enough
+- **positional encoding** — how an order-blind mechanism learns word order anyway
+- how these pieces snap together into a **Transformer encoder** block
+- why Transformers overtook RNNs for most sequence-modeling tasks
+
+## The problem: one vector per word isn't enough
+
+A `keras.layers.Embedding` gives every word a fixed vector — "bank" always gets
+the exact same vector, whether you mean a river bank or a savings bank. But
+that's not how language works. Consider:
+
+> "The train left the **station** on time."
+
+Is "station" a train station? Could it be a radio station? The word alone
+doesn't say — you need to look at its neighbors ("train") to know. A smart
+model would give "station" a *different* vector depending on which sentence
+it appears in.
+
+That's exactly what **self-attention** does: it modulates the representation
+of a token using the representations of the other tokens around it, producing
+a **context-aware** vector for every word.
+
+## Self-attention, step by step
+
+For the sentence above, self-attention asks: "how related is 'station' to
+every other word in the sentence?" It computes one **relevancy score** per
+pair of tokens (a plain dot product between their vectors), turns those
+scores into weights with a softmax, and then builds a new "station" vector as
+a **weighted sum** of every word's vector — words that matter more (like
+"train") contribute more.
+
+```mermaid title="Self-attention for one token" desc="Every other token in the sentence gets a relevance score against the word station; the scores become weights for a weighted sum."
+flowchart LR
+  A["the"] --> S["Attention scores<br/>vs station"]
+  B["train"] --> S
+  C["left"] --> S
+  D["the"] --> S
+  E["station"] --> S
+  F["on"] --> S
+  G["time"] --> S
+  S --> W["Softmax weights"]
+  W --> N["New context-aware<br/>station vector"]
+```
+
+Here's that exact idea in plain, runnable NumPy — no TensorFlow needed:
+
+```python title="Self-attention from scratch (NumPy)" showLineNumbers{1}
+import numpy as np
+
+def softmax(x):
+    e = np.exp(x - np.max(x))
+    return e / e.sum()
+
+def self_attention(input_sequence):
+    """input_sequence: shape (seq_len, embed_dim) -- one row per token."""
+    output = np.zeros_like(input_sequence)
+    for i, pivot_vector in enumerate(input_sequence):
+        # 1. score this token against every token (including itself)
+        scores = np.array([np.dot(pivot_vector, vector) for vector in input_sequence])
+        # 2. scale, then softmax turns scores into weights that sum to 1
+        scores = scores / np.sqrt(input_sequence.shape[1])
+        weights = softmax(scores)
+        # 3. weighted sum of every token's vector = new, context-aware vector
+        output[i] = sum(w * v for w, v in zip(weights, input_sequence))
+    return output
+
+# 4 toy word vectors (3 dims each) standing in for "the cat sat down"
+tokens = np.array([
+    [1.0, 0.0, 0.2],
+    [0.9, 0.1, 0.1],
+    [0.1, 0.9, 0.0],
+    [0.0, 0.8, 0.3],
+])
+
+context_aware = self_attention(tokens)
+print("Original 'sat' vector:  ", tokens[2])
+print("Context-aware 'sat':    ", np.round(context_aware[2], 3))
+```
+
+```
+Original 'sat' vector:   [0.1 0.9 0. ]
+Context-aware 'sat':     [0.419 0.523 0.147]
+```
+
+Notice the new "sat" vector has pulled a little away from its original
+position — it now carries a trace of every other word in the sentence,
+weighted by how related each one is.
+
+## Generalizing: query, key, value
+
+So far both sides of every comparison came from the same sentence. But the
+same mechanism works when they come from *different* sequences — that's the
+general **query / key / value** model:
+
+- **query** — what you're looking for
+- **keys** — labels describing what's available
+- **values** — the actual content you'll retrieve
+
+Think of a search engine: you type a **query** ("dogs on the beach"). Every
+photo in the database has **keys** (its tags: "dog," "beach," "party"). The
+engine matches your query against every key, ranks the matches, and returns
+the corresponding **values** (the photos) — weighted by how well they matched.
+
+```
+outputs = sum(values * pairwise_scores(query, keys))
+```
+
+For plain self-attention, query, keys, and values are all the same sequence —
+you're comparing a sentence to itself. Keras exposes this directly through
+`MultiHeadAttention`, which is why you always pass the input three times:
+
+```python title="Multi-head self-attention with Keras" showLineNumbers{1}
+import tensorflow as tf
+
+num_heads = 4
+embed_dim = 256
+
+mha_layer = tf.keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim)
+
+# query, keys, and values are the SAME sequence for plain self-attention
+seq = tf.random.normal([2, 10, embed_dim])   # (batch, seq_len, embed_dim)
+outputs = mha_layer(seq, seq, seq)
+
+print("Output shape:", outputs.shape)
+```
+
+```
+Output shape: (2, 10, 256)
+```
+
+## Multi-head attention: why one pass isn't enough
+
+"Multi-head" means the layer doesn't compute attention once — it splits the
+query/key/value vectors into several smaller, independent chunks (**heads**),
+runs attention separately on each one, then concatenates the results back
+together. Each head is free to learn a different kind of relationship between
+words (one head might track subject-verb agreement, another might track
+"which pronoun refers to which noun"), the same way different filters in a
+CNN learn different visual features.
+
+## Positional encoding: putting order back in
+
+Here's the catch: self-attention on its own is a **set** operation. It's
+completely blind to whether "station" was the first word or the last — scramble
+every word in the sentence and you'd get the exact same pairwise scores. That
+means a plain self-attention layer, by itself, isn't actually a sequence model
+at all.
+
+The fix is **positional encoding**: add a vector that encodes *where* a token
+sits in the sequence directly onto its word embedding, so "position 0" and
+"position 5" look different to the model even for the same word.
+
+```python title="Sinusoidal positional encoding" showLineNumbers{1}
+import numpy as np
+
+def positional_encoding(pos, d_model):
+    i = np.arange(d_model)
+    angle_rates = 1 / np.power(10000, (2 * (i // 2)) / np.float32(d_model))
+    angles = pos * angle_rates
+    pe = np.zeros(d_model)
+    pe[0::2] = np.sin(angles[0::2])
+    pe[1::2] = np.cos(angles[1::2])
+    return pe
+
+print("Position 0:", np.round(positional_encoding(0, 4), 3))
+print("Position 1:", np.round(positional_encoding(1, 4), 3))
+```
+
+```
+Position 0: [0. 1. 0. 1.]
+Position 1: [0.841 0.54  0.01  1.   ]
+```
+
+The original "Attention Is All You Need" paper used this fixed sine/cosine
+trick. A simpler and equally effective alternative — and the one modern Keras
+code tends to use — is a **learned** `PositionalEmbedding`: an ordinary
+`Embedding` layer whose input is just `0, 1, 2, ...` (the position index),
+added on top of the word embedding, so position vectors get trained the same
+way word vectors do.
+
+## The Transformer encoder block
+
+Put self-attention, a small feed-forward network, residual connections, and
+normalization together, and you get one **Transformer encoder** block — a
+reusable unit that ingests a sequence and returns a same-shaped sequence of
+richer, context-aware vectors:
+
+```mermaid title="Transformer encoder block" desc="Self-attention feeds a residual+normalize step, then a feed-forward network feeds a second residual+normalize step."
+flowchart TD
+  I["Input tokens<br/>(word embedding + position)"] --> MHA["Multi-Head Self-Attention"]
+  I --> ADD1["Add (residual)"]
+  MHA --> ADD1
+  ADD1 --> LN1["Layer Normalization"]
+  LN1 --> FF["Feed-forward:<br/>Dense -> ReLU -> Dense"]
+  LN1 --> ADD2["Add (residual)"]
+  FF --> ADD2
+  ADD2 --> LN2["Layer Normalization"]
+  LN2 --> O["Context-aware token vectors"]
+```
+
+```python title="A Transformer encoder as a Keras layer" showLineNumbers{1}
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+
+class TransformerEncoder(layers.Layer):
+    def __init__(self, embed_dim, dense_dim, num_heads, **kwargs):
+        super().__init__(**kwargs)
+        self.attention = layers.MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim)
+        self.dense_proj = keras.Sequential([
+            layers.Dense(dense_dim, activation="relu"),
+            layers.Dense(embed_dim),
+        ])
+        self.layernorm_1 = layers.LayerNormalization()
+        self.layernorm_2 = layers.LayerNormalization()
+
+    def call(self, inputs, mask=None):
+        if mask is not None:
+            mask = mask[:, tf.newaxis, :]
+        attention_output = self.attention(inputs, inputs, attention_mask=mask)
+        proj_input = self.layernorm_1(inputs + attention_output)   # residual + norm
+        proj_output = self.dense_proj(proj_input)
+        return self.layernorm_2(proj_input + proj_output)           # residual + norm
+```
+
+Notice `LayerNormalization`, not `BatchNormalization`: it normalizes each
+*sequence* independently (pooling over the embedding axis), rather than
+pooling statistics across an entire batch — which matters because sequences
+in a batch aren't statistically related to each other the way images are.
+
+## Why Transformers overtook RNNs
+
+| Model              | Word order aware? | Sees every token at once? |
+| ------------------ | :----------------: | :------------------------: |
+| Bag-of-words        | No                  | Yes                         |
+| RNN (LSTM / GRU)     | Yes                 | No — one step at a time     |
+| Self-attention (alone) | No               | Yes                         |
+| Transformer (attention + positional encoding) | Yes | Yes |
+
+An RNN has to squeeze an entire sentence through a single hidden state,
+updated one word at a time — by word 100, it's often forgotten word 1. A
+Transformer's attention layer connects *any* two tokens directly, no matter
+how far apart, in a single step. That also makes it dramatically more
+parallelizable on a GPU: an RNN must finish word *t* before it can start word
+*t + 1*, while every token in a Transformer layer is processed simultaneously.
+
+:::tip[From the book]
+Chollet is careful to point out a subtlety here: self-attention by itself is a
+*set*-processing mechanism — "you could change the order of the tokens in a
+sequence, and you'd get the exact same pairwise attention scores." A
+Transformer only qualifies as a genuine sequence model because of positional
+encoding bolted on top. It's a hybrid: order-agnostic attention, plus
+hand-injected order information — which is precisely what lets it look at
+every word simultaneously (unlike an RNN) while still knowing which word came
+first.
+:::
+
+## Visualize it
+
+Below is the book's own worked example: the sentence *"The train left the
+station on time"*, with attention scores computed between every pair of
+words. Click a row label to make that word the **query** and watch which
+**keys** it attends to most strongly:
+
+```p5 title="Attention weight heatmap" desc="Attention weights pulse and morph as the query token auto-cycles through the sentence. Click a row label to jump to that query." height="400"
+let tokens = ["the", "train", "left", "the", "station", "on", "time"];
+let scores = [
+  [1.0, 0.3, 0.1, 0.5, 0.2, 0.1, 0.1],
+  [0.3, 1.0, 0.6, 0.3, 0.8, 0.1, 0.2],
+  [0.1, 0.6, 1.0, 0.1, 0.6, 0.1, 0.1],
+  [0.5, 0.3, 0.1, 1.0, 0.3, 0.1, 0.2],
+  [0.2, 0.8, 0.6, 0.3, 1.0, 0.2, 0.2],
+  [0.1, 0.1, 0.1, 0.1, 0.2, 1.0, 0.5],
+  [0.1, 0.2, 0.1, 0.2, 0.2, 0.5, 1.0],
+];
+let activeRow = 4; // "station" -- the book's running example
+let gridSize = 260;
+let ox = 150;
+let oy = 60;
+let currentWeights = [];
+const CYCLE = 200; // frames spent on each query token before auto-advancing
+
+function setup() {
+  createCanvas(600, 400);
+  textFont("monospace");
+  textAlign(CENTER, CENTER);
+  currentWeights = softmaxRow(scores[activeRow]);
+}
+
+function softmaxRow(row) {
+  const scaled = row.map((s) => s / Math.sqrt(8));
+  const m = Math.max(...scaled);
+  const exps = scaled.map((s) => Math.exp(s - m));
+  const sum = exps.reduce((a, b) => a + b, 0);
+  return exps.map((e) => e / sum);
+}
+
+function draw() {
+  background(13, 17, 23);
+  const n = tokens.length;
+  const cell = gridSize / n;
+
+  // auto-cycle the query token over time so attention visibly shifts
+  // between different words; clicking a row label still overrides it
+  const cycleIndex = floor(frameCount / CYCLE) % n;
+  if (cycleIndex !== activeRow) {
+    activeRow = cycleIndex;
+  }
+
+  fill(230);
+  textSize(12);
+  text('"The train left the station on time." -- click a row label to change the query', width / 2, 20);
+
+  // ease each cell's weight toward the active row's target -- this is what
+  // makes attention visibly "pulse" between the old and new query token
+  const targetWeights = softmaxRow(scores[activeRow]);
+  for (let c = 0; c < n; c++) {
+    currentWeights[c] = lerp(currentWeights[c], targetWeights[c], 0.05);
+  }
+
+  // a slow, continuous breathing pulse over the attended cells
+  const pulse = 0.85 + 0.15 * sin(frameCount * 0.08);
+
+  for (let r = 0; r < n; r++) {
+    fill(r === activeRow ? color(255, 211, 67) : color(150));
+    textSize(11);
+    text(tokens[r], ox - 55, oy + r * cell + cell / 2);
+
+    for (let c = 0; c < n; c++) {
+      const w = r === activeRow ? currentWeights[c] * pulse : 0.12;
+      fill(75 + w * 160, 139 + w * 60, 190 + w * 30);
+      noStroke();
+      rect(ox + c * cell, oy + r * cell, cell - 2, cell - 2, 3);
+    }
+  }
+
+  fill(150);
+  textSize(11);
+  for (let c = 0; c < n; c++) {
+    text(tokens[c], ox + c * cell + cell / 2, oy + gridSize + 16);
+  }
+
+  fill(255, 211, 67);
+  textSize(12);
+  text('query: "' + tokens[activeRow] + '"  ->  attention weights over all keys', width / 2, oy + gridSize + 42);
+}
+
+function mousePressed() {
+  const n = tokens.length;
+  const cell = gridSize / n;
+  for (let r = 0; r < n; r++) {
+    const y0 = oy + r * cell;
+    if (mouseY > y0 && mouseY < y0 + cell && mouseX < ox - 10) {
+      activeRow = r;
+    }
+  }
+}
+```
+
+## Mini-checkpoint
+
+Why does a Transformer need positional encoding, but an RNN doesn't?
+
+- An RNN processes tokens strictly one at a time, so word order is baked
+  into *how* it computes — token 5 is only ever seen after tokens 1-4.
+  Self-attention looks at all tokens simultaneously and treats them as an
+  unordered set, so without positional encoding it has literally no way to
+  tell "dog bites man" from "man bites dog."
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Scaled Dot-Product Attention Weights
+
+<DataCampExercise
+  lang="python"
+  hint={`Scale the raw scores by dividing by \`np.sqrt(d_k)\` before the softmax -- that's the "scaled" part of scaled dot-product attention.`}
+  code={`# Task: Exercise 1 - Scaled Dot-Product Attention Weights
+import numpy as np
+
+def softmax(x):
+    e = np.exp(x - np.max(x))
+    return e / e.sum()
+
+tokens = ["the", "train", "left", "the", "station", "on", "time"]
+station_scores = np.array([0.2, 0.8, 0.6, 0.3, 1.0, 0.2, 0.2])  # raw dot-product scores vs "station"
+d_k = 8  # dimensionality of the toy word vectors
+
+scaled_scores = station_scores / np.sqrt(___)   # replace ___ with d_k
+weights = softmax(scaled_scores)
+print("Attention weights:", np.round(weights, 3))
+
+# ── Expected Output ───────────────────────────────────────────
+# Attention weights: [0.129 0.16  0.149 0.134 0.171 0.129 0.129]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+def softmax(x):
+    e = np.exp(x - np.max(x))
+    return e / e.sum()
+
+tokens = ["the", "train", "left", "the", "station", "on", "time"]
+station_scores = np.array([0.2, 0.8, 0.6, 0.3, 1.0, 0.2, 0.2])
+d_k = 8
+
+scaled_scores = station_scores / np.sqrt(d_k)
+weights = softmax(scaled_scores)
+print("Attention weights:", np.round(weights, 3))`}
+  sct={`test_output_contains("Attention weights: [0.129 0.16  0.149 0.134 0.171 0.129 0.129]")
+success_msg("That is the exact attention row the book computes for \\"station\\" in \`the train left the station on time\`.")`}
+  height={190}
+/>
+
+### Exercise 2 – Splitting a Vector Across Attention Heads
+
+<DataCampExercise
+  lang="python"
+  hint={`head_dim is just the embedding size divided evenly among the heads -- divide embed_dim by num_heads.`}
+  code={`# Task: Exercise 2 - Splitting a Vector Across Attention Heads
+import numpy as np
+
+embed_dim = 4
+num_heads = 2
+head_dim = embed_dim // ___   # replace ___ with num_heads
+
+vec = np.array([0.5, 1.2, -0.3, 0.8])
+heads = vec.reshape(num_heads, head_dim)
+
+print("Heads shape:", heads.shape)
+print("Head 0:", heads[0])
+print("Head 1:", heads[1])
+
+# ── Expected Output ───────────────────────────────────────────
+# Heads shape: (2, 2)
+# Head 0: [0.5 1.2]
+# Head 1: [-0.3  0.8]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+embed_dim = 4
+num_heads = 2
+head_dim = embed_dim // num_heads
+
+vec = np.array([0.5, 1.2, -0.3, 0.8])
+heads = vec.reshape(num_heads, head_dim)
+
+print("Heads shape:", heads.shape)
+print("Head 0:", heads[0])
+print("Head 1:", heads[1])`}
+  sct={`test_output_contains("Heads shape: (2, 2)")
+success_msg("Each head gets its own independent slice of the embedding to learn from!")`}
+  height={190}
+/>
+
+### Exercise 3 – Sinusoidal Positional Encoding
+
+<DataCampExercise
+  lang="python"
+  hint={`Odd dimensions use cosine -- index the angles array with \`[1::2]\` (every other element, starting at index 1).`}
+  code={`# Task: Exercise 3 - Sinusoidal Positional Encoding
+import numpy as np
+
+def positional_encoding(pos, d_model):
+    i = np.arange(d_model)
+    angle_rates = 1 / np.power(10000, (2 * (i // 2)) / np.float32(d_model))
+    angles = pos * angle_rates
+    pe = np.zeros(d_model)
+    pe[0::2] = np.sin(angles[0::2])
+    pe[1::2] = np.cos(angles[___])  # replace ___ with 1::2
+    return pe
+
+print("Position 0:", np.round(positional_encoding(0, 4), 3))
+print("Position 1:", np.round(positional_encoding(1, 4), 3))
+
+# ── Expected Output ───────────────────────────────────────────
+# Position 0: [0. 1. 0. 1.]
+# Position 1: [0.841 0.54  0.01  1.   ]
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import numpy as np
+
+def positional_encoding(pos, d_model):
+    i = np.arange(d_model)
+    angle_rates = 1 / np.power(10000, (2 * (i // 2)) / np.float32(d_model))
+    angles = pos * angle_rates
+    pe = np.zeros(d_model)
+    pe[0::2] = np.sin(angles[0::2])
+    pe[1::2] = np.cos(angles[1::2])
+    return pe
+
+print("Position 0:", np.round(positional_encoding(0, 4), 3))
+print("Position 1:", np.round(positional_encoding(1, 4), 3))`}
+  sct={`test_output_contains("Position 0: [0. 1. 0. 1.]")
+test_output_contains("Position 1: [0.841 0.54  0.01  1.   ]")
+success_msg("Every position gets its own unique signature, so the model can tell tokens apart by location!")`}
+  height={200}
+/>
+
+## Next
+
+Continue to **Sequence-to-Sequence Learning (Machine Translation)** — see how
+an encoder and a decoder, built from either RNNs or Transformer blocks, work
+together to turn one sequence into another.

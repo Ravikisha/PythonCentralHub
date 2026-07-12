@@ -1,0 +1,299 @@
+---
+title: Advanced GroupBy (transform, filter, named agg)
+description: Go beyond basic groupby - broadcast group stats back with transform, fill missing values with group means, drop whole groups with filter, and run quantile bucket analysis.
+sidebar:
+  order: 16
+---
+
+## Beyond sum and mean
+
+**Grouping and Aggregations** covered the basics: split rows into groups, then
+collapse each group down to one number with `.sum()` or `.agg()`. This page covers
+three things `agg` can't do on its own:
+
+- **`transform`** — compute a per-group statistic, but keep the *original* number of
+  rows (broadcast the group's answer back onto every row in that group).
+- **`filter`** — keep or drop **entire groups** based on a condition, instead of
+  individual rows.
+- Fine control over **`agg`**: naming your output columns, and bucketing continuous
+  values with `qcut` before grouping.
+
+:::tip[From the book]
+McKinney's rule for `transform`: it can return a scalar broadcast to the whole group,
+or an object the same shape as the group — but it must never change the number of
+rows. That's the one constraint that separates `transform` from the more flexible
+(and slower) `apply`.
+:::
+
+## transform: broadcast a group stat back onto every row
+
+`groupby(...).mean()` collapses rows down to one row per group. `transform("mean")`
+computes the same group means, but hands back a Series the same length as your
+original data — perfect for adding a "how does this row compare to its group?" column.
+
+```python title="Broadcast the group mean back" showLineNumbers{1}
+import pandas as pd
+
+sales = pd.DataFrame({
+    "city": ["pune", "pune", "delhi", "delhi", "delhi"],
+    "amount": [100, 200, 150, 120, 300],
+})
+
+sales["city_avg"] = sales.groupby("city")["amount"].transform("mean")
+print(sales)
+```
+
+Every `pune` row now shows `150.0` (the average of 100 and 200); every `delhi` row
+shows `190.0`. This is the "unwrapped" groupby McKinney describes — you can now do
+plain arithmetic like `sales["amount"] - sales["city_avg"]` without a manual merge.
+
+## Filling missing values with the group mean
+
+A common real use of `transform`: instead of filling every missing value with one
+global average, fill it with *that row's own group's* average.
+
+```python title="fillna using a per-group mean" showLineNumbers{1}
+import numpy as np
+
+data = pd.Series(
+    [10.0, np.nan, 30.0, np.nan, 100.0, 200.0],
+    index=["a1", "a2", "a3", "b1", "b2", "b3"],
+)
+group_key = ["a", "a", "a", "b", "b", "b"]
+
+filled = data.groupby(group_key).transform(lambda x: x.fillna(x.mean()))
+print(filled)
+```
+
+`a2` was missing, so it gets group `"a"`'s mean of its *other* values (`(10 + 30) / 2
+= 20.0`) — not the mean of the whole Series.
+
+## Group-weighted average with apply
+
+Some calculations combine two columns *within* a group — like a weighted average,
+where each row contributes according to its own weight. That needs `apply`, since it
+operates on the whole group at once rather than one column transformed independently:
+
+```python title="Group-weighted average" showLineNumbers{1}
+df = pd.DataFrame({
+    "category": ["a", "a", "a", "b", "b"],
+    "score": [80, 90, 70, 60, 95],
+    "weight": [1, 2, 1, 3, 1],
+})
+
+def weighted_avg(group):
+    return np.average(group["score"], weights=group["weight"])
+
+result = df.groupby("category").apply(weighted_avg)
+print(result)
+```
+
+## filter: keep or drop whole groups
+
+`transform` and `apply` change or summarize values *within* a group. `filter` decides
+whether an **entire group** stays in the result at all — pass a function that returns
+`True`/`False` for a group, and only groups where it's `True` survive:
+
+```python title="Drop groups that don't meet a threshold" showLineNumbers{1}
+orders = pd.DataFrame({
+    "key": ["a", "a", "b", "b", "b"],
+    "value": [1, 2, 3, 4, 5],
+})
+
+kept = orders.groupby("key").filter(lambda g: g["value"].sum() > 8)
+print(kept)
+print(len(kept))
+```
+
+Group `"a"` sums to `3` (dropped); group `"b"` sums to `12` (kept) — so only `"b"`'s
+rows remain, and the DataFrame keeps its original columns and row labels, unlike
+`agg` which would collapse each group to one row.
+
+## Named aggregation: control your output column names
+
+Passing plain function names to `agg` on multiple columns gives you generic labels
+like `"amount"` repeated under a hierarchy. **Named aggregation** — passing
+`new_col=("source_col", "func")` keyword arguments — lets you choose the output
+column names directly:
+
+```python title="Named aggregation" showLineNumbers{1}
+orders = pd.DataFrame({
+    "city": ["pune", "pune", "delhi", "delhi"],
+    "amount": [100, 200, 150, 300],
+})
+
+summary = orders.groupby("city").agg(
+    total=("amount", "sum"),
+    orders=("amount", "count"),
+)
+print(summary)
+```
+
+## Bucket analysis: qcut + groupby
+
+`pandas.qcut` slices a continuous column into roughly equal-sized buckets by
+quantile. Feeding that result straight into `groupby` gives you quick "which bucket
+performs best?" answers:
+
+```python title="Quartile buckets, then group stats per bucket" showLineNumbers{1}
+scores = pd.DataFrame({
+    "student": list("ABCDEFGH"),
+    "score": [55, 60, 65, 70, 75, 80, 85, 90],
+})
+
+scores["bucket"] = pd.qcut(scores["score"], 4, labels=["Q1", "Q2", "Q3", "Q4"])
+print(scores.groupby("bucket")["score"].mean())
+```
+
+## Common pitfalls
+
+- `transform` must return either a single scalar (broadcast) or a Series the exact
+  same length as the input group — anything else raises an error.
+- `filter`'s function must return one `True`/`False` per group, not per row — testing
+  `g["value"] > 8` (no `.sum()`) would compare row-by-row and error out.
+- Named aggregation only accepts `new_name=("column", "func")` tuples — you can't mix
+  it with the older `{"col": ["sum", "mean"]}` dict style in the same call.
+
+## Visualize it
+
+```mermaid title="transform vs filter vs agg" desc="agg collapses each group to one row; transform keeps every row but replaces values with a group statistic; filter keeps or drops whole groups unchanged."
+flowchart LR
+  G["groupby('key')"] --> A["agg()<br/>one row per group"]
+  G --> T["transform()<br/>same row count, group stat broadcast back"]
+  G --> F["filter()<br/>whole groups kept or dropped"]
+```
+
+```p5 title="transform broadcasts one number to every row in a group" desc="Each row keeps its own value, but a new column shows the same group average repeated for every row in that group." height="260"
+function setup() {
+  createCanvas(600, 260);
+  textFont("monospace");
+  noLoop();
+}
+function draw() {
+  background(13, 17, 23);
+  const rows = [
+    { city: "pune", amount: 100 },
+    { city: "pune", amount: 200 },
+    { city: "delhi", amount: 150 },
+    { city: "delhi", amount: 120 },
+    { city: "delhi", amount: 300 },
+  ];
+  const avg = { pune: 150, delhi: 190 };
+
+  textSize(11);
+  textAlign(LEFT, CENTER);
+  fill(255, 211, 67);
+  text("city", 40, 20);
+  text("amount", 160, 20);
+  text("city_avg (transform)", 300, 20);
+
+  for (let i = 0; i < rows.length; i++) {
+    const y = 50 + i * 34;
+    const isPune = rows[i].city === "pune";
+    noStroke();
+    fill(isPune ? color(75, 139, 190, 70) : color(255, 211, 67, 50));
+    rect(30, y - 13, 90, 26, 4);
+    fill(230);
+    text(rows[i].city, 40, y);
+
+    fill(255, 255, 255, 14);
+    rect(150, y - 13, 90, 26, 4);
+    fill(230);
+    text(rows[i].amount, 160, y);
+
+    fill(120, 200, 140, 40);
+    rect(290, y - 13, 130, 26, 4);
+    fill(230);
+    text(avg[rows[i].city].toFixed(1), 300, y);
+  }
+}
+```
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Broadcast a Group Mean With transform
+
+<DataCampExercise
+  lang="python"
+  hint={`\`series.groupby(key).transform("mean")\` returns the group mean repeated once per original row.`}
+  code={`# Task: Exercise 1 – Broadcast a Group Mean With transform
+import pandas as pd
+
+df = pd.DataFrame({"city": ["pune", "pune", "delhi"], "amount": [100, 200, 150]})
+df["city_avg"] = df.groupby("city")["amount"].___("mean")   # replace ___ with transform
+print(df["city_avg"][0])
+
+# ── Expected Output ───────────────────────────────────────────
+# 150.0
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import pandas as pd
+
+df = pd.DataFrame({"city": ["pune", "pune", "delhi"], "amount": [100, 200, 150]})
+df["city_avg"] = df.groupby("city")["amount"].transform("mean")
+print(df["city_avg"][0])`}
+  sct={`test_output_contains("150.0")
+success_msg("Group mean broadcast back onto every row in that group!")`}
+  height={140}
+/>
+
+### Exercise 2 – Fill NaN With the Group Mean
+
+<DataCampExercise
+  lang="python"
+  hint={`Inside \`transform\`, \`x.fillna(x.mean())\` fills gaps using only that group's own values.`}
+  code={`# Task: Exercise 2 – Fill NaN With the Group Mean
+import pandas as pd
+import numpy as np
+
+data = pd.Series([10.0, np.nan, 30.0], index=["a1", "a2", "a3"])
+group_key = ["a", "a", "a"]
+filled = data.groupby(group_key).___(lambda x: x.fillna(x.mean()))   # replace ___ with transform
+print(filled["a2"])
+
+# ── Expected Output ───────────────────────────────────────────
+# 20.0
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import pandas as pd
+import numpy as np
+
+data = pd.Series([10.0, np.nan, 30.0], index=["a1", "a2", "a3"])
+group_key = ["a", "a", "a"]
+filled = data.groupby(group_key).transform(lambda x: x.fillna(x.mean()))
+print(filled["a2"])`}
+  sct={`test_output_contains("20.0")
+success_msg("Missing value filled with its own group's mean, 20.0!")`}
+  height={150}
+/>
+
+### Exercise 3 – Drop Whole Groups With filter
+
+<DataCampExercise
+  lang="python"
+  hint={`\`groupby(key).filter(fn)\` keeps every row from a group only if \`fn(group)\` is True for that whole group.`}
+  code={`# Task: Exercise 3 – Drop Whole Groups With filter
+import pandas as pd
+
+df = pd.DataFrame({"key": ["a", "a", "b", "b", "b"], "value": [1, 2, 3, 4, 5]})
+kept = df.groupby("key").___(lambda g: g["value"].sum() > 8)   # replace ___ with filter
+print(len(kept))
+
+# ── Expected Output ───────────────────────────────────────────
+# 3
+# ──────────────────────────────────────────────────────────────`}
+  solution={`import pandas as pd
+
+df = pd.DataFrame({"key": ["a", "a", "b", "b", "b"], "value": [1, 2, 3, 4, 5]})
+kept = df.groupby("key").filter(lambda g: g["value"].sum() > 8)
+print(len(kept))`}
+  sct={`test_output_contains("3")
+success_msg("Group 'a' (sum 3) was dropped; group 'b' (sum 12) survived, keeping 3 rows!")`}
+  height={150}
+/>
+
+## Next
+
+With grouping mastered in depth, continue to **Cross-Tabulation and Pivot Table
+Depth** to summarize two or more categorical columns at once.
+

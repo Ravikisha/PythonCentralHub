@@ -3,6 +3,8 @@ import starlight from "@astrojs/starlight";
 import rehypePrettyCode from "rehype-pretty-code";
 import robotsTxt from "astro-robots-txt";
 import remakeMermaid from "./lib/mermaid/remake.ts";
+import remakeP5 from "./lib/p5/remake.ts";
+import remarkDefaultCodeMeta from "./lib/remark/default-code-meta.ts";
 import markdownIntegration from "@astropub/md";
 
 const site = "https://pythoncentralhub.live";
@@ -10,6 +12,7 @@ const site = "https://pythoncentralhub.live";
 /** @type {import('rehype-pretty-code').Options} */
 import tailwind from "@astrojs/tailwind";
 import sitemap from "@astrojs/sitemap";
+import react from "@astrojs/react";
 
 const options = {
   theme: {
@@ -71,7 +74,7 @@ export default defineConfig({
     syntaxHighlight: false,
     // Disable syntax built-in syntax hightlighting from astro
     rehypePlugins: [[rehypePrettyCode, options], rehypeKatex],
-    remarkPlugins: [remakeMermaid, remarkMath, remarkEscapeBraces],
+    remarkPlugins: [remakeMermaid, remakeP5, remarkDefaultCodeMeta, remarkMath, remarkEscapeBraces],
   },
   integrations: [
     starlight({
@@ -134,6 +137,12 @@ export default defineConfig({
           },
         },
         {
+          label: "Deep Learning",
+          autogenerate: {
+            directory: "Deep Learning",
+          },
+        },
+        {
           label: "Software Testing and Quality",
           autogenerate: {
             directory: "Software Testing and Quality",
@@ -154,6 +163,9 @@ export default defineConfig({
       ],
       customCss: [
         "./src/styles/global.css",
+        "./src/styles/theme.css",
+        "./src/styles/viz.css",
+        "./src/styles/landing.css",
         "./src/styles/poppins.css",
         "./src/styles/atkinson.css",
         "./src/styles/source.css",
@@ -273,17 +285,6 @@ export default defineConfig({
               "Python, Python Projects, Python Central Hub, Python Central Hub Projects, Python Central Hub Tutorials, Python Central Hub Guides, Python Central Hub Reference, Python Tutorial, Python tutorials, Python programming, Learn Python, Python for beginners, Python code examples, Python development, Python projects,Python programming language, Python tips and tricks,Python resources,Python learning platform,Python coding lessons,Python programming for beginners,Python programming exercises,Python coding practice,Python syntax,Python libraries,Python community,Python best practices,Python coding challenges",
           },
         },
-        ...(import.meta.env.VITE_MONETAG
-          ? [
-              {
-                tag: "meta",
-                attrs: {
-                  name: "monetag",
-                  content: `${import.meta.env.VITE_MONETAG}`,
-                },
-              },
-            ]
-          : []),
         {
           tag: "meta",
           attrs: {
@@ -321,21 +322,11 @@ export default defineConfig({
             href: "/rss.xml",
           },
         },
-        // <script src="https://quge5.com/88/tag.min.js" data-zone="217965" async data-cfasync="false"></script>
-        {
-          tag: "script",
-          attrs: {
-            src: "https://quge5.com/88/tag.min.js",
-            "data-zone": "217965",
-            async: true,
-            "data-cfasync": "false"
-          },
-        },
         {
           tag: "meta",
           attrs: {
             name: "theme-color",
-            content: "#e7c384",
+            content: "#4b8bbe",
           },
         },
         ...(import.meta.env.VITE_GOOGLE_ANALYTICS
@@ -362,6 +353,22 @@ export default defineConfig({
             async: true,
             type: "module",
             src: "/scripts/mermaid.js",
+          },
+        },
+        {
+          tag: "script",
+          attrs: {
+            defer: true,
+            src: "/scripts/p5-viz.js",
+          },
+        },
+        {
+          // Adds a "view fullscreen" button to mermaid, p5 and (non-python)
+          // code blocks. ES module — imports the shared editor-fullscreen modal.
+          tag: "script",
+          attrs: {
+            type: "module",
+            src: "/scripts/viz-fullscreen.js",
           },
         },
         ...(import.meta.env.VITE_GOOGLE_ADSENSE
@@ -407,6 +414,7 @@ export default defineConfig({
         }
       ],
     }),
+    react(),
     tailwind({
       applyBaseStyles: false,
     }),
