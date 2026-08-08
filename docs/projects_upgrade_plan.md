@@ -441,3 +441,44 @@ The contract also asks for a quiz, an exercise, a mermaid diagram, Pitfalls and
 Recap on each of the 46 Beginners pages. None of that is done. 18 beginner
 projects still need a demo path, 8 need a display, and 12 need a module that is
 not installed.
+
+---
+
+## 10. Wave 3, second pass — diagrams from code, contract on grounded pages
+
+**`scripts/projects_mermaid.py`** generates a page's call-flow diagram from the
+shipped file's AST: the entry point, the classes and functions it defines, and
+which of them calls which. A hand-drawn diagram goes stale the moment the code
+changes and a generic one ("Input → Process → Output") says nothing; this one
+cannot drift, because it is read from the code each time it is regenerated.
+
+**23 Beginners pages gained a diagram**, taking the tier from 12 to 35 of 46.
+The remaining 10 are straight-line scripts with no functions at all — they get
+no diagram, because inventing a call flow for code that has none would be worse
+than leaving it out.
+
+Section mermaid diagrams: **41 → 62.**
+
+**Two pages now meet the full contract**, authored rather than templated:
+`reversestring` and `tempconv`. They were chosen because their projects run, so
+every claim traces to measured output:
+
+- `reversestring` — Pitfalls covering the O(n²) recursion, `+=` on immutable
+  strings, and that reversal works on code points rather than on what a reader
+  sees; an exercise that times the three approaches and prints **111x, 283x,
+  1,094x, 2,281x** as the string grows from 1,000 to 200,000 characters.
+- `tempconv` — Pitfalls on the missing offset, `9//5` silently converting
+  100 °C to 132 °F, and the difference between handling a *missing* answer and
+  a *malformed* one; an exercise that round-trips the conversion and confirms
+  **−40 is the only temperature where both scales agree**.
+
+Both exercises were run before being written down, which is how the numbers in
+them got there.
+
+### Wave 3 remaining
+
+44 Beginners pages still need Pitfalls, Recap, a quiz and an exercise. That is
+authored work, roughly two pages per session at this quality, and it is gated
+on the projects running: 18 beginner projects still need a demo path, 8 need a
+display, and 12 need a module that is not installed. The order matters — a page
+whose project does not run has nothing honest to put in Recap.
