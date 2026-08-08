@@ -244,8 +244,15 @@ def render_summary(rows: list[dict], numbers: dict) -> list[str]:
     return lines
 
 
-def write_progress(rows: list[dict], numbers: dict) -> None:
+def write_progress(rows: list[dict], numbers: dict, label: str = "") -> None:
+    """Insert today's numbers into the table, not at the end of the file.
+
+    The log carries explanatory notes below the table, so appending blindly
+    puts a data row after the prose and breaks the markdown.
+    """
     stamp = datetime.date.today().isoformat()
+    if label:
+        stamp = f"{stamp} {label}"
     header = ("| Date | Pages | At target | Stale snippets | Page ahead | "
               "Page behind | Pages that run | Figures | Quizzes | Exercises | "
               "mermaid | p5 | Dup orders |")
@@ -258,21 +265,35 @@ def write_progress(rows: list[dict], numbers: dict) -> None:
            f"{numbers['exercises']} | {numbers['mermaid']} | "
            f"{numbers['sketches']} | {numbers['duplicate_orders']} |")
 
-    if os.path.exists(PROGRESS):
-        with open(PROGRESS, encoding="utf-8") as handle:
-            text = handle.read()
-    else:
+    if not os.path.exists(PROGRESS):
         text = ("# Projects section — progress log\n\n"
                 "Regenerate with `python scripts/projects_audit.py "
                 "--progress`. One row per run; the plan is in\n"
                 "`docs/projects_upgrade_plan.md`.\n\n"
                 f"{header}\n{divider}\n")
-    lines = text.rstrip("\n").split("\n")
-    # Replace today's row if it exists, otherwise append.
-    lines = [line for line in lines if not line.startswith(f"| {stamp} |")]
-    lines.append(row)
+    else:
+        with open(PROGRESS, encoding="utf-8") as handle:
+            text = handle.read()
+
+    lines = text.split("\n")
+    try:
+        divider_at = next(index for index, line in enumerate(lines)
+                          if line.startswith("| --- |"))
+    except StopIteration:
+        lines += ["", header, divider]
+        divider_at = len(lines) - 1
+
+    # The table is every consecutive `|` line after the divider.
+    end = divider_at + 1
+    while end < len(lines) and lines[end].startswith("|"):
+        end += 1
+    body = [line for line in lines[divider_at + 1:end]
+            if not line.startswith(f"| {stamp} |")]
+    body.append(row)
+    lines = lines[:divider_at + 1] + body + lines[end:]
+
     with open(PROGRESS, "w", encoding="utf-8", newline="") as handle:
-        handle.write("\n".join(lines) + "\n")
+        handle.write("\n".join(lines).rstrip("\n") + "\n")
     print(f"\nprogress log updated: {os.path.relpath(PROGRESS, REPO)}")
 
 
@@ -286,6 +307,8 @@ def main() -> int:
     parser.add_argument("--progress", action="store_true",
                         help="append today's numbers to the progress log")
     parser.add_argument("--tier", choices=TIERS)
+    parser.add_argument("--label", default="",
+                        help="tag the progress row, e.g. 'wave 2'")
     args = parser.parse_args()
 
     rows = collect()
@@ -318,7 +341,7 @@ def main() -> int:
           f"every target; {remaining} to go.")
 
     if args.progress:
-        write_progress(rows, numbers)
+        write_progress(rows, numbers, args.label)
     return 0
 
 

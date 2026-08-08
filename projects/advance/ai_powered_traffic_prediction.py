@@ -36,6 +36,8 @@ class TrafficPredictor:
             plt.xlabel('Time')
             plt.ylabel('Congestion')
             plt.title('Traffic Congestion')
+            plt.savefig("ai_powered_traffic_prediction.png", dpi=120, bbox_inches="tight")
+            print("saved ai_powered_traffic_prediction.png")
             plt.show()
         else:
             print("matplotlib not available.")

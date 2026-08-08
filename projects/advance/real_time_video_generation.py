@@ -16,6 +16,8 @@ class RealTimeVideoGeneration:
         for i, frame in enumerate(video):
             plt.imshow(frame, cmap='gray')
             plt.title(f'Frame {i+1}')
+            plt.savefig("real_time_video_generation.png", dpi=120, bbox_inches="tight")
+            print("saved real_time_video_generation.png")
             plt.show()
 
 if __name__ == "__main__":

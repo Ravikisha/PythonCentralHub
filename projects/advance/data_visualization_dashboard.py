@@ -10,6 +10,8 @@ class DataVisualizationDashboard:
         plt.title('Data Visualization Dashboard')
         plt.xlabel('Category')
         plt.ylabel('Value')
+        plt.savefig("data_visualization_dashboard.png", dpi=120, bbox_inches="tight")
+        print("saved data_visualization_dashboard.png")
         plt.show()
 
 if __name__ == "__main__":

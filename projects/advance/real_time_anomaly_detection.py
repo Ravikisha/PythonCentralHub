@@ -19,6 +19,8 @@ class RealTimeAnomalyDetection:
         preds = self.predict(data)
         plt.scatter(data[:,0], data[:,1], c=preds)
         plt.title('Real-Time Anomaly Detection Results')
+        plt.savefig("real_time_anomaly_detection.png", dpi=120, bbox_inches="tight")
+        print("saved real_time_anomaly_detection.png")
         plt.show()
 
 if __name__ == "__main__":

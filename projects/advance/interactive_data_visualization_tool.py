@@ -24,6 +24,8 @@ class DataVisualizer:
             plt.xlabel(col1)
             plt.ylabel(col2)
             plt.title(f'{col1} vs {col2}')
+            plt.savefig("interactive_data_visualization_tool.png", dpi=120, bbox_inches="tight")
+            print("saved interactive_data_visualization_tool.png")
             plt.show()
         else:
             print("No data loaded.")

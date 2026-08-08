@@ -61,6 +61,8 @@ class Visualizer:
         plt.ylabel("Temperature (C)")
         plt.title("Temperature Over Time")
         plt.legend()
+        plt.savefig("real_time_weather_forecasting.png", dpi=120, bbox_inches="tight")
+        print("saved real_time_weather_forecasting.png")
         plt.show()
 
 class CLI:

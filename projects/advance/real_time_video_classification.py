@@ -18,6 +18,8 @@ class RealTimeVideoClassification:
         plt.title('Video Frame Classification')
         plt.xlabel('Frame')
         plt.ylabel('Label')
+        plt.savefig("real_time_video_classification.png", dpi=120, bbox_inches="tight")
+        print("saved real_time_video_classification.png")
         plt.show()
 
 if __name__ == "__main__":

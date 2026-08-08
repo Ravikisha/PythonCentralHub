@@ -19,6 +19,8 @@ class IntrusionDetectionSystem:
         preds = self.predict(data)
         plt.scatter(data[:,0], data[:,1], c=preds)
         plt.title('Intrusion Detection Results')
+        plt.savefig("intrusion_detection_system.png", dpi=120, bbox_inches="tight")
+        print("saved intrusion_detection_system.png")
         plt.show()
 
 if __name__ == "__main__":

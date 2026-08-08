@@ -23,6 +23,8 @@ class HandwritingRecognitionSystem:
         print(f"Test accuracy: {score:.2f}")
         plt.imshow(digits.images[1], cmap='gray')
         plt.title(f"Label: {digits.target[1]}")
+        plt.savefig("handwriting_recognition_system.png", dpi=120, bbox_inches="tight")
+        print("saved handwriting_recognition_system.png")
         plt.show()
 
 if __name__ == "__main__":

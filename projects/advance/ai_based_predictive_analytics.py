@@ -35,6 +35,8 @@ class PredictiveAnalytics:
             plt.xlabel('Feature')
             plt.ylabel('Target')
             plt.title('Predictive Analytics')
+            plt.savefig("ai_based_predictive_analytics.png", dpi=120, bbox_inches="tight")
+            print("saved ai_based_predictive_analytics.png")
             plt.show()
         else:
             print("matplotlib not available.")

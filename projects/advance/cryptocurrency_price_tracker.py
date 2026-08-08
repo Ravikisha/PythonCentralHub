@@ -48,6 +48,8 @@ class PriceTracker:
         plt.ylabel('Price (USD)')
         plt.title(f'{self.symbol} Price Over Time')
         plt.legend()
+        plt.savefig("cryptocurrency_price_tracker.png", dpi=120, bbox_inches="tight")
+        print("saved cryptocurrency_price_tracker.png")
         plt.show()
 
 class CLI:

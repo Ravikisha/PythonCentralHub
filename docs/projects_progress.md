@@ -6,7 +6,7 @@ Regenerate with `python scripts/projects_audit.py --progress`. One row per run; 
 | Date | Pages | At target | Stale snippets | Page ahead | Page behind | Pages that run | Figures | Quizzes | Exercises | mermaid | p5 | Dup orders |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 2026-08-08 baseline (wave 0) | 203 | 0 | 570 | — | — | 60 | 0 | 0 | 0 | 41 | 10 | 16 |
-| 2026-08-08 | 203 | 0 | 336 | 42 | 26 | 60 | 0 | 0 | 0 | 41 | 10 | 0 |
+| 2026-08-08 wave 1+2 | 203 | 0 | 336 | 42 | 26 | 61 | 0 | 0 | 0 | 41 | 10 | 0 |
 
 Notes on the columns, so later rows stay comparable:
 
@@ -21,3 +21,6 @@ Notes on the columns, so later rows stay comparable:
   the only kind Starlight can act on. The wave-0 row said 86 because the audit
   counted collisions across folders too; the real figure at baseline was 16,
   and that is what is shown here.
+- **Artifacts** are not a column but are worth recording: the wave-0 run
+  produced 1 artifact from 60 successful runs because every matplotlib project
+  called `plt.show()`. After wave 2 the same run produces **31**.

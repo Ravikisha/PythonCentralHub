@@ -20,6 +20,8 @@ class CustomerSegmentationML:
         plt.title('Customer Segmentation')
         plt.xlabel('Feature 1')
         plt.ylabel('Feature 2')
+        plt.savefig("customer_segmentation_ml.png", dpi=120, bbox_inches="tight")
+        print("saved customer_segmentation_ml.png")
         plt.show()
 
 if __name__ == "__main__":

@@ -13,6 +13,8 @@ class ImageCaptionGenerator:
         img = np.random.rand(64, 64)
         plt.imshow(img, cmap='gray')
         plt.title(self.generate_caption(img))
+        plt.savefig("image_caption_generator.png", dpi=120, bbox_inches="tight")
+        print("saved image_caption_generator.png")
         plt.show()
 
 if __name__ == "__main__":

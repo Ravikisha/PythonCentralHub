@@ -46,6 +46,8 @@ class Drone:
         for obs in self.obstacles:
             ax.scatter(obs[0], obs[1], obs[2], c='k', marker='x', label='Obstacle')
         ax.legend()
+        plt.savefig("autonomous_drone_simulation.png", dpi=120, bbox_inches="tight")
+        print("saved autonomous_drone_simulation.png")
         plt.show()
 
 class CLI:

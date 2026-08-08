@@ -70,6 +70,8 @@ class CLI:
         plt.xlabel('Volatility')
         plt.ylabel('Return')
         plt.colorbar(label='Sharpe Ratio')
+        plt.savefig("financial_portfolio_optimizer.png", dpi=120, bbox_inches="tight")
+        print("saved financial_portfolio_optimizer.png")
         plt.show()
 
 if __name__ == "__main__":

@@ -62,6 +62,8 @@ class CLI:
         plt.xlabel('Episode')
         plt.ylabel('Reward')
         plt.title('Training Rewards')
+        plt.savefig("reinforcement_learning_game_openai_gym.png", dpi=120, bbox_inches="tight")
+        print("saved reinforcement_learning_game_openai_gym.png")
         plt.show()
         print("Playing trained agent...")
         agent.play(5)

@@ -42,6 +42,8 @@ def main():
     plt.ylabel('Y')
     plt.legend()
     plt.grid(True)
+    plt.savefig("autonomous_vehicle_simulation.png", dpi=120, bbox_inches="tight")
+    print("saved autonomous_vehicle_simulation.png")
     plt.show()
     print("\nSimulation complete. Visualization displayed.")
 

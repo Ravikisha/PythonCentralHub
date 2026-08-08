@@ -22,6 +22,8 @@ class RealTimeStockPricePrediction:
         plt.plot(X, preds, label='Predicted')
         plt.legend()
         plt.title('Real-Time Stock Price Prediction')
+        plt.savefig("real_time_stock_price_prediction.png", dpi=120, bbox_inches="tight")
+        print("saved real_time_stock_price_prediction.png")
         plt.show()
 
 if __name__ == "__main__":

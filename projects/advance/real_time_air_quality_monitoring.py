@@ -16,6 +16,8 @@ class RealTimeAirQualityMonitoring:
         plt.title('Real-Time Air Quality Monitoring')
         plt.xlabel('Time')
         plt.ylabel('AQI')
+        plt.savefig("real_time_air_quality_monitoring.png", dpi=120, bbox_inches="tight")
+        print("saved real_time_air_quality_monitoring.png")
         plt.show()
 
     def demo(self):

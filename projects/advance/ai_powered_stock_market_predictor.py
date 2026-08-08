@@ -35,6 +35,8 @@ class StockPredictor:
             plt.xlabel('Days')
             plt.ylabel('Price')
             plt.title('Stock Prices')
+            plt.savefig("ai_powered_stock_market_predictor.png", dpi=120, bbox_inches="tight")
+            print("saved ai_powered_stock_market_predictor.png")
             plt.show()
         else:
             print("matplotlib not available.")

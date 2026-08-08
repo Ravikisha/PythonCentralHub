@@ -17,6 +17,8 @@ class RealTimeObjectTracking:
         plt.xlabel('X')
         plt.ylabel('Y')
         plt.grid(True)
+        plt.savefig("real_time_object_tracking.png", dpi=120, bbox_inches="tight")
+        print("saved real_time_object_tracking.png")
         plt.show()
 
 if __name__ == "__main__":

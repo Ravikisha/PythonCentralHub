@@ -13,7 +13,8 @@ hero:
 import FileCode from '../../../../components/FileCode.astro'
 
 ## Abstract
-Real-Time Sales Forecasting is a Python project that uses machine learning to forecast sales in real-time. The application features data preprocessing, model training, and a CLI interface, demonstrating best practices in analytics and ML.
+Sales are demand plus what the business does to it: a weekend lift and promotions. This project decomposes the series into level, weekly profile and promotion effect rather than fitting raw lags. It recovers the weekly shape and reaches **MAE 15.5 against a same-day-last-week baseline's 28.1, a 45.0% improvement** — and shows why the obvious estimate of promotion lift is wrong by 52 units.
+
 
 ## Prerequisites
 - Python 3.8 or above
@@ -44,45 +45,107 @@ python real_time_sales_forecasting.py
 
 ## Explanation
 ### Key Features
-- **Sales Forecasting:** Forecasts sales in real-time using ML.
-- **Data Preprocessing:** Cleans and prepares sales data.
-- **Error Handling:** Validates inputs and manages exceptions.
-- **CLI Interface:** Interactive command-line usage.
+- **Seasonal decomposition:** level, a seven-day multiplicative profile, and an additive promotion lift, each estimated separately.
+- **A hard baseline:** same-day-last-week already carries the weekly shape, so the 45.0% gain is what decomposition adds on top of seasonality.
+- **Confounding, measured:** the naive promotion lift reads 37.8 units against a true 90.0, because promotions land on whatever weekday they land on. De-seasonalising first brings it to 73.6.
+- **Day-of-week alignment:** the profile is indexed by absolute day, not by position in the window — the bug that silently returns a flat, shifted profile.
+
 
 ### Code Breakdown
-1. **What it imports** (lines 1–3)
-```python title="real_time_sales_forecasting.py" showLineNumbers startLineNumber=1
-import numpy as np
-from sklearn.linear_model import LinearRegression
+1. **What it imports** (lines 9–10)
+```python title="real_time_sales_forecasting.py" showLineNumbers startLineNumber=9
 import matplotlib.pyplot as plt
+import numpy as np
 ```
 
-2. **`RealTimeSalesForecasting` — the class** (lines 5–25)
-```python title="real_time_sales_forecasting.py" showLineNumbers startLineNumber=5
-class RealTimeSalesForecasting:
-    def __init__(self):
-        self.model = LinearRegression()
+2. **`SeasonalForecaster` — the class** (lines 15–78)
+```python title="real_time_sales_forecasting.py" showLineNumbers startLineNumber=15
+class SeasonalForecaster:
+    """Level + multiplicative weekly profile + an additive promotion lift."""
 
-    def train(self, X, y):
-        self.model.fit(X, y)
-        print("Sales forecasting model trained.")
+    def __init__(self, window=56):
+        self.window = window
+        self.history = []
+        self.promotions = []
 
-    def predict(self, X):
-        return self.model.predict(X)
+    def observe(self, value, promoted):
+        self.history.append(float(value))
+        self.promotions.append(bool(promoted))
 
-    def demo(self):
-        X = np.arange(0, 100).reshape(-1, 1)
-        y = 3 * X.flatten() + np.random.normal(0, 20, 100)
-        self.train(X, y)
-        preds = self.predict(X)
-        plt.plot(X, y, label='Actual')
-        plt.plot(X, preds, label='Predicted')
-        plt.legend()
-        plt.title('Real-Time Sales Forecasting')
-        plt.show()
+    def ready(self):
+        return len(self.history) >= 2 * WEEK
+
+    def _profile(self, values, start):
+        """Average ratio to the local level, per day of week.
+
+        # ... 40 more lines in the file ...
+        window = self.history[-self.window:]
+        level, profile = self._profile(window, len(self.history) - len(window))
+        base = level * profile[next_day_index % WEEK]
+        if promoted:
+            base += self._promotion_lift()
+        return max(base, 0.0)
 ```
 
-The file defines 1 top-level symbol in all; the whole thing is above under *Write the Code*.
+3. **`sales_series` — the function** (lines 81–89)
+```python title="real_time_sales_forecasting.py" showLineNumbers startLineNumber=81
+def sales_series(periods=180, seed=1):
+    rng = np.random.default_rng(seed)
+    day = np.arange(periods)
+    weekly = np.array([0.86, 0.90, 0.95, 1.00, 1.15, 1.35, 1.25])
+    level = 220 + 0.35 * day
+    promoted = rng.random(periods) < 0.15
+    values = level * weekly[day % WEEK] + promoted * 90.0
+    values = values + rng.normal(0, 14.0, periods)
+    return np.maximum(values, 0.0), promoted
+```
+
+4. **`replay` — the function** (lines 92–103)
+```python title="real_time_sales_forecasting.py" showLineNumbers startLineNumber=92
+def replay(values, promoted, forecaster):
+    errors, naive_errors, predictions = [], [], []
+    for index, (actual, promo) in enumerate(zip(values, promoted)):
+        predicted = forecaster.forecast(index, promo)
+        naive = (forecaster.history[-WEEK] if len(forecaster.history) >= WEEK
+                 else (forecaster.history[-1] if forecaster.history else actual))
+        if forecaster.ready():
+            errors.append(abs(predicted - actual))
+            naive_errors.append(abs(naive - actual))
+            predictions.append((index, predicted))
+        forecaster.observe(actual, promo)
+    return np.asarray(errors), np.asarray(naive_errors), predictions
+```
+
+5. **`main` — the function** (lines 106–161)
+```python title="real_time_sales_forecasting.py" showLineNumbers startLineNumber=106
+def main():
+    values, promoted = sales_series()
+    forecaster = SeasonalForecaster()
+    errors, naive_errors, predictions = replay(values, promoted, forecaster)
+
+    print("Real-Time Sales Forecasting")
+    print(f"  days replayed            : {len(values)}")
+    print(f"  promoted days            : {int(promoted.sum())}")
+    print(f"  seasonal model MAE       : {errors.mean():.3f}")
+    print(f"  same-day-last-week MAE   : {naive_errors.mean():.3f}")
+    gain = (naive_errors.mean() - errors.mean()) / naive_errors.mean()
+    print(f"  improvement over that    : {gain:.1%}")
+    naive_lift = forecaster._promotion_lift(naive=True)
+    adjusted_lift = forecaster._promotion_lift()
+    print(f"  promotion lift, naive    : {naive_lift:.1f} units/day")
+    print(f"  promotion lift, adjusted : {adjusted_lift:.1f} units/day "
+          f"(true 90.0)")
+    print(f"  naive is off by {abs(90.0 - naive_lift):.1f}, adjusted by "
+    # ... 32 more lines in the file ...
+    axes[1].set_ylabel("multiplier")
+    axes[1].set_title("weekly profile, recovered")
+    figure.tight_layout()
+    plt.savefig("real_time_sales_forecasting.png", dpi=120,
+                bbox_inches="tight")
+    print("saved real_time_sales_forecasting.png")
+```
+
+The file defines 4 top-level symbols in all; the whole thing is above under *Write the Code*.
 
 ## Features
 - **Sales Forecasting:** Real-time data preprocessing and forecasting
@@ -100,9 +163,10 @@ Enhance the project by:
 
 ## Educational Value
 This project teaches:
-- **Analytics:** Real-time sales forecasting and ML
-- **Software Design:** Modular, maintainable code
-- **Error Handling:** Writing robust Python code
+- **Decomposition:** separating level, season and event effects.
+- **Confounded estimates:** why a difference in means is not a causal effect when the groups differ in another way.
+- **Choosing a baseline that is hard to beat**, so the reported gain means something.
+
 
 ## Real-World Applications
 - **E-commerce Platforms**

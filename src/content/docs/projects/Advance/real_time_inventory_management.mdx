@@ -13,7 +13,8 @@ hero:
 import FileCode from '../../../../components/FileCode.astro'
 
 ## Abstract
-Real-Time Inventory Management is a Python project that uses machine learning to manage inventory in real-time. The application features data preprocessing, model training, and a CLI interface, demonstrating best practices in analytics and ML.
+An append-only event log of receipts and sales, replayed to give stock on hand at any moment. Nothing is edited in place, so every stock figure traces back to the movements that produced it. The output that matters is not the stock level but the **stockout count**: at a reorder point of 10 the simulation records 21 stockouts and 130 lost units; at 40 it records **zero**, holding 49.5 units on average instead of 29.5.
+
 
 ## Prerequisites
 - Python 3.8 or above
@@ -44,38 +45,120 @@ python real_time_inventory_management.py
 
 ## Explanation
 ### Key Features
-- **Inventory Management:** Manages inventory in real-time using ML.
-- **Data Preprocessing:** Cleans and prepares inventory data.
-- **Error Handling:** Validates inputs and manages exceptions.
-- **CLI Interface:** Interactive command-line usage.
+- **Event sourcing:** receipts and sales are appended, never overwritten, and stock is always derived — 138 events back every figure in the run.
+- **Reorder policy with lead time:** orders placed at the reorder point arrive three periods later, so in-transit stock has to be counted too.
+- **Poisson demand:** variable demand is what creates stockouts; constant demand would make the policy trivial.
+- **The real trade:** fewer stockouts cost carrying space, and the run prints both sides.
+
 
 ### Code Breakdown
-1. **What it imports** (lines 1–1)
-```python title="real_time_inventory_management.py" showLineNumbers startLineNumber=1
-import pandas as pd
+1. **What it imports** (lines 9–12)
+```python title="real_time_inventory_management.py" showLineNumbers startLineNumber=9
+from collections import defaultdict
+
+import matplotlib.pyplot as plt
+import numpy as np
 ```
 
-2. **`RealTimeInventoryManagement` — the class** (lines 3–18)
-```python title="real_time_inventory_management.py" showLineNumbers startLineNumber=3
-class RealTimeInventoryManagement:
+2. **`InventoryLedger` — the class** (lines 15–44)
+```python title="real_time_inventory_management.py" showLineNumbers startLineNumber=15
+class InventoryLedger:
+    """Append-only events; stock is always derived, never edited in place.
+
+    Storing the events rather than a running total is what makes the history
+    auditable: any stock figure can be traced to the movements that produced it.
+    """
+
     def __init__(self):
-        self.inventory = pd.DataFrame({'item': [], 'quantity': []})
+        self.events = []
 
-    def add_item(self, item, quantity):
-        self.inventory = self.inventory.append({'item': item, 'quantity': quantity}, ignore_index=True)
-        print(f"Added {item} (x{quantity}) to inventory.")
+    def receive(self, period, sku, quantity):
+        self.events.append((period, sku, "receive", int(quantity)))
 
-    def list_inventory(self):
-        print("Current inventory:")
-        print(self.inventory)
+    def sell(self, period, sku, quantity):
+        self.events.append((period, sku, "sell", int(quantity)))
 
-    def demo(self):
-        self.add_item('Widget', 10)
-        self.add_item('Gadget', 5)
-        self.list_inventory()
+    def on_hand(self, sku=None):
+        totals = defaultdict(int)
+        # ... 6 more lines in the file ...
+        for _, item, kind, quantity in self.events:
+            if item != sku:
+                continue
+            level += quantity if kind == "receive" else -quantity
+            out.append(level)
+        return out
 ```
 
-The file defines 1 top-level symbol in all; the whole thing is above under *Write the Code*.
+3. **`ReorderPolicy` — the class** (lines 47–53)
+```python title="real_time_inventory_management.py" showLineNumbers startLineNumber=47
+class ReorderPolicy:
+    """Order `quantity` whenever stock falls to `point`; arrives after `lead`."""
+
+    def __init__(self, point, quantity, lead=3):
+        self.point = point
+        self.quantity = quantity
+        self.lead = lead
+```
+
+4. **`simulate` — the function** (lines 56–82)
+```python title="real_time_inventory_management.py" showLineNumbers startLineNumber=56
+def simulate(policy, periods=120, mean_demand=8.0, seed=0):
+    rng = np.random.default_rng(seed)
+    ledger = InventoryLedger()
+    ledger.receive(0, "WIDGET", policy.quantity)
+    incoming, stockouts, lost = {}, 0, 0
+
+    for period in range(1, periods + 1):
+        if period in incoming:
+            ledger.receive(period, "WIDGET", incoming.pop(period))
+
+        demand = int(rng.poisson(mean_demand))
+        available = ledger.on_hand("WIDGET")
+        sold = min(demand, available)
+        if sold:
+            ledger.sell(period, "WIDGET", sold)
+        if demand > available:
+            stockouts += 1
+            lost += demand - available
+            # ... 3 more lines in the file ...
+            incoming[period + policy.lead] = (
+                incoming.get(period + policy.lead, 0) + policy.quantity)
+
+    return {"ledger": ledger, "stockouts": stockouts, "lost": lost,
+            "events": len(ledger.events),
+            "levels": ledger.history("WIDGET")}
+```
+
+5. **`main` — the function** (lines 85–129)
+```python title="real_time_inventory_management.py" showLineNumbers startLineNumber=85
+def main():
+    print("Real-Time Inventory Management")
+    print(f"  {'reorder point':>14} {'order qty':>10} {'stockouts':>10} "
+          f"{'lost units':>11} {'mean stock':>11}")
+
+    results = []
+    for point in (10, 25, 40, 60):
+        policy = ReorderPolicy(point=point, quantity=60)
+        result = simulate(policy)
+        levels = np.asarray(result["levels"], dtype=float)
+        results.append((point, result, levels.mean()))
+        print(f"  {point:>14} {policy.quantity:>10} "
+              f"{result['stockouts']:>10} {result['lost']:>11} "
+              f"{levels.mean():>11.1f}")
+
+    best = min(results, key=lambda row: (row[1]["stockouts"], row[2]))
+    print(f"\n  fewest stockouts at reorder point {best[0]} "
+          f"({best[1]['stockouts']} over 120 periods)")
+    # ... 21 more lines in the file ...
+    axes[1].set_ylabel("periods with a stockout")
+    axes[1].set_title("the number the policy is chosen on")
+    figure.tight_layout()
+    plt.savefig("real_time_inventory_management.png", dpi=120,
+                bbox_inches="tight")
+    print("saved real_time_inventory_management.png")
+```
+
+The file defines 4 top-level symbols in all; the whole thing is above under *Write the Code*.
 
 ## Features
 - **Inventory Management:** Real-time data preprocessing and management
@@ -93,9 +176,10 @@ Enhance the project by:
 
 ## Educational Value
 This project teaches:
-- **Analytics:** Real-time inventory management and ML
-- **Software Design:** Modular, maintainable code
-- **Error Handling:** Writing robust Python code
+- **Event sourcing:** deriving state from a log rather than storing it, and what that buys in auditability.
+- **Inventory policy:** reorder points, lead times and service level.
+- **Choosing the metric:** stockouts, not average stock, is what the policy is chosen on.
+
 
 ## Real-World Applications
 - **E-commerce Platforms**

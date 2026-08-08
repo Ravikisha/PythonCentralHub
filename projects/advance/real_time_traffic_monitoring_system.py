@@ -33,6 +33,8 @@ class TrafficMonitor:
         plt.ylabel('Traffic Volume')
         plt.title('Traffic Monitoring')
         plt.legend()
+        plt.savefig("real_time_traffic_monitoring_system.png", dpi=120, bbox_inches="tight")
+        print("saved real_time_traffic_monitoring_system.png")
         plt.show()
 
 class CLI:

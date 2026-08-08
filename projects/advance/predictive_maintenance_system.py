@@ -22,6 +22,8 @@ class PredictiveMaintenanceSystem:
         plt.plot(X, preds, label='Predicted')
         plt.legend()
         plt.title('Predictive Maintenance')
+        plt.savefig("predictive_maintenance_system.png", dpi=120, bbox_inches="tight")
+        print("saved predictive_maintenance_system.png")
         plt.show()
 
 if __name__ == "__main__":

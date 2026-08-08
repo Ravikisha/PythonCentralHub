@@ -44,6 +44,8 @@ class TrafficMonitor:
         plt.ylabel('Bytes')
         plt.title('Network Traffic Over Time')
         plt.legend()
+        plt.savefig("advanced_network_traffic_monitor.png", dpi=120, bbox_inches="tight")
+        print("saved advanced_network_traffic_monitor.png")
         plt.show()
 
 class CLI:

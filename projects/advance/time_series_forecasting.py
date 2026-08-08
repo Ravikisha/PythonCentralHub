@@ -22,6 +22,8 @@ class TimeSeriesForecasting:
         plt.plot(X, preds, label='Predicted')
         plt.legend()
         plt.title('Time Series Forecasting')
+        plt.savefig("time_series_forecasting.png", dpi=120, bbox_inches="tight")
+        print("saved time_series_forecasting.png")
         plt.show()
 
 if __name__ == "__main__":

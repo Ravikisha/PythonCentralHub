@@ -39,6 +39,8 @@ class Dashboard:
         plt.ylabel('Price')
         plt.title(f'Stock Price for {self.stock.symbol}')
         plt.legend()
+        plt.savefig("real_time_stock_market_dashboard.png", dpi=120, bbox_inches="tight")
+        print("saved real_time_stock_market_dashboard.png")
         plt.show()
 
 class CLI:

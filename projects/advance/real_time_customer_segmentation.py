@@ -19,6 +19,8 @@ class RealTimeCustomerSegmentation:
         labels = self.predict(data)
         plt.scatter(data[:,0], data[:,1], c=labels)
         plt.title('Real-Time Customer Segmentation')
+        plt.savefig("real_time_customer_segmentation.png", dpi=120, bbox_inches="tight")
+        print("saved real_time_customer_segmentation.png")
         plt.show()
 
 if __name__ == "__main__":

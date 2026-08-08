@@ -38,6 +38,8 @@ def plot_predictions(model, X_test, y_test):
     plt.ylabel('Stock Price')
     plt.title('Stock Price Prediction')
     plt.legend()
+    plt.savefig("stock_price_prediction_model.png", dpi=120, bbox_inches="tight")
+    print("saved stock_price_prediction_model.png")
     plt.show()
 
 def predict(model, X):

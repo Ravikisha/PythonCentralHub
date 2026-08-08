@@ -17,6 +17,8 @@ def plot_data(data):
     plt.xlabel('Index')
     plt.ylabel('Value')
     plt.grid(True)
+    plt.savefig("bioinformatics_data_analysis.png", dpi=120, bbox_inches="tight")
+    print("saved bioinformatics_data_analysis.png")
     plt.show()
 
 def analyze_statistics(data):

@@ -22,6 +22,8 @@ class WeatherForecastingApp:
         plt.plot(X, preds, label='Predicted')
         plt.legend()
         plt.title('Weather Forecasting App')
+        plt.savefig("weather_forecasting_app.png", dpi=120, bbox_inches="tight")
+        print("saved weather_forecasting_app.png")
         plt.show()
 
 if __name__ == "__main__":
