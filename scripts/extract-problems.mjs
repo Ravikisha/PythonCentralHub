@@ -1,0 +1,167 @@
+/**
+ * scripts/extract-problems.mjs — one-off bootstrapper for src/data/dsa/problems.yaml.
+ *
+ * The DSA corpus already references 366 distinct LeetCode problems across 502
+ * hand-written links, and those links carry real information: the problem
+ * number, its title, usually its difficulty, and — from the page the link sits
+ * on — which pattern it belongs to. Retyping all of that into YAML by hand
+ * would be slow and would introduce errors the pages do not have.
+ *
+ * So this script harvests it instead. Output is a seed `problems.yaml` that is
+ * then enriched by hand with sheet membership, company tags and frequency.
+ *
+ * Run:  node scripts/extract-problems.mjs > src/data/dsa/problems.generated.yaml
+ *
+ * This is deliberately NOT part of the build. It runs once; after that
+ * problems.yaml is the source of truth and this script is only kept so the
+ * harvest is reproducible and reviewable.
+ */
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative, sep } from "node:path";
+
+const ROOT = "src/content/docs/DSA with Python";
+
+/** Recursively list every .mdx under a directory. */
+function walk(dir) {
+  const out = [];
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) out.push(...walk(full));
+    else if (entry.endsWith(".mdx")) out.push(full);
+  }
+  return out;
+}
+
+/** "Phase-05-Patterns-Arrays-and-Strings/Sliding Window.mdx" → pattern slug guess. */
+function pageSlug(file) {
+  const rel = relative(ROOT, file).split(sep);
+  const name = rel[rel.length - 1].replace(/\.mdx$/, "");
+  return name
+    .toLowerCase()
+    .replace(/[()]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+const DIFFICULTY = /\b(easy|medium|hard)\b/i;
+
+/**
+ * Table rows look like:
+ *   | 643 | [Maximum Average Subarray I](https://leetcode.com/problems/x/) | Easy | twist |
+ * Inline references look like:
+ *   [Open LC 1 on LeetCode](https://leetcode.com/problems/two-sum/)
+ * Both are matched; the table form yields the richer record.
+ */
+const ROW = /^\|\s*(\d+)\s*\|\s*\[([^\]]+)\]\(https:\/\/leetcode\.com\/problems\/([a-z0-9-]+)\/?\)\s*\|([^|]*)\|/gim;
+const LINK = /\[([^\]]*?)\]\(https:\/\/leetcode\.com\/problems\/([a-z0-9-]+)\/?\)/gi;
+const LC_NUM = /\bLC\s*(\d+)\b/i;
+
+/** slug -> record */
+const bySlug = new Map();
+
+function record(slug, patch) {
+  const existing = bySlug.get(slug) ?? { slug, patterns: new Set(), pages: new Set() };
+  // First non-empty value wins for scalars — table rows are visited first and
+  // carry better titles than inline links.
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined || v === null || v === "") continue;
+    if (k === "patterns" || k === "pages") {
+      for (const item of v) existing[k].add(item);
+    } else if (existing[k] === undefined) {
+      existing[k] = v;
+    }
+  }
+  bySlug.set(slug, existing);
+}
+
+const files = walk(ROOT);
+
+for (const file of files) {
+  const text = readFileSync(file, "utf8");
+  const pattern = pageSlug(file);
+
+  // Prefer the frontmatter `patterns:` list when the page declares one.
+  const fm = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  const declared = [];
+  if (fm) {
+    const block = fm[1].match(/^patterns:\r?\n((?:\s+-\s+.*\r?\n?)+)/m);
+    if (block) {
+      for (const line of block[1].split(/\r?\n/)) {
+        const m = line.match(/^\s+-\s+(.+?)\s*$/);
+        if (m) declared.push(m[1]);
+      }
+    }
+  }
+  // The page's own slug is always a pattern, because it is the one identifier
+  // guaranteed to resolve to a real page. Frontmatter `patterns:` adds aliases
+  // on top of it (a shorter name, or a sub-pattern), it does not replace it —
+  // otherwise companies.yaml and sheets.yaml, which reference page slugs, would
+  // silently match nothing.
+  const patterns = [...new Set([pattern, ...declared])];
+
+  for (const m of text.matchAll(ROW)) {
+    const [, num, title, slug, diffCell] = m;
+    const diff = diffCell.match(DIFFICULTY);
+    record(slug, {
+      lc: Number(num),
+      title: title.trim(),
+      difficulty: diff ? diff[1].toLowerCase() : undefined,
+      premium: /premium/i.test(diffCell) || undefined,
+      patterns,
+      pages: [pattern],
+    });
+  }
+
+  for (const m of text.matchAll(LINK)) {
+    const [, label, slug] = m;
+    const num = label.match(LC_NUM);
+    record(slug, {
+      lc: num ? Number(num[1]) : undefined,
+      patterns,
+      pages: [pattern],
+    });
+  }
+}
+
+// ── emit YAML ──────────────────────────────────────────────────────────────
+
+/** Title-case a slug as a fallback when no link text gave us a real title. */
+const titleFromSlug = (slug) =>
+  slug
+    .split("-")
+    .map((word) => (word.length <= 2 ? word.toUpperCase() : word[0].toUpperCase() + word.slice(1)))
+    .join(" ");
+
+const rows = [...bySlug.values()].sort((a, b) => (a.lc ?? 1e9) - (b.lc ?? 1e9));
+
+const yamlString = (s) => (/^[A-Za-z][A-Za-z0-9 .,'()+-]*$/.test(s) ? s : JSON.stringify(s));
+
+const lines = [
+  "# Generated by scripts/extract-problems.mjs from the links already present in",
+  "# the DSA corpus. Enrich by hand: sheets, companies, freq, variants, prereq.",
+  "# Regenerating overwrites hand edits — diff before replacing.",
+  "",
+];
+
+let missingDifficulty = 0;
+let missingNumber = 0;
+
+for (const r of rows) {
+  if (!r.difficulty) missingDifficulty += 1;
+  if (!r.lc) missingNumber += 1;
+  lines.push(`- lc: ${r.lc ?? "null"}`);
+  lines.push(`  slug: ${r.slug}`);
+  lines.push(`  title: ${yamlString(r.title ?? titleFromSlug(r.slug))}`);
+  lines.push(`  difficulty: ${r.difficulty ?? "medium"}`);
+  if (r.premium) lines.push(`  premium: true`);
+  lines.push(`  patterns: [${[...r.patterns].map(yamlString).join(", ")}]`);
+  lines.push(`  pages: [${[...r.pages].map(yamlString).join(", ")}]`);
+  lines.push("");
+}
+
+process.stdout.write(lines.join("\n"));
+
+process.stderr.write(
+  `harvested ${rows.length} problems from ${files.length} pages ` +
+    `(${missingDifficulty} without a difficulty, ${missingNumber} without an LC number)\n`,
+);

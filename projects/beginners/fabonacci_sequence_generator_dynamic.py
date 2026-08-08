@@ -1,6 +1,21 @@
 # Fabonacci Sequence Generator (Dynamic Programming)
 
-n = int(input("How many numbers that generates?: "))
+
+def ask(prompt, default):
+    """Read a line, or fall back to `default` when nobody is there to type.
+
+    Without this the script raises EOFError as soon as it runs unattended --
+    in a test, a scheduled job, or the documentation build that captures this
+    output. The default is what the demo uses.
+    """
+    try:
+        answer = input(prompt)
+    except EOFError:
+        print(f"{default}   (no input available, using the default)")
+        return default
+    return answer.strip() or default
+
+n = int(ask("How many numbers that generates?: ", "12"))
 dp = [0, 1]
 
 if n <= 0:

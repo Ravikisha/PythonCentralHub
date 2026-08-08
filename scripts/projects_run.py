@@ -75,16 +75,48 @@ def imported(tree: ast.AST) -> set:
 
 
 def calls_input(tree: ast.AST) -> bool:
-    for node in ast.walk(tree):
-        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                and node.func.id == "input"):
-            return True
-    return False
+    """Does this file need someone to type, or does it cope without?
+
+    A script that catches EOFError has a demo path: it runs unattended and
+    uses its stated defaults. Only the ones with no fallback are skipped.
+    """
+    reads = any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "input" for node in ast.walk(tree))
+    if not reads:
+        return False
+    return not handles_eof(tree)
+
+
+def handles_eof(tree: ast.AST) -> bool:
+    return any(
+        isinstance(handler.type, ast.Name) and handler.type.id == "EOFError"
+        or (isinstance(handler.type, ast.Tuple)
+            and any(isinstance(item, ast.Name) and item.id == "EOFError"
+                    for item in handler.type.elts))
+        for node in ast.walk(tree) if isinstance(node, ast.Try)
+        for handler in node.handlers)
+
+
+def _is_generator(node) -> bool:
+    return any(isinstance(inner, (ast.Yield, ast.YieldFrom))
+               for inner in ast.walk(node))
 
 
 def has_unbounded_loop(tree: ast.AST) -> bool:
+    """`while True` that is not inside a generator.
+
+    A generator's `while True` is bounded by whoever consumes it -- islice,
+    a for-loop with a break -- so flagging it would skip perfectly runnable
+    files. Only loops in ordinary code count.
+    """
+    generator_loops = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.While):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))                 and _is_generator(node):
+            for inner in ast.walk(node):
+                if isinstance(inner, ast.While):
+                    generator_loops.add(id(inner))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.While) and id(node) not in generator_loops:
             test = node.test
             if isinstance(test, ast.Constant) and test.value is True:
                 return True
@@ -116,7 +148,9 @@ def classify(path: str) -> dict:
     if calls_input(tree):
         return {"skip": "needs stdin", "detail": "calls input()",
                 "imports": sorted(modules)}
-    if has_unbounded_loop(tree):
+    if has_unbounded_loop(tree) and not handles_eof(tree):
+        # With an EOF fallback the loop exits on the default answer, and the
+        # per-file timeout is the backstop if it does not.
         return {"skip": "unbounded loop", "detail": "while True",
                 "imports": sorted(modules)}
     return {"skip": None, "detail": "", "imports": sorted(modules)}
