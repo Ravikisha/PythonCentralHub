@@ -180,7 +180,9 @@ def classify(path: str) -> dict:
         return {"skip": "needs stdin", "detail": "calls input()",
                 "imports": sorted(modules)}
     blocker = blocking_call(tree)
-    if blocker:
+    # A file that ships a smoke path has already answered this: serving is
+    # behind a flag and the default run finishes.
+    if blocker and "smoke_test" not in code:
         return {"skip": "blocks until stopped", "detail": blocker,
                 "imports": sorted(modules)}
     if has_unbounded_loop(tree) and not handles_eof(tree):

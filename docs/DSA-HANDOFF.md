@@ -872,6 +872,67 @@ it is what text-only readers, screen readers and spam filters look at.
 
 **Backlog after Tier B batch 10: 354 pages.**
 
+### Tutorials, batch 1 of the Tier B treatment — and a correction to my own advice
+
+I had recorded tutorials as "exhausted". **That was wrong as stated.** What was exhausted was
+Tier A — p5 sketches carrying *measured numbers*. Many of the remaining pages have perfectly
+real mechanics that suit a **diagram**, and several of them hide a data-losing trap. Treating
+"no more p5 here" as "nothing more here" would have left those on the floor.
+
+6 diagrams + 4 verified notes, everything measured on CPython 3.14.4:
+
+| Page | Verified |
+| --- | --- |
+| `List / Access the list` | `L[10]` raises `IndexError`; **`L[10:20]` returns `[]`** — slicing never raises. `L[3:1]` is `[]`, `L[-10:99]` is the whole list. Slice assignment changes length: `a[1:3] = [9]` gives 4 elements, `b[1:2] = [7,8,9]` gives 7 |
+| `File Handling / File Methods` | size **immediately after `open()`** on an existing 8-byte file: `r` 8, **`w` 0**, `a` 8, `r+` 8, **`w+` 0**, `x` raises `FileExistsError` |
+| `Operator / Relational Operators` | `f(1) < f(2) < f(0)` called each function **once** (`calls == [1,2,0]`); `1 < 2 > 0` is legal; `False == 0`, `True == 1`, `1 in [True]` all True |
+| `Set / Set Methods` | `union` returns a set and leaves the original; **`update` returns `None`** and mutates |
+| `Threading / Daemon Threads` | same worker: `daemon=True` printed **nothing** (killed at shutdown), `daemon=False` printed `FINISHED` |
+| `Tuple / Unpack the Tuple` | `a,*rest=(1,)` gives `rest == []`; wrong arity raises `ValueError` with the counts |
+
+**Three of these are data-loss traps, not curiosities.**
+
+- **`open(path, "w")` empties the file before you write a byte.** Measured size 0 straight after
+  the call. A program that opens in `w` and then raises while computing the content has already
+  destroyed the original.
+- **`s = s.update(x)` sets `s` to `None`.** Nothing raises at that line; the failure arrives
+  later as `TypeError: argument of type 'NoneType' is not iterable`.
+- **An out-of-range slice returns `[]` instead of raising**, so an off-by-one travels several
+  steps before it is noticed.
+
+**Backlog after tutorials batch 1: 348 pages.**
+
+### Tutorials, batch 2 — 6 diagrams + 5 verified notes
+
+| Page | Verified |
+| --- | --- |
+| `Errors / else-finally` | order is `try, else, finally` with no exception and `try, except, finally` with one; **a `return` in `finally` discards a raised exception entirely** |
+| `Errors / raise-and-custom-exceptions` | `from e` sets `__cause__`; bare `raise` sets only `__context__`; **`from None` still leaves `__context__` set** — it hides the display, not the object |
+| `Variables / Multiple Assignment` | `a = b = []` binds **one** list (`a is b` -> True); `x, y = [], []` binds two |
+| `Operator / Assignment Operators` | `L += [3]` keeps the same object; `T += (3,)` rebinds. And `t = ([1],); t[0] += [2]` **raises TypeError and mutates the list anyway** -> `([1, 2],)` |
+| `Function / Function Annotations` | `add("x","y")` on `def add(a: int, b: int) -> int` returns `'xy'` with no error |
+| `Strings / Modify String` | strings are immutable; every method returns a new one |
+
+**A claim of mine that was wrong for this interpreter, caught before it shipped.** The
+annotations note originally said an annotation is *evaluated at definition time* unless the
+module imports `annotations` from `__future__`. Measured on both interpreters on this machine:
+
+| | `def f(x: NotDefinedYet)` |
+| --- | --- |
+| Python 3.11 | `NameError` **at definition time** |
+| Python 3.14 | accepted; `NameError` only when `__annotations__` is **read** |
+
+PEP 649 landed in 3.14 and made annotation evaluation lazy, so the old advice about quoting
+forward references no longer applies here. The note now states both versions rather than the one
+I remembered. This is the second time this session that assuming 3.11 semantics produced a false
+statement — everything on this machine runs on **3.14.4** unless `python` is invoked explicitly.
+
+**The best trap in the batch** is `t[0] += [2]` on a tuple: augmented assignment is two steps,
+the in-place extend succeeds because the *list* is mutable, and the write-back fails because the
+*tuple* is not. You get an exception **and** the mutation.
+
+**Backlog after tutorials batch 2: 342 pages.**
+
 ### `scripts/lint-p5.mjs` — new, wired into `npm run dsa`
 
 Nothing on the build path ever parses a p5 sketch: `lib/p5/remake.ts` base64-encodes it and

@@ -531,3 +531,53 @@ rather than the 300 billion first written.
 
 Section totals: quizzes **2 → 5**, exercises **2 → 5**, mermaid **62 → 64**,
 projects running **67 → 71** pages.
+
+---
+
+## 12. Wave 3, fourth pass — a Flask project that finishes (2026-08-08)
+
+`scripts/projects_flask_smoke.py` gives Flask projects a run that returns.
+`app.run()` never does, which is why they sat in the ledger as "blocks until
+stopped" — untestable, unschedulable, and impossible to capture output from.
+
+The fix is not to remove the server but to add what a web project should have
+anyway: **a smoke path that dispatches one request per route through Flask's
+test client** and prints what came back. No socket, no port, and the request
+goes through the real application object, so the output is the app's actual
+behaviour rather than a mock.
+
+Serving became **opt-in**, behind `--serve`. That inversion is deliberate: with
+no arguments the file now does something visible and finite, which is what a
+reader running a teaching project wants, and the server is one flag away.
+
+```
+smoke test: dispatching one request per route
+
+  GET /                          200  Hello, World!
+
+1 route(s) answered. Pass --serve to start the real server instead.
+```
+
+**A platform trap worth recording.** The first version guarded on
+`sys.stdin.isatty()` — start the server for a person, smoke-test for a
+harness. Under Git Bash on Windows `isatty()` returns **True even with stdin
+redirected from `/dev/null`**, so the guard silently did nothing and every
+project still hung. An explicit flag has no such ambiguity.
+
+Six projects rewritten; **"blocks until stopped" 28 → 23**, projects running
+**73 → 77**, pages carrying real output **71 → 74**.
+
+Fifteen Flask projects were *not* rewritten, because they do not create their
+app as a module-level `app = Flask(...)` — they build it inside a class or a
+factory. Those need reading one at a time rather than a sweep, and the script
+reports them rather than guessing.
+
+### The remaining blockers, in order of what they would unlock
+
+| Blocker | Files | What each needs |
+| --- | --- | --- |
+| needs stdin | 56 | the three-line `ask()` fallback from §9 |
+| module not installed | 55 | mostly heavyweight or unavailable: `speech_recognition`, `googletrans`, `gensim`, `pytesseract`, `face_recognition` |
+| needs a display | 36 | a headless mode, or a captured screenshot committed once |
+| blocks until stopped | 23 | 7 camera loops need a synthetic-frame fallback; 15 Flask apps need reading individually |
+| failed | 13 | real bugs — missing data files, `DataFrame.append`, required argparse arguments |
