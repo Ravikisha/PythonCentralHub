@@ -102,6 +102,37 @@ def _is_generator(node) -> bool:
                for inner in ast.walk(node))
 
 
+# Calls that block until something external happens: a request, a keypress, a
+# camera frame. They are not "unrunnable" in principle, but they cannot finish
+# on their own, and waiting for each to hit the timeout costs more than the
+# whole rest of the suite.
+BLOCKING_CALLS = {
+    "run": "a web server (app.run)",
+    "mainloop": "a GUI event loop",
+    "serve_forever": "a socket server",
+    "VideoCapture": "a camera stream",
+    "listen": "a microphone or socket listener",
+    "join": None,                 # only counted for threads, checked below
+}
+
+
+def blocking_call(tree: ast.AST) -> str | None:
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        target = node.func
+        name = (target.attr if isinstance(target, ast.Attribute)
+                else target.id if isinstance(target, ast.Name) else None)
+        if name in ("run", "mainloop", "serve_forever", "VideoCapture",
+                    "listen"):
+            if name == "run" and not isinstance(target, ast.Attribute):
+                continue          # a plain run() is usually the project's own
+            if name == "VideoCapture":
+                return "a camera stream"
+            return BLOCKING_CALLS[name]
+    return None
+
+
 def has_unbounded_loop(tree: ast.AST) -> bool:
     """`while True` that is not inside a generator.
 
@@ -147,6 +178,10 @@ def classify(path: str) -> dict:
                 "imports": sorted(modules)}
     if calls_input(tree):
         return {"skip": "needs stdin", "detail": "calls input()",
+                "imports": sorted(modules)}
+    blocker = blocking_call(tree)
+    if blocker:
+        return {"skip": "blocks until stopped", "detail": blocker,
                 "imports": sorted(modules)}
     if has_unbounded_loop(tree) and not handles_eof(tree):
         # With an EOF fallback the loop exits on the default answer, and the

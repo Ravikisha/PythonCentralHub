@@ -482,3 +482,52 @@ authored work, roughly two pages per session at this quality, and it is gated
 on the projects running: 18 beginner projects still need a demo path, 8 need a
 display, and 12 need a module that is not installed. The order matters — a page
 whose project does not run has nothing honest to put in Recap.
+
+---
+
+## 11. Wave 3, third pass — installing the blockers (2026-08-08)
+
+§6 asked whether to install OpenCV. The same trade as `torch` in the Deep
+Learning module, and the same answer: **16 modules installed** —
+`opencv-python-headless`, `flask`, `beautifulsoup4`, `nltk`, `schedule`,
+`seaborn`, `textblob`, `plotly`, `feedparser`, `qrcode`, `wordcloud`, `psutil`,
+`scikit-image`, `bcrypt`, `werkzeug`, `openpyxl`. Files blocked on a missing
+module: **104 → 55.**
+
+That did not translate into 49 more runs, and the reason is worth recording.
+Many of the newly-importable projects **block instead of finishing**: a Flask
+`app.run()`, a Tkinter `mainloop()`, a `socketserver.serve_forever()`, a
+`cv2.VideoCapture(0)` waiting on a camera that is not there. Each was sitting
+until the per-file timeout, so a full sweep went from 3 minutes to well past
+30 with nothing to show for it.
+
+`projects_run.py` now recognises those calls statically and skips them with the
+reason **"blocks until stopped"** — 28 files. That is a more useful label than
+a timeout, because it names the work: those projects need a mode that starts,
+serves one request or reads one frame, and exits.
+
+Net: **68 → 73 projects running**, and the sweep is back to about 3 minutes.
+
+**Three more Beginners pages meet the full contract**, each grounded in its own
+measured run:
+
+- `randompasswordgenerator` — Pitfalls leading with `random` being the wrong
+  module for a credential (`secrets` is the one-word fix). The exercise
+  measures the length-versus-alphabet question rather than asserting it:
+  16 characters from 52 letters is **469 billion times** more possibilities
+  than 8 from 94 symbols.
+- `dicerolling` — `randint` includes both endpoints where `randrange` does not,
+  and the loop rolls before it asks. The exercise rolls up to 600,000 times and
+  finds that in 10,000 sets of six rolls, **98.6% were missing at least one
+  face** — so seeing all six is the surprising outcome, not the expected one.
+- `binarytodecimal` — `bin()` returns `'0b1011'` rather than `'1011'`, and the
+  shipped loop accepts `1021` as binary without complaint where `int(x, 2)`
+  raises. The exercise implements both directions and demonstrates the
+  rejection.
+
+All three exercises were run before their numbers were written down; one quiz
+explanation was corrected afterwards because the measured ratio was 469 billion
+rather than the 300 billion first written.
+
+Section totals: quizzes **2 → 5**, exercises **2 → 5**, mermaid **62 → 64**,
+projects running **67 → 71** pages.
