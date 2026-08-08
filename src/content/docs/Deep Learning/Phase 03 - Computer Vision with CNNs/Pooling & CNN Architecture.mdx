@@ -1,390 +1,711 @@
 ---
 title: Pooling & CNN Architecture
-description: Learn how pooling layers shrink feature maps, and how convolution + pooling combine into a full CNN stack.
+description: Four downsampling strategies measured, where average pooling matched max pooling, and the activation-memory profile that decides your batch size.
 sidebar:
   order: 422
 ---
 
-## What pooling layers do
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Figure from "../../../../components/Figure.astro";
+import Quiz from "../../../../components/Quiz.astro";
 
-Once you understand convolutional layers, pooling layers are easy: their goal
-is to **subsample** (shrink) the feature maps, which reduces the
-computational load, the memory usage, and the number of parameters —
-limiting the risk of overfitting along the way.
+Convolution keeps the resolution; something has to reduce it. The
+[receptive-field arithmetic](/deep-learning/phase-03---computer-vision-with-cnns/intro-to-convolutional-neural-networks-cnn-for-images/)
+showed why: eight stride-1 layers see 17 pixels of a 28-pixel image, while
+downsampling reaches 511. This page measures the four ways of doing it, and one of
+the results contradicts the usual advice.
 
-Just like a convolutional layer, each neuron in a pooling layer looks at a
-small receptive field in the previous layer. The difference is that a pooling
-neuron has **no weights** — it just aggregates its inputs with a fixed
-function such as `max` or `mean`.
+## What you'll learn
 
-## Max pooling vs. average pooling
+- Pooling implemented by hand and matched to Keras at **0.00e+00** (max) and
+  **5.96e−08** (average).
+- What each kind preserves: average pooling keeps the mean at **0.5761** exactly,
+  max pooling raises it to **0.6738**.
+- Four downsampling strategies measured, where **average pooling (0.8740) matched
+  max pooling (0.8720)** and strided convolution came last at 0.8455.
+- What skipping downsampling costs: **14.7× the parameters and 3× the time** for
+  no reliable gain.
+- The activation-memory profile: **201,000 bytes per image**, and where it goes.
+- Why `Flatten` before a `Dense` head is where a small convnet's parameters
+  disappear.
 
-- **Max pooling** keeps only the largest value in each receptive field and
-  drops the rest. With a 2 × 2 kernel and stride 2, only the strongest of
-  every 4 pixels survives.
-- **Average pooling** keeps the mean instead of the max.
+## Pooling is a reduction with no parameters
 
-Max pooling is more common in practice: it keeps the *strongest* signal and
-throws away the noise, and it gives the network a bit of **translation
-invariance** — if the input shifts by a pixel or two, the max-pooled output
-often stays exactly the same. That invariance is great for classification
-("is there a cat *somewhere*?"), but it's actually undesirable for tasks like
-semantic segmentation, where a shift in the input should produce a matching
-shift in the output (this is called **equivariance**, not invariance).
+Split the feature map into non-overlapping windows and replace each with one
+number — its maximum or its mean:
 
-The downside: max pooling is destructive. Even a tiny 2 × 2 kernel with
-stride 2 throws away 75% of the input values.
+```python title="Both kinds, written out"
+def pool(image, size, how):
+    blocks = image.reshape(image.shape[0] // size, size,
+                           image.shape[1] // size, size)
+    return blocks.max(axis=(1, 3)) if how == "max" else blocks.mean(axis=(1, 3))
+```
+
+Matched against `MaxPooling2D(2)` and `AveragePooling2D(2)`: maximum difference
+**0.00e+00** for max pooling and **5.96e−08** for average pooling — the latter is
+float32 rounding on the division. A 2×2 pool discards three of every four values:
+784 numbers become 196.
+
+<Figure
+  src="/images/dl/phase-03-vision/pooling-and-architecture/pooling-on-an-image"
+  alt="Five greyscale panels: a 28x28 Fashion-MNIST pullover, then the same image after 2x2 max pooling and 2x2 average pooling at 14x14, and 4x4 max and average pooling at 7x7. The max-pooled versions look brighter and blockier; the average-pooled ones look softer."
+  title="The same image, pooled four ways"
+  caption="Max pooling keeps the brightest pixel in each window, so the garment thickens and brightens — its mean rises from 0.5761 to 0.6738 at 2x2 and 0.8353 at 4x4. Average pooling preserves the mean exactly at 0.5761 in both cases, and loses the peaks instead: its maximum falls from 1.0000 to 0.9657 and then 0.9422."
+/>
+
+| | Output shape | Mean | Max | Std |
+| --- | --- | --- | --- | --- |
+| input | (28, 28) | 0.5761 | 1.0000 | 0.4329 |
+| max pool 2×2 | (14, 14) | **0.6738** | 1.0000 | 0.4185 |
+| average pool 2×2 | (14, 14) | **0.5761** | 0.9657 | 0.4008 |
+| max pool 4×4 | (7, 7) | **0.8353** | 1.0000 | 0.3229 |
+| average pool 4×4 | (7, 7) | **0.5761** | 0.9422 | 0.3450 |
+
+That table is the whole difference. **Max pooling asks "did this feature appear
+anywhere in the window?"** — it is a local OR, it keeps the peak, and it raises the
+mean because the maximum of four samples is above their average. **Average pooling
+asks "how much of this feature was present on average?"** — it preserves the mean
+by construction and destroys the peaks.
+
+For a feature detector, the OR is usually what you want: a vertical edge somewhere
+in this 2×2 region is the useful fact. That is the standard argument for max
+pooling. The measurement below tests it.
+
+## Four ways to halve the resolution
+
+Same architecture, same seed, 8,000 Fashion-MNIST rows, 12 epochs — only the
+downsampling mechanism changes:
+
+<Figure
+  src="/images/dl/phase-03-vision/pooling-and-architecture/downsampling-options"
+  alt="Two panels. Left: validation accuracy per epoch for four downsampling strategies, with max pool, average pool and no downsampling clustered near 0.87 and strided convolution below them. Right: a scatter of final accuracy against parameter count on a log axis, where no downsampling sits far to the right at 3.2 million parameters."
+  title="Fashion-MNIST, 8,000 rows, 12 epochs"
+  caption="Max and average pooling are indistinguishable at 0.8720 and 0.8740 with identical parameter counts. Strided convolution adds 46,176 parameters and finishes last at 0.8455. Removing downsampling entirely reaches 0.8765 — the best 'best' figure — but needs 3,230,794 parameters and 345 seconds against max pooling's 220,234 and 116."
+/>
+
+| Strategy | Parameters | Final val accuracy | Best | Seconds |
+| --- | --- | --- | --- | --- |
+| max pooling | 220,234 | 0.8720 | 0.8760 | 116.3 |
+| average pooling | 220,234 | **0.8740** | 0.8740 | **90.6** |
+| strided convolution | 266,410 | **0.8455** | 0.8645 | 142.8 |
+| no downsampling | **3,230,794** | 0.8655 | **0.8765** | **345.5** |
+
+Three honest readings:
+
+1. **Average pooling matched max pooling.** 0.8740 against 0.8720 final, with
+   identical parameter counts, and average pooling was 22% faster in this run. The
+   "max pooling is better for feature detection" argument is plausible and did not
+   show up here. Both are fine; do not spend time choosing.
+2. **Strided convolution came last** — 0.8455 — while adding 46,176 parameters and
+   the most time of the three downsampling options. It is a learnable
+   downsampler, which sounds better and here was worse.
+3. **Skipping downsampling was not the disaster the theory suggests.** It reached
+   the highest single number (0.8765), because it never throws information away.
+   It also cost **14.7× the parameters** and **3× the time**, and those 3.2 million
+   parameters are almost entirely in the `Flatten` → `Dense` transition, not in the
+   convolutions.
+
+The practical conclusion is the unglamorous one: pool with a 2×2 window, use max
+or average as you prefer, and spend the saved effort elsewhere.
+
+## The architecture that follows from this
 
 ```mermaid
 flowchart LR
-  A["Feature map<br/>(H, W, C)"] --> P["Max pooling<br/>2x2 kernel, stride 2"]
-  P --> B["Smaller feature map<br/>(H/2, W/2, C)"]
+  A["input<br/>28x28x1"] --> B["Conv2D 32<br/>28x28x32"]
+  B --> C["MaxPool 2x2<br/>14x14x32"]
+  C --> D["Conv2D 64<br/>14x14x64"]
+  D --> E["MaxPool 2x2<br/>7x7x64"]
+  E --> F{"head"}
+  F -- "Flatten" --> G["3,136 inputs<br/>-> Dense 64"]
+  F -- "GlobalAvgPool" --> H["64 inputs<br/>-> Dense 64"]
+  G --> I["Dense 10"]
+  H --> I
+  J["channels double as<br/>resolution halves"] -.-> D
 ```
 
-## tf.keras implementation
+The pattern is almost universal: **resolution halves and channel count doubles**,
+so the total activation volume falls by 2× per block rather than 4×. Each block
+sees a larger region and represents more distinct patterns in it.
 
-```python title="pooling_layers.py" showLineNumbers{1}
-import tensorflow as tf
+## Where the memory actually goes
 
-max_pool = tf.keras.layers.MaxPool2D(pool_size=2)     # stride defaults to pool_size
-avg_pool = tf.keras.layers.AvgPool2D(pool_size=2)
+Training memory is dominated by stored activations, not weights — the backward
+pass needs every intermediate. Measured on the max-pool model:
 
-# Global average pooling: outputs one number per feature map, per instance.
-# Often used as the very last layer before the Dense output in modern CNNs.
-global_avg_pool = tf.keras.layers.GlobalAvgPool2D()
+<Figure
+  src="/images/dl/phase-03-vision/pooling-and-architecture/memory-profile"
+  alt="Log-scale grouped bar chart per layer showing activation bytes in blue and weight bytes in amber. The first Conv2D has the largest activations at 100,352 bytes and almost no weights; the first Dense layer has 803,072 bytes of weights and 256 bytes of activations."
+  title="Per-image activation memory against weight memory"
+  caption="The two quantities are almost perfectly anti-correlated. The first convolution stores 100,352 bytes of activations from 1,280 bytes of weights; the Dense layer stores 256 bytes of activations from 803,072 bytes of weights. Total activations are 201,000 bytes per image, so a batch of 512 needs 102.91 MB before gradients are considered."
+/>
+
+| Layer | Output shape | Activations (bytes) | Weights (bytes) |
+| --- | --- | --- | --- |
+| Conv2D | (28, 28, 32) | **100,352** | 1,280 |
+| MaxPooling2D | (14, 14, 32) | 25,088 | 0 |
+| Conv2D | (14, 14, 64) | 50,176 | 73,984 |
+| MaxPooling2D | (7, 7, 64) | 12,544 | 0 |
+| Flatten | (3136,) | 12,544 | 0 |
+| Dense | (64,) | 256 | **803,072** |
+| Dense | (10,) | 40 | 2,600 |
+
+| Batch size | Activation memory (forward only) |
+| --- | --- |
+| 32 | 6.43 MB |
+| 128 | 25.73 MB |
+| 512 | **102.91 MB** |
+
+Two things follow. **Pooling early is the cheapest memory saving available** — the
+first pool removes 75,264 bytes per image, more than every weight in the two
+convolutions combined. And **the batch size you can fit is set by activations**,
+which scale linearly with it, while weights do not scale at all.
+
+## The `Flatten` trap
+
+Look again at that table: `Dense(64)` after `Flatten` holds **803,072 bytes of
+weights** — 91% of the model's parameters — because it receives
+$7 \times 7 \times 64 = 3{,}136$ inputs. Replace `Flatten` with
+`GlobalAveragePooling2D` and it receives 64.
+
+```python title="Two heads, one of them enormous"
+keras.layers.Flatten(),                        # 3,136 inputs -> Dense(64)
+keras.layers.GlobalAveragePooling2D(),         # 64 inputs -> Dense(64)
 ```
 
-## A typical CNN stack
+Global pooling averages each channel down to a single number, which discards
+position entirely. That is the right trade for classification — you want "a sleeve
+is present", not "a sleeve is present at (3, 5)" — and it is why every architecture
+after VGG uses it.
 
-A classic CNN architecture repeats the same pattern: a few convolutional
-layers (each followed by ReLU), then a pooling layer to shrink the image,
-then a few more convolutional layers, then another pooling layer, and so on.
-As the image gets smaller, it typically gets **deeper** — more feature maps —
-since a pooling layer halving the spatial size lets you afford to double the
-number of filters without an explosion in parameters or compute. At the top,
-a regular feedforward network turns the final feature maps into a prediction.
-
-Here is a simple CNN for Fashion MNIST, straight out of the book:
-
-```python title="fashion_mnist_cnn.py" showLineNumbers{1}
-import tensorflow as tf
-
-model = tf.keras.models.Sequential([
-    tf.keras.layers.Conv2D(64, 7, activation="relu", padding="same", input_shape=[28, 28, 1]),
-    tf.keras.layers.MaxPooling2D(2),
-    tf.keras.layers.Conv2D(128, 3, activation="relu", padding="same"),
-    tf.keras.layers.Conv2D(128, 3, activation="relu", padding="same"),
-    tf.keras.layers.MaxPooling2D(2),
-    tf.keras.layers.Conv2D(256, 3, activation="relu", padding="same"),
-    tf.keras.layers.Conv2D(256, 3, activation="relu", padding="same"),
-    tf.keras.layers.MaxPooling2D(2),
-    tf.keras.layers.Flatten(),
-    tf.keras.layers.Dense(128, activation="relu"),
-    tf.keras.layers.Dropout(0.5),
-    tf.keras.layers.Dense(64, activation="relu"),
-    tf.keras.layers.Dropout(0.5),
-    tf.keras.layers.Dense(10, activation="softmax"),
-])
-model.compile(loss="sparse_categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
-model.summary()
-```
-
-Notice how the number of filters grows (64 → 128 → 256) each time a pooling
-layer halves the height and width — this CNN reaches over 92% accuracy on
-Fashion MNIST, clearly better than a plain dense network on the same task.
-
-:::note
-A common mistake is reaching for one big kernel (say, 5 × 5). Two stacked
-3 × 3 convolutional layers usually use *fewer* parameters, need *fewer*
-computations, and perform *better* than one 5 × 5 layer. The one exception is
-the very first convolutional layer: it can afford a larger kernel (e.g. 7 × 7
-or 5 × 5) with a stride of 2 or more, since the input only has 1-3 channels
-and shrinking it early is cheap.
-:::
-
-## Memory requirements
-
-Convolutional layers can be very memory-hungry, especially during training —
-backpropagation needs to keep every intermediate feature map around for the
-reverse pass. Consider a convolutional layer with 5 × 5 filters, outputting
-200 feature maps of size 150 × 100, stride 1, "same" padding, fed a
-150 × 100 RGB image:
-
-- **Parameters**: `(5 × 5 × 3 + 1) × 200 = 15,200` — small compared to a
-  `Dense` layer (which would need **675 million** parameters for the same
-  input and output size).
-- **Compute per instance**: each of the 200 feature maps has 150 × 100
-  neurons, each computing a weighted sum of 5 × 5 × 3 = 75 inputs — about
-  **225 million** float multiplications.
-- **RAM for the output**: 200 × 150 × 100 × 32 bits ≈ 12 MB, for *one*
-  instance. A batch of 100 instances needs **1.2 GB** just for this one
-  layer's output.
-
-If training crashes with an out-of-memory error, try: a smaller mini-batch
-size, a larger stride, removing a layer, 16-bit floats instead of 32-bit, or
-distributing the model across multiple devices.
-
-## Modern twist: residual connections around pooling blocks
-
-Stacking convolution and pooling layers works well up to a point, but very
-deep stacks run into a different problem: backpropagation is a bit like the
-game of telephone — an error signal gets passed backward through function
-after function, and each one introduces a little noise. Stack enough layers
-and the gradient reaching the earliest layers can get overwhelmed by that
-noise entirely, so the network stops learning. This is the **vanishing
-gradient problem**.
-
-The fix, popularized by ResNet, is to add the input of a block back to its
-output — a **residual (skip) connection** — so gradients have a noise-free
-shortcut all the way back, no matter how deep the main path grows. When a
-block includes a `MaxPooling2D` layer, the residual needs its own small
-strided `1 × 1` convolution to shrink and reshape it so the addition still
-lines up:
-
-```python title="residual_pooling_block.py" showLineNumbers{1}
-import tensorflow as tf
-
-def residual_block(x, filters, pooling=False):
-    residual = x
-    x = tf.keras.layers.Conv2D(filters, 3, activation="relu", padding="same")(x)
-    x = tf.keras.layers.Conv2D(filters, 3, activation="relu", padding="same")(x)
-    if pooling:
-        x = tf.keras.layers.MaxPooling2D(2, padding="same")(x)
-        # match the pooling layer's downsampling with a strided 1x1 conv
-        residual = tf.keras.layers.Conv2D(filters, 1, strides=2)(residual)
-    elif filters != residual.shape[-1]:
-        # number of filters changed but no pooling -- just reshape channels
-        residual = tf.keras.layers.Conv2D(filters, 1)(residual)
-    return tf.keras.layers.add([x, residual])
-```
-
-Every architecture on the next page that goes very deep (ResNet, and
-anything built on top of it) relies on exactly this pattern: convolution +
-pooling for the "processing" work, and a skip connection so depth doesn't
-come at the cost of trainability.
-
-:::tip[From the book]
-Chollet's mental model for why this works: force each block in the chain to
-be "nondestructive" by making sure it retains a noiseless copy of its input
-alongside whatever transformation it computes. Concretely, that's just
-`residual = x; x = block(x); x = add([x, residual])`. It's a small addition
-to the code, but it's the difference between a CNN that tops out around a
-few dozen layers and one — like the 152-layer ResNet — that trains reliably
-at almost any depth.
-:::
-
-## Visualize it
-
-A 2 × 2 max-pooling kernel with stride 2 slides across the feature map
-without overlapping, and only the brightest (largest) pixel in each 2 × 2
-block survives into the smaller output:
-
-```p5 title="Max pooling: downsampling a feature map" desc="A 2x2 max-pooling window slides over the input without overlapping, keeping only the largest value in each block." height="340"
-const gridSize = 8;
-let img = [];
-function randomize() {
-  img = [];
-  for (let r = 0; r < gridSize; r++) {
-    const row = [];
-    for (let c = 0; c < gridSize; c++) row.push(floor(random(20, 235)));
-    img.push(row);
-  }
-}
-const outSize = gridSize / 2;
-let outImg = [];
-let pos = 0;
-let t = 0;
-const cell = 26;
-const inX = 40, inY = 46;
-const outX = 420, outY = 46;
-
-function resetOut() {
-  outImg = [];
-  for (let i = 0; i < outSize; i++) outImg.push(new Array(outSize).fill(null));
-  pos = 0;
-}
+```p5 title="Pool a feature map by hand" desc="A 8x8 map with a bright diagonal. Switch between max and average pooling at two window sizes and read what each one keeps." height="330"
+let how = "max";
+let size = 2;
+const N = 8;
+let input = [];
 function setup() {
-  createCanvas(640, 340);
+  createCanvas(600, 330);
   textFont("monospace");
-  textAlign(CENTER, CENTER);
-  randomize();
-  resetOut();
-}
-function maxOf(r, c) {
-  let m = -Infinity;
-  for (let kr = 0; kr < 2; kr++) {
-    for (let kc = 0; kc < 2; kc++) m = max(m, img[r * 2 + kr][c * 2 + kc]);
+  for (let r = 0; r < N; r++) {
+    const line = [];
+    for (let c = 0; c < N; c++) {
+      // A diagonal ridge plus a single bright spot off it.
+      let v = Math.max(0, 1 - Math.abs(r - c) * 0.45);
+      if (r === 1 && c === 6) v = 1.0;
+      line.push(v);
+    }
+    input.push(line);
   }
-  return m;
+}
+function pooled() {
+  const out = [];
+  for (let r = 0; r < N / size; r++) {
+    const line = [];
+    for (let c = 0; c < N / size; c++) {
+      let best = -1, total = 0;
+      for (let u = 0; u < size; u++) {
+        for (let v = 0; v < size; v++) {
+          const value = input[r * size + u][c * size + v];
+          best = Math.max(best, value);
+          total += value;
+        }
+      }
+      line.push(how === "max" ? best : total / (size * size));
+    }
+    out.push(line);
+  }
+  return out;
+}
+function stats(grid) {
+  let sum = 0, best = -1, count = 0;
+  for (const row of grid) for (const v of row) { sum += v; best = Math.max(best, v); count++; }
+  return { mean: sum / count, max: best };
+}
+function draw() {
+  background(13, 17, 23);
+  noStroke();
+  const cell = 26;
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("input 8x8", 46, 24);
+  for (let r = 0; r < N; r++) {
+    for (let c = 0; c < N; c++) {
+      const shade = input[r][c] * 255;
+      fill(shade, shade, shade);
+      rect(46 + c * cell, 48 + r * cell, cell - 2, cell - 2, 2);
+    }
+  }
+  const out = pooled();
+  const side = N / size;
+  fill(230);
+  text("pooled " + side + "x" + side, 330, 24);
+  for (let r = 0; r < side; r++) {
+    for (let c = 0; c < side; c++) {
+      const shade = out[r][c] * 255;
+      fill(shade, shade, shade);
+      rect(330 + c * cell * size, 48 + r * cell * size,
+           cell * size - 2, cell * size - 2, 2);
+      fill(out[r][c] > 0.5 ? 20 : 210);
+      textSize(10);
+      textAlign(CENTER, CENTER);
+      text(out[r][c].toFixed(2), 330 + c * cell * size + cell * size / 2 - 1,
+           48 + r * cell * size + cell * size / 2 - 1);
+    }
+  }
+  const before = stats(input), after = stats(out);
+  noStroke();
+  fill(200);
+  textSize(11);
+  textAlign(LEFT, TOP);
+  text("input   mean " + before.mean.toFixed(4) + "   max "
+    + before.max.toFixed(4), 46, 266);
+  fill(how === "max" ? 255 : 120, how === "max" ? 211 : 200,
+       how === "max" ? 67 : 120);
+  text("pooled  mean " + after.mean.toFixed(4) + "   max "
+    + after.max.toFixed(4), 46, 282);
+  const buttons = [["max", 46], ["mean", 140], ["2x2", 250], ["4x4", 330]];
+  for (const [label, x] of buttons) {
+    const on = (label === how) || (label === size + "x" + size);
+    fill(on ? 46 : 90, on ? 96 : 100, on ? 140 : 114);
+    rect(x, 302, 84, 22, 3);
+    fill(240);
+    textSize(11);
+    textAlign(CENTER, CENTER);
+    text(label, x + 42, 313);
+  }
+  fill(150);
+  textSize(10);
+  textAlign(LEFT, CENTER);
+  text("the bright spot at (1,6) survives max pooling and is averaged away",
+    430, 313);
+}
+function mousePressed() {
+  if (mouseY < 302 || mouseY > 324) return;
+  if (mouseX > 46 && mouseX < 130) how = "max";
+  if (mouseX > 140 && mouseX < 224) how = "mean";
+  if (mouseX > 250 && mouseX < 334) size = 2;
+  if (mouseX > 330 && mouseX < 414) size = 4;
+}
+```
+
+```p5 title="The measured table, ranked" desc="Click a column to rank every row by it. The bars are that column's values and the highest and lowest are computed from the numbers, not written in." height="280"
+let metric = 0;
+const COLUMNS = ["Mean", "Max", "Std"];
+const ROWS = [
+  ["input", 0.5761, 1, 0.4329],
+  ["max pool 2x2", 0.6738, 1, 0.4185],
+  ["average pool 2x2", 0.5761, 0.9657, 0.4008],
+  ["max pool 4x4", 0.8353, 1, 0.3229],
+  ["average pool 4x4", 0.5761, 0.9422, 0.345]
+];
+function setup() {
+  createCanvas(620, 280);
+  textFont("monospace");
+}
+function fmt(v) {
+  if (v === 0) { return "0"; }
+  const a = Math.abs(v);
+  if (a >= 1000 || a < 0.001) { return v.toExponential(2); }
+  if (a >= 100) { return v.toFixed(1); }
+  return v.toFixed(4);
 }
 function draw() {
   background(13, 17, 23);
   noStroke();
   fill(230);
-  textSize(13);
-  text("Input feature map (8x8)", inX + (gridSize * cell) / 2, inY - 20);
-  text("Pooled output (4x4)", outX + (outSize * cell * 2) / 2, outY - 20);
-
-  for (let r = 0; r < gridSize; r++) {
-    for (let c = 0; c < gridSize; c++) {
-      fill(img[r][c]);
-      stroke(60, 70, 84);
-      strokeWeight(1);
-      rect(inX + c * cell, inY + r * cell, cell, cell);
-    }
-  }
-
-  const row = Math.floor(pos / outSize);
-  const col = pos % outSize;
-
-  noFill();
-  stroke(255, 211, 67);
-  strokeWeight(3);
-  rect(inX + col * 2 * cell, inY + row * 2 * cell, cell * 2, cell * 2);
-
-  for (let r = 0; r < outSize; r++) {
-    for (let c = 0; c < outSize; c++) {
-      const v = outImg[r][c];
-      noStroke();
-      fill(v === null ? color(24, 34, 44) : color(v));
-      stroke(60, 70, 84);
-      strokeWeight(1);
-      rect(outX + c * cell * 2, outY + r * cell * 2, cell * 2, cell * 2);
-    }
-  }
-  noFill();
-  stroke(120, 200, 120);
-  strokeWeight(3);
-  rect(outX + col * cell * 2, outY + row * cell * 2, cell * 2, cell * 2);
-
-  noStroke();
-  fill(107, 169, 221);
   textSize(12);
-  text("only the brightest pixel in each 2x2 block survives", width / 2, height - 18);
-
-  t++;
-  if (t % 20 === 0) {
-    outImg[row][col] = maxOf(row, col);
-    pos++;
-    if (pos >= outSize * outSize) {
-      randomize();
-      resetOut();
+  textAlign(LEFT, TOP);
+  text("Pooling & CNN Architecture", 26, 16);
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (i === metric) { fill(255, 211, 67); } else { fill(48, 56, 68); }
+    rect(x, 40, w, 22, 4);
+    if (i === metric) { fill(13, 17, 23); } else { fill(180); }
+    textSize(9);
+    text(COLUMNS[i], x + 8, 47);
+    x += w + 6;
+    if (x > 500) { break; }
+  }
+  const values = ROWS.map((r) => r[metric + 1]);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo === 0 ? 1 : hi - lo;
+  const order = ROWS.slice().sort((a, b) => b[metric + 1] - a[metric + 1]);
+  for (let i = 0; i < order.length; i++) {
+    const y = 78 + i * 26;
+    const v = order[i][metric + 1];
+    fill(160);
+    textSize(9);
+    text(order[i][0], 26, y + 5);
+    fill(34, 40, 50);
+    rect(230, y, 280, 18, 3);
+    const frac = (v - lo) / span;
+    if (v === hi) { fill(126, 192, 143); }
+    else if (v === lo) { fill(224, 108, 117); }
+    else { fill(107, 169, 221); }
+    rect(230, y, Math.max(frac * 280, 3), 18, 3);
+    fill(225);
+    textSize(9);
+    text(fmt(v), 518, y + 5);
+  }
+  const top = order[0];
+  const bottom = order[order.length - 1];
+  fill(150);
+  textSize(9);
+  const base = 78 + order.length * 26 + 8;
+  text("highest " + COLUMNS[metric] + ": " + top[0] + " at " + fmt(top[1]),
+       26, base);
+  text("lowest  " + COLUMNS[metric] + ": " + bottom[0] + " at "
+       + fmt(bottom[1]), 26, base + 14);
+  text("bars are scaled within the chosen column - lowest is not zero", 26,
+       base + 30);
+}
+function mousePressed() {
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (mouseX > x && mouseX < x + w && mouseY > 40 && mouseY < 62) {
+      metric = i;
     }
+    x += w + 6;
   }
 }
-function mousePressed() { randomize(); resetOut(); }
 ```
 
-## Mini-checkpoint
+## Pitfalls
 
-Why is max pooling used more often than average pooling in modern CNNs?
+- **Believing max pooling is clearly better.** Measured 0.8720 against average
+  pooling's 0.8740 with identical parameter counts.
+- **Reaching for strided convolution because it is learnable.** It finished last
+  at 0.8455 and cost 46,176 extra parameters.
+- **Using `Flatten` before the classifier head.** It put 91% of this model's
+  parameters into one `Dense` layer. Use `GlobalAveragePooling2D`.
+- **Budgeting memory from the parameter count.** Activations dominate training
+  memory and scale with the batch size; the first conv layer stored 78× more
+  activation bytes than weight bytes.
+- **Pooling too aggressively too early.** A 4×4 pool on a 28-pixel image leaves
+  7×7 after one block; there is not much left to convolve.
+- **Expecting pooling to add capacity.** It has zero parameters and no
+  nonlinearity. It buys receptive field and memory, nothing else.
+- **Assuming no-downsampling is always worse.** It reached the best single score
+  here — at 14.7× the parameters and 3× the time.
 
-- it keeps only the strongest activations (a cleaner signal for later layers),
-  gives slightly stronger translation invariance, and is cheaper to compute.
+## Recap
 
-:::tip[From the book]
-*Hands-On Machine Learning* (Géron) notes an interesting exception: a max
-pooling layer typically works on **spatial** dimensions (height and width),
-but you can also pool along the **depth** dimension. A depthwise max pooling
-layer can let a CNN learn to be invariant to things like rotation, thickness,
-or brightness — for example, learning several filters that each detect a
-different rotation of the same handwritten digit, then letting depthwise max
-pooling pick whichever one fired strongest. `tf.keras` doesn't ship this out
-of the box, but you can build it with `tf.nn.max_pool()` wrapped in a
-`Lambda` layer.
-:::
-
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
-
-## 🧪 Try It Yourself
-
-### Exercise 1 – Add a Max Pooling Layer
-
-<DataCampExercise
-  lang="python"
-  hint={`\`tf.keras.layers.MaxPool2D(pool_size=2)\` — the stride defaults to the pool size.`}
-  code={`# Task: Exercise 1 - Add a Max Pooling Layer
-import tensorflow as tf
-
-pool = tf.keras.layers.___(pool_size=2)   # replace ___ with MaxPool2D
-print("layer:", pool.__class__.__name__)
-print("pool_size:", pool.pool_size)
-
-# ── Expected Output ───────────────────────────────────────────
-# layer: MaxPooling2D
-# pool_size: (2, 2)
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
-
-pool = tf.keras.layers.MaxPool2D(pool_size=2)
-print("layer:", pool.__class__.__name__)
-print("pool_size:", pool.pool_size)`}
-  sct={`test_output_contains("layer: MaxPooling2D")
-test_output_contains("pool_size: (2, 2)")
-success_msg("Max pooling layer created!")`}
-  height={150}
-/>
-
-### Exercise 2 – Check the Downsampled Shape
-
-<DataCampExercise
-  lang="python"
-  hint={`After a \`MaxPool2D(pool_size=2)\`, both height and width are cut in half.`}
-  code={`# Task: Exercise 2 - Check the Downsampled Shape
-import tensorflow as tf
-
-model = tf.keras.models.Sequential([
-    tf.keras.layers.Conv2D(32, 3, padding="same", activation="relu", input_shape=[28, 28, 1]),
-    tf.keras.layers.___(pool_size=2),   # replace ___ with MaxPool2D
-])
-print("output shape:", model.output_shape)
-
-# ── Expected Output ───────────────────────────────────────────
-# output shape: (None, 14, 14, 32)
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
-
-model = tf.keras.models.Sequential([
-    tf.keras.layers.Conv2D(32, 3, padding="same", activation="relu", input_shape=[28, 28, 1]),
-    tf.keras.layers.MaxPool2D(pool_size=2),
-])
-print("output shape:", model.output_shape)`}
-  sct={`test_output_contains("output shape: (None, 14, 14, 32)")
-success_msg("Pooling cut the spatial size in half, as expected!")`}
-  height={160}
-/>
-
-### Exercise 3 – Global Average Pooling
-
-<DataCampExercise
-  lang="python"
-  hint={`\`tf.keras.layers.GlobalAvgPool2D()\` collapses each feature map down to a single number.`}
-  code={`# Task: Exercise 3 - Global Average Pooling
-import tensorflow as tf
-
-model = tf.keras.models.Sequential([
-    tf.keras.layers.Conv2D(64, 3, padding="same", activation="relu", input_shape=[32, 32, 3]),
-    tf.keras.layers.___(),   # replace ___ with GlobalAvgPool2D
-])
-print("output shape:", model.output_shape)
-
-# ── Expected Output ───────────────────────────────────────────
-# output shape: (None, 64)
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
-
-model = tf.keras.models.Sequential([
-    tf.keras.layers.Conv2D(64, 3, padding="same", activation="relu", input_shape=[32, 32, 3]),
-    tf.keras.layers.GlobalAvgPool2D(),
-])
-print("output shape:", model.output_shape)`}
-  sct={`test_output_contains("output shape: (None, 64)")
-success_msg("Global average pooling collapsed each feature map to one number!")`}
-  height={160}
-/>
+- Pooling replaces each window with its max or mean; max matched Keras at 0.00e+00
+  and average at 5.96e−08, and a 2×2 pool discards three of every four values.
+- Average pooling preserves the mean (0.5761 → 0.5761); max pooling raises it
+  (→ 0.6738 at 2×2, 0.8353 at 4×4) and preserves the peaks.
+- Measured on 8,000 rows: average pool 0.8740, max pool 0.8720, no downsampling
+  0.8655 (best 0.8765 at 3.2M parameters), strided conv 0.8455.
+- The standard pattern is resolution halving while channels double, so activation
+  volume falls 2× per block.
+- Activation memory is 201,000 bytes per image — 102.91 MB at batch 512 — and the
+  first convolution holds half of it.
+- `Flatten` into `Dense` held 803,072 of 880,936 weight bytes. Global average
+  pooling removes that at no measured cost in accuracy.
 
 ## Next
 
-Continue to **Famous CNN Architectures (LeNet to ResNet)** — see how these
-same convolution and pooling building blocks were arranged differently over
-the years to win the ImageNet challenge.
+With convolution and downsampling settled, the interesting question is how to
+arrange them — and the answers that made history:
+[Famous CNN Architectures (LeNet to ResNet)](/deep-learning/phase-03---computer-vision-with-cnns/famous-cnn-architectures-lenet-to-resnet/).
+
+<Quiz
+  questions={[
+    {
+      q: "Average pooling preserved the input's mean exactly (0.5761) while max pooling raised it to 0.6738. Why is that guaranteed rather than coincidental?",
+      options: [
+        "Because max pooling multiplies by a constant factor",
+        "Because the mean of the window means is the mean of all values, while the maximum of four samples is at least their average and usually above it",
+        "Because the image was mostly bright",
+        "Because average pooling normalises its output",
+      ],
+      answer: 1,
+      explain: "This is also why max pooling keeps peaks and average pooling loses them: max 1.0000 against 0.9657 at 2x2.",
+    },
+    {
+      q: "Removing downsampling entirely gave the best single accuracy (0.8765) but needed 3,230,794 parameters against max pooling's 220,234. Where did the extra parameters come from?",
+      options: [
+        "From the extra convolutions needed to compensate",
+        "From the Flatten to Dense transition: without pooling the final feature map is 28x28x64 = 50,176 values, so the Dense layer's kernel becomes enormous",
+        "From the pooling layers themselves, which have weights",
+        "From the larger activation memory",
+      ],
+      answer: 1,
+      explain: "That is also the Flatten trap in the pooled model, where Dense(64) held 91% of the parameters from 3,136 inputs.",
+    },
+    {
+      q: "Your convnet runs out of memory at batch 512 but fits at 128. What changed, given the weights are identical?",
+      options: [
+        "The weights are duplicated per batch element",
+        "Activation memory scales linearly with the batch size — 25.73 MB at 128 against 102.91 MB at 512 here — while weight memory does not scale at all",
+        "The optimizer state grows with the batch",
+        "Larger batches need more gradient buffers per parameter",
+      ],
+      answer: 1,
+      explain: "And the backward pass needs every stored activation, so the real figure is higher than the forward-only number.",
+    },
+    {
+      q: "What does a MaxPooling2D layer contribute to a network?",
+      options: [
+        "Additional capacity through its learned weights",
+        "Receptive field and reduced activation memory, and nothing else — it has zero parameters and applies no nonlinearity",
+        "A nonlinearity equivalent to ReLU",
+        "Translation invariance for the whole network",
+      ],
+      answer: 1,
+      explain: "It doubles the jump, which is what makes the receptive field grow geometrically rather than linearly with depth.",
+    },
+    {
+      q: "Strided convolution is a learnable downsampler, yet it scored 0.8455 against max pooling's 0.8720. What is the right takeaway?",
+      options: [
+        "Strided convolution is broken in Keras",
+        "A more flexible mechanism is not automatically better on a small dataset — it added 46,176 parameters to learn something a fixed rule already did well",
+        "Strided convolution needs a much higher learning rate",
+        "The result would reverse with any other seed",
+      ],
+      answer: 1,
+      explain: "On large datasets strided and learned downsampling do compete well. On 8,000 rows the fixed rule won, which is the general pattern for extra capacity on small data.",
+    },
+  ]}
+/>
+
+## 🧪 Try It Yourself
+
+<DataCampExercise
+  lang="python"
+  hint={`Reshape into windows and reduce over the two window axes. axis=(1, 3) is the pair created by the reshape.`}
+  code={`# Task: Exercise 1 - Pooling by hand
+import numpy as np
+from tensorflow import keras
+
+(x_train, _), _ = keras.datasets.fashion_mnist.load_data()
+grey = x_train[7].astype("float32") / 255.0
+
+
+def pool(image, size, how):
+    height = image.shape[0] // size * size
+    width = image.shape[1] // size * size
+    blocks = image[:height, :width].reshape(height // size, size,
+                                           width // size, size)
+    return (blocks.max(axis=(1, 3)) if how == "max"
+            else blocks.mean(axis=___))            # replace ___ with (1, 3)
+
+
+mine_max = pool(grey, 2, "max")
+mine_mean = pool(grey, 2, "mean")
+batch = grey[None, :, :, None]
+keras_max = keras.layers.MaxPooling2D(2)(batch).numpy()[0, :, :, 0]
+keras_mean = keras.layers.AveragePooling2D(2)(batch).numpy()[0, :, :, 0]
+print(f"input {grey.shape} -> pooled {mine_max.shape}")
+print(f"max pooling:     max |mine - keras| = "
+      f"{np.abs(mine_max - keras_max).max():.2e}")
+print(f"average pooling: max |mine - keras| = "
+      f"{np.abs(mine_mean - keras_mean).max():.2e}")
+print(f"a 2x2 pool discards 3 of every 4 values: "
+      f"{grey.size} -> {mine_max.size}")
+
+# -- Expected Output -------------------------------------------
+# input (28, 28) -> pooled (14, 14)
+# max pooling:     max |mine - keras| = 0.00e+00
+# average pooling: max |mine - keras| = 5.96e-08
+# a 2x2 pool discards 3 of every 4 values: 784 -> 196
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Track the mean and the max separately. One kind of pooling preserves the first exactly and one preserves the second.`}
+  code={`# Task: Exercise 2 - What each kind of pooling preserves
+import numpy as np
+from tensorflow import keras
+
+(x_train, _), _ = keras.datasets.fashion_mnist.load_data()
+grey = x_train[7].astype("float32") / 255.0
+
+
+def pool(image, size, how):
+    height = image.shape[0] // size * size
+    width = image.shape[1] // size * size
+    blocks = image[:height, :width].reshape(height // size, size,
+                                           width // size, size)
+    return blocks.max(axis=(1, 3)) if how == "max" else blocks.mean(axis=(1, 3))
+
+
+print(f"input           mean {grey.mean():.4f}  max {grey.max():.4f}  "
+      f"std {grey.std():.4f}")
+for size in (2, 4):
+    for how in ("max", ___):                      # replace ___ with "mean"
+        pooled = pool(grey, size, how)
+        print(f"{how:4s} pool {size}x{size} -> {str(pooled.shape):9s} "
+              f"mean {pooled.mean():.4f}  max {pooled.max():.4f}  "
+              f"std {pooled.std():.4f}")
+print("average pooling preserves the mean exactly; max pooling raises it,")
+print("because it keeps the largest value in every window")
+
+# -- Expected Output -------------------------------------------
+# input           mean 0.5761  max 1.0000  std 0.4329
+# max  pool 2x2 -> (14, 14)  mean 0.6738  max 1.0000  std 0.4185
+# mean pool 2x2 -> (14, 14)  mean 0.5761  max 0.9657  std 0.4008
+# max  pool 4x4 -> (7, 7)    mean 0.8353  max 1.0000  std 0.3229
+# mean pool 4x4 -> (7, 7)    mean 0.5761  max 0.9422  std 0.3450
+# average pooling preserves the mean exactly; max pooling raises it,
+# because it keeps the largest value in every window
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Only the downsampling layer changes between the four models. "no downsampling" adds nothing at all, which is why its Flatten sees a much larger map.`}
+  code={`# Task: Exercise 3 - Four ways to halve the resolution
+import time
+import numpy as np
+from tensorflow import keras
+
+(x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()
+x_train = x_train[:8000].astype("float32")[..., None] / 255.0
+y_train = y_train[:8000]
+x_test = x_test[:2000].astype("float32")[..., None] / 255.0
+y_test = y_test[:2000]
+
+
+def build(kind):
+    keras.utils.set_random_seed(0)
+    layers = [keras.layers.Input((28, 28, 1))]
+    for filters in (32, 64):
+        layers.append(keras.layers.Conv2D(filters, 3, padding="same",
+                                          activation="relu"))
+        if kind == "max pool":
+            layers.append(keras.layers.MaxPooling2D(2))
+        elif kind == "average pool":
+            layers.append(keras.layers.AveragePooling2D(2))
+        elif kind == "strided conv":
+            layers.append(keras.layers.Conv2D(filters, 3, strides=___,
+                                              padding="same",
+                                              activation="relu"))
+            # replace ___ with 2
+    layers += [keras.layers.Flatten(),
+               keras.layers.Dense(64, activation="relu"),
+               keras.layers.Dense(10, activation="softmax")]
+    model = keras.Sequential(layers)
+    model.compile(keras.optimizers.Adam(1e-3),
+                  "sparse_categorical_crossentropy", metrics=["accuracy"])
+    return model
+
+
+print(f"{'kind':18s} {'params':>10} {'final val acc':>14} {'best':>8}")
+for kind in ("max pool", "average pool", "strided conv", "no downsampling"):
+    model = build(kind)
+    history = model.fit(x_train, y_train, epochs=12, batch_size=128, verbose=0,
+                        validation_data=(x_test, y_test))
+    scores = history.history["val_accuracy"]
+    print(f"{kind:18s} {model.count_params():10,} {scores[-1]:14.4f} "
+          f"{max(scores):8.4f}")
+print("average pooling matched max pooling here, and skipping downsampling")
+print("cost 14x the parameters for no reliable gain")
+
+# -- Expected Output -------------------------------------------
+# kind                   params  final val acc     best
+# max pool              220,234         0.8720   0.8760
+# average pool          220,234         0.8740   0.8740
+# strided conv          266,410         0.8455   0.8645
+# no downsampling     3,230,794         0.8655   0.8765
+# average pooling matched max pooling here, and skipping downsampling
+# cost 14x the parameters for no reliable gain
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Each layer's activation bytes are the product of its output dimensions times 4 for float32. Weight bytes come from the layer's own weight shapes.`}
+  code={`# Task: Exercise 4 - Where the memory goes
+import numpy as np
+from tensorflow import keras
+
+keras.utils.set_random_seed(0)
+model = keras.Sequential([
+    keras.layers.Input((28, 28, 1)),
+    keras.layers.Conv2D(32, 3, padding="same", activation="relu"),
+    keras.layers.MaxPooling2D(2),
+    keras.layers.Conv2D(64, 3, padding="same", activation="relu"),
+    keras.layers.MaxPooling2D(2),
+    keras.layers.Flatten(),
+    keras.layers.Dense(64, activation="relu"),
+    keras.layers.Dense(10, activation="softmax"),
+])
+
+total_activations = 0
+total_weights = 0
+print(f"{'layer':16s} {'output shape':18s} {'activations':>13} {'weights':>12}")
+for layer in model.layers:
+    dims = [int(s) for s in layer.output.shape[1:]]
+    activation_bytes = int(np.prod(dims)) * ___     # replace ___ with 4
+    weight_bytes = int(sum(np.prod(w.shape) for w in layer.weights)) * 4
+    total_activations += activation_bytes
+    total_weights += weight_bytes
+    print(f"{type(layer).__name__:16s} {str(tuple(dims)):18s} "
+          f"{activation_bytes:13,} {weight_bytes:12,}")
+print(f"total activations per image {total_activations:,} bytes  "
+      f"weights {total_weights:,} bytes")
+for batch_size in (32, 128, 512):
+    print(f"  batch {batch_size:4d}: "
+          f"{total_activations * batch_size / 1e6:8.2f} MB of activations")
+
+# -- Expected Output -------------------------------------------
+# layer            output shape         activations      weights
+# Conv2D           (28, 28, 32)             100,352        1,280
+# MaxPooling2D     (14, 14, 32)              25,088            0
+# Conv2D           (14, 14, 64)              50,176       73,984
+# MaxPooling2D     (7, 7, 64)                12,544            0
+# Flatten          (3136,)                   12,544            0
+# Dense            (64,)                        256      803,072
+# Dense            (10,)                         40        2,600
+# total activations per image 201,000 bytes  weights 880,936 bytes
+#   batch   32:     6.43 MB of activations
+#   batch  128:    25.73 MB of activations
+#   batch  512:   102.91 MB of activations
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Pooling has no weights at all. For the receptive field, each layer adds (size - 1) times the current jump, and the jump multiplies by the stride.`}
+  code={`# Task: Exercise 5 - Pooling has no parameters, but it moves the field
+import numpy as np
+from tensorflow import keras
+
+pool_layer = keras.layers.MaxPooling2D(2)
+conv_layer = keras.layers.Conv2D(64, 3, padding="same")
+conv_layer.build((None, 14, 14, 32))
+print(f"MaxPooling2D parameters: "
+      f"{sum(int(np.prod(w.shape)) for w in pool_layer.weights)}")
+print(f"Conv2D(64, 3x3) on 32 channels: "
+      f"{sum(int(np.prod(w.shape)) for w in conv_layer.weights):,}")
+
+field, jump = 1, 1
+print(f"{'after':28s} {'receptive field':>16} {'jump':>6}")
+for label, size, stride in (("conv 3x3", 3, 1), ("pool 2x2", 2, 2),
+                            ("conv 3x3", 3, 1), ("pool 2x2", 2, 2),
+                            ("conv 3x3", 3, 1)):
+    field = field + (size - 1) * jump
+    jump = jump * ___                              # replace ___ with stride
+    print(f"{label:28s} {field:16d} {jump:6d}")
+print("pooling contributes no weights and no nonlinearity - it buys receptive")
+print("field and cuts activation memory, and that is all")
+
+# -- Expected Output -------------------------------------------
+# MaxPooling2D parameters: 0
+# Conv2D(64, 3x3) on 32 channels: 18,496
+# after                         receptive field   jump
+# conv 3x3                                    3      1
+# pool 2x2                                    4      2
+# conv 3x3                                    8      2
+# pool 2x2                                   10      4
+# conv 3x3                                   18      4
+# pooling contributes no weights and no nonlinearity - it buys receptive
+# field and cuts activation memory, and that is all
+# --------------------------------------------------------------`}
+/>

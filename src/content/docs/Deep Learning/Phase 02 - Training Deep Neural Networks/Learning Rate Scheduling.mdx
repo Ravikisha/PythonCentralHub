@@ -1,366 +1,835 @@
 ---
 title: Learning Rate Scheduling
-description: Stop using a constant learning rate — decay it on a schedule (power, exponential, piecewise, or 1cycle) to train faster and converge better.
+description: Five schedules measured on identical runs where the best beat a constant rate by 0.0020, plus the range test that finds a base rate and the plateau schedule that gained 0.0160.
 sidebar:
   order: 415
 ---
 
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Figure from "../../../../components/Figure.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+Decaying the learning rate is standard advice, and it is good advice — but the
+measurements below put a number on it, and that number is smaller than the
+enthusiasm suggests. Getting the *base* rate right matters far more than the shape
+of the curve you decay it along, which is why this page starts with the range test.
+
 ## What you'll learn
 
-- why a single constant learning rate is always a compromise
-- power scheduling, exponential scheduling, and piecewise constant scheduling
-- performance scheduling with `ReduceLROnPlateau`
-- the 1cycle schedule, and why Géron calls it out as the strongest option
+- The five standard schedules written as functions, with their values tabulated
+  epoch by epoch.
+- The learning-rate range test: one pass, 120 batches, rate ramped from **1e-5 to
+  10**, minimum loss at **lr = 0.1531**.
+- Why the usual "take a tenth of the minimum" rule suggested **0.0153** when
+  **0.1** worked better.
+- Five schedules trained identically: **constant 0.8510** against a best of
+  **0.8525** — a gain of 0.0015.
+- Where scheduling genuinely paid: `ReduceLROnPlateau` over 60 epochs reached
+  **0.8690**, cutting the rate seven times.
+- How to implement any schedule three ways in Keras, and which to prefer.
 
-## Why schedule the learning rate at all?
+## Get the base rate right first
 
-Too high, and training diverges. Too low, and it converges but takes forever.
-Slightly too high, and it makes fast progress early on, then dances around the
-optimum without ever quite settling. A **learning rate schedule** sidesteps the
-whole trade-off: start large (fast early progress) and shrink it once progress
-slows down, reaching a better solution faster than any single constant rate could.
+$$
+\theta \leftarrow \theta - \eta_t \nabla_\theta L
+$$
+
+Everything on this page changes $\eta_t$ over time. None of it helps if $\eta_0$
+is wrong: the [gradient descent
+page](/deep-learning/phase-01---neural-network-foundations/how-neural-networks-learn-gradient-based-optimization/)
+measured a 1,000× too small rate producing 0.1320 accuracy — a schedule cannot
+rescue that.
+
+The range test finds a good base rate in about one epoch of compute. Start
+absurdly low, multiply the rate by a constant factor every batch, and record the
+loss:
+
+```python title="120 batches, rate from 1e-5 to 10"
+optimizer = keras.optimizers.SGD(1e-5)
+for step in range(120):
+    rate = 1e-5 * (10.0 / 1e-5) ** (step / 119)
+    optimizer.learning_rate.assign(rate)
+    # ... one gradient step on the next batch, record the loss
+```
+
+<Figure
+  src="/images/dl/phase-02-training/learning-rate-scheduling/lr-range-test"
+  alt="Loss against learning rate on a log axis. The curve is flat near 2.4 from 1e-5 to 1e-3, descends steadily through 1e-2, reaches a minimum of about 1.3 near 0.15, then rises almost vertically past 0.8 and goes off the top of the plot."
+  title="One pass with the rate ramped from 1e-5 to 10"
+  caption="Three regions. Below about 1e-3 nothing happens — the loss barely moves from its initial 2.4. Between 1e-3 and 0.15 the loss falls steadily. Past roughly 0.8 it diverges, exceeding the plot. The smoothed minimum sits at lr = 0.1531; the dashed line is the conventional tenth of that."
+/>
+
+| Learning rate | Loss on that batch |
+| --- | --- |
+| 0.00001 | 2.3408 |
+| 0.00065 | 2.3288 |
+| 0.00263 | 2.1945 |
+| 0.01060 | 2.0891 |
+| 0.04268 | 1.7232 |
+| **0.17191** | **1.3173** |
+| 0.69237 | 1.4831 |
+| 2.78855 | 3.2875 |
+| 10.00000 | 3.2027 |
+
+The smoothed minimum is at **0.1531**, and the standard recipe is to train at
+roughly a tenth of it — **0.0153** — on the theory that the minimum is already at
+the edge of stability.
+
+Here that recipe was too conservative. The schedule comparison below trains at a
+constant **0.1**, close to the range test's minimum rather than a tenth of it, and
+reaches 0.8510. The rule of thumb is a starting point for a sweep, not an answer:
+**read the range test as "1e-3 is far too low and 0.8 diverges" and then try two or
+three rates in between.**
+
+## The five schedules
 
 ```mermaid
-flowchart LR
-  A["High LR early<br/>(fast progress)"] --> B["LR decays<br/>as training slows"]
-  B --> C["Low LR late<br/>(fine settling near optimum)"]
+flowchart TD
+  A["run the range test"] --> B["sweep two or three rates<br/>inside the useful band"]
+  B --> C{"does the run plateau<br/>before the budget ends?"}
+  C -- no --> D["a constant rate is fine<br/>measured: 0.8510"]
+  C -- yes --> E{"can you afford<br/>extra epochs?"}
+  E -- yes --> F["ReduceLROnPlateau<br/>cuts only when progress stops"]
+  E -- no --> G["1cycle or piecewise<br/>needs the total step count"]
+  H["never combine a schedule object<br/>with ReduceLROnPlateau"] -.-> F
 ```
 
-## Get the base rate right before you schedule it
+```python title="Each schedule is a function of the step count"
+BASE, STEPS_PER_EPOCH, TOTAL = 0.1, 63, 1260
 
-A schedule only decays a starting point — if that starting point is badly
-wrong, no schedule will save the run. Chollet's diagnostic for a training loss
-that simply won't move: don't reach for a fancier optimizer first, tune the
-**learning rate** and **batch size**, since they're usually enough on their
-own to get things moving. A learning rate of `1.0` on RMSprop can make training
-overshoot so badly that accuracy gets stuck around 30–40%; dropping it to
-`1e-2` on the exact same model and data can be the entire fix:
+def constant(step):     return BASE
 
-```python title="Same model, same data -- only the learning rate changes" showLineNumbers{1}
-import numpy as np
-import tensorflow as tf
+def power_decay(step):  return BASE / (1 + step / (STEPS_PER_EPOCH * 5))
 
-np.random.seed(42)
-X = np.random.rand(200, 20).astype("float32")
-y = (X.sum(axis=1) > 10).astype("float32")
+def exponential(step):  return BASE * 0.9 ** (step / (STEPS_PER_EPOCH * 2))
 
-def train(learning_rate, epochs=5):
-    model = tf.keras.models.Sequential([
-        tf.keras.layers.Dense(32, activation="relu", input_shape=(20,)),
-        tf.keras.layers.Dense(1, activation="sigmoid"),
-    ])
-    model.compile(
-        optimizer=tf.keras.optimizers.RMSprop(learning_rate),
-        loss="binary_crossentropy",
-        metrics=["accuracy"],
-    )
-    history = model.fit(X, y, epochs=epochs, batch_size=32, verbose=0)
-    return history.history["accuracy"][-1]
+def piecewise(step):
+    epoch = step / STEPS_PER_EPOCH
+    return BASE if epoch < 8 else BASE / 10 if epoch < 15 else BASE / 100
 
-print("lr=1.0  final accuracy:", round(train(1.0), 2))
-print("lr=1e-2 final accuracy:", round(train(1e-2), 2))
+def one_cycle(step):
+    """Ramp up to the peak over 45% of training, back down, then anneal."""
+    peak, start = BASE, BASE / 10
+    up, down = int(0.45 * TOTAL), int(0.9 * TOTAL)
+    if step < up:    return start + (peak - start) * step / up
+    if step < down:  return peak - (peak - start) * (step - up) / (down - up)
+    return start * (1 - 0.9 * min((step - down) / max(TOTAL - down, 1), 1.0))
 ```
 
-Once training actually gets started at a sane base rate, *that's* when
-scheduling (below) starts paying off — squeezing out a better final result
-faster than a constant rate ever could.
+<Figure
+  src="/images/dl/phase-02-training/learning-rate-scheduling/schedule-shapes"
+  alt="Five learning-rate curves on a log vertical axis across twenty epochs. Constant is a flat line at 0.1. Power and exponential decay smoothly to about 0.02 and 0.037. Piecewise drops in two sharp steps to 0.001. 1cycle rises from 0.01 to 0.1 by epoch 9, falls back, then drops steeply at the end."
+  title="Five schedules, base rate 0.1, 20 epochs"
+  caption="The shapes differ far more than the results will. Note that 1cycle starts an order of magnitude below the base rate and only reaches it at epoch 9 — the ramp-up is a deliberate warm-up, and the final anneal takes it below every other schedule."
+/>
 
-## Power scheduling
+| Schedule | Epoch 0 | Epoch 5 | Epoch 10 | Epoch 15 | Epoch 19 |
+| --- | --- | --- | --- | --- | --- |
+| constant | 0.10000 | 0.10000 | 0.10000 | 0.10000 | 0.10000 |
+| power | 0.10000 | 0.05000 | 0.03333 | 0.02500 | 0.02083 |
+| exponential | 0.10000 | 0.07684 | 0.05905 | 0.04538 | 0.03675 |
+| piecewise | 0.10000 | 0.10000 | 0.01000 | 0.00100 | 0.00100 |
+| 1cycle | **0.01000** | 0.06000 | 0.09000 | 0.04000 | 0.00550 |
 
-The learning rate becomes a function of the iteration number `t`:
+## What the schedules actually bought
 
-`η(t) = η₀ / (1 + t/s)^c`
+Same architecture, same seed, same 20-epoch budget, same base rate, SGD, 8,000
+Fashion-MNIST rows:
 
-It drops quickly at first, then more and more slowly. In Keras this is the
-easiest schedule to wire up — just set `decay` on the optimizer (Keras assumes
-`c = 1`, and `decay` is `1/s`):
+<Figure
+  src="/images/dl/phase-02-training/learning-rate-scheduling/schedule-results"
+  alt="Two panels. Left: validation accuracy per epoch for the five schedules, all converging into a narrow band between 0.84 and 0.855 by epoch 20. Right: grouped bars of final and best accuracy per schedule, all between 0.848 and 0.853."
+  title="Five schedules, identical everything else"
+  caption="The whole spread is 0.0045 — from power decay's 0.8480 to piecewise and 1cycle's 0.8525. Constant, the schedule that does nothing at all, scored 0.8510. On this budget with a well-chosen base rate, the schedule is not what decides the result."
+/>
 
-```python title="Power scheduling via optimizer decay" showLineNumbers{1}
-import tensorflow as tf
+| Schedule | Final val accuracy | Best val accuracy | Best epoch | Final training loss |
+| --- | --- | --- | --- | --- |
+| constant | 0.8510 | 0.8510 | 20 | **0.3514** |
+| power | **0.8480** | 0.8480 | 20 | 0.4178 |
+| exponential | 0.8485 | 0.8485 | 20 | 0.3782 |
+| piecewise | **0.8525** | **0.8530** | 16 | 0.4090 |
+| 1cycle | **0.8525** | 0.8525 | 20 | 0.3939 |
 
-optimizer = tf.keras.optimizers.legacy.SGD(learning_rate=0.01, decay=1e-4)
-```
+**The best schedule beat doing nothing by 0.0015.** Two of the five were *worse*
+than constant. On a 2,000-row validation set that entire spread is inside the noise
+band, which means the honest summary is: at a well-chosen base rate on a short run,
+scheduling did not measurably help.
 
-## Exponential scheduling
+Notice also that constant reached the lowest *training* loss (0.3514) while
+finishing mid-table on validation. The decaying schedules trade training loss for a
+smoother approach — which is the mechanism they are supposed to provide, and here
+it was worth almost nothing.
 
-`η(t) = η₀ · 0.1^(t/s)` — the learning rate is slashed by a factor of 10 every
-`s` steps, a steadier decay than power scheduling's fast-then-slow curve. Define
-a schedule function and hand it to a `LearningRateScheduler` callback:
+### Where it did pay
 
-```python title="Exponential scheduling with a callback" showLineNumbers{1}
-import tensorflow as tf
+`ReduceLROnPlateau` watches the validation loss and cuts the rate when progress
+stops, so it schedules in response to the run rather than to a clock. Over 60
+epochs at base rate 0.1:
 
-def exponential_decay(lr0, s):
-    def exponential_decay_fn(epoch):
-        return lr0 * 0.1 ** (epoch / s)
-    return exponential_decay_fn
+| Epoch it fired | New rate | Validation loss | Validation accuracy |
+| --- | --- | --- | --- |
+| 34 | 0.050000 | 0.4233 | 0.8530 |
+| 39 | 0.025000 | 0.4099 | 0.8620 |
+| 43 | 0.012500 | 0.4016 | 0.8660 |
+| 47 | 0.006250 | 0.3962 | 0.8675 |
+| 51 | 0.003125 | 0.3942 | 0.8685 |
+| 55 | 0.001563 | **0.3939** | **0.8690** |
+| 58 | 0.000781 | 0.3943 | 0.8655 |
 
-exponential_decay_fn = exponential_decay(lr0=0.01, s=20)
-lr_scheduler = tf.keras.callbacks.LearningRateScheduler(exponential_decay_fn)
+Seven reductions, and accuracy climbed from 0.8530 to **0.8690** — a gain of
+0.0160, roughly ten times what any fixed schedule delivered.
 
-# history = model.fit(X_train, y_train, epochs=20, callbacks=[lr_scheduler])
-```
+Read that carefully, because there is a confound: this run had **60 epochs against
+the fixed schedules' 20**. Part of the gain is simply more training. What the table
+does show cleanly is the *mechanism* — every cut in the rate is followed by an
+immediate drop in validation loss, and the first cut only happened at epoch 34,
+which is long after any of the fixed schedules had already decayed most of the way
+down. **A plateau schedule spends the high rate for as long as the high rate is
+still working.** A clock-based schedule cannot know that.
 
-## Piecewise constant scheduling
-
-Use one learning rate for a stretch of epochs, then drop to a smaller one, and
-so on. Simple, but it takes some trial and error to pick the right rates and how
-long to hold each one:
-
-```python title="Piecewise constant scheduling" showLineNumbers{1}
-import tensorflow as tf
-
-def piecewise_constant_fn(epoch):
-    if epoch < 5:
-        return 0.01
-    elif epoch < 15:
-        return 0.005
-    else:
-        return 0.001
-
-lr_scheduler = tf.keras.callbacks.LearningRateScheduler(piecewise_constant_fn)
-```
-
-## Performance scheduling
-
-Instead of a fixed formula, watch the validation loss (the same signal early
-stopping uses) and cut the learning rate whenever it stops improving:
-
-```python title="ReduceLROnPlateau" showLineNumbers{1}
-import tensorflow as tf
-
-lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=5)
-
-# multiplies the learning rate by 0.5 whenever val_loss hasn't improved for 5 epochs
-```
-
-## The tf.keras.optimizers.schedules approach
-
-`tf.keras` also lets you attach a schedule *object* directly to the optimizer,
-which updates the learning rate every step (not just every epoch) and gets saved
-along with the model:
-
-```python title="ExponentialDecay schedule object" showLineNumbers{1}
-import tensorflow as tf
-
-batch_size = 32
-s = 20 * len(X_train) // batch_size  # steps for ~20 epochs
-
-learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(0.01, s, 0.1)
-optimizer = tf.keras.optimizers.SGD(learning_rate)
-```
-
-## 1cycle scheduling
-
-Leslie Smith's **1cycle** schedule (2018) does something different from every
-schedule above: it *increases* the learning rate from `η₀` up to a peak `η₁`
-during the first half of training, then decreases it back down to `η₀` during
-the second half, finishing the last few epochs by dropping several orders of
-magnitude further. Momentum is often varied in the opposite direction — starting
-high, dipping in the middle, then climbing back up. On CIFAR10, Smith reported
-reaching 91.9% validation accuracy in just 100 epochs with 1cycle, versus 90.3%
-in 800 epochs the standard way — the same architecture, radically less training.
-
-```python title="A minimal 1cycle-style callback" showLineNumbers{1}
-import tensorflow as tf
-
-class OneCycleScheduler(tf.keras.callbacks.Callback):
-    def __init__(self, iterations, max_lr=1e-3, start_lr=None, last_iterations=None, last_lr=None):
-        self.iterations = iterations
-        self.max_lr = max_lr
-        self.start_lr = start_lr or max_lr / 10
-        self.last_iterations = last_iterations or iterations // 10 + 1
-        self.half_iteration = (iterations - self.last_iterations) // 2
-        self.last_lr = last_lr or self.start_lr / 1000
-        self.iteration = 0
-
-    def _interpolate(self, iter1, iter2, lr1, lr2):
-        return (lr2 - lr1) * (self.iteration - iter1) / (iter2 - iter1) + lr1
-
-    def on_batch_begin(self, batch, logs=None):
-        if self.iteration < self.half_iteration:
-            lr = self._interpolate(0, self.half_iteration, self.start_lr, self.max_lr)
-        elif self.iteration < 2 * self.half_iteration:
-            lr = self._interpolate(self.half_iteration, 2 * self.half_iteration, self.max_lr, self.start_lr)
-        else:
-            lr = self._interpolate(2 * self.half_iteration, self.iterations, self.start_lr, self.last_lr)
-        self.iteration += 1
-        self.model.optimizer.learning_rate = lr
-```
-
-## Visualize it
-
-Each schedule decays the learning rate very differently. Power scheduling drops
-fast then flattens out; exponential scheduling keeps slashing it by the same
-factor; 1cycle rises first, then falls, then collapses at the very end:
-
-```p5 title="Learning rate schedules compared" desc="Power, exponential, and 1cycle schedules plotted over the course of training, with a marker tracing each one from epoch 0 to epoch T." height="280"
+```p5 title="Compare schedule shapes" desc="The five schedules drawn from the same formulas used in the measured runs. Click a schedule to isolate it, and drag the epoch marker to read the exact rate." height="330"
+const NAMES = ["constant", "power", "exponential", "piecewise", "1cycle"];
+const COLORS = [[75, 139, 190], [255, 211, 67], [120, 200, 120],
+                [180, 140, 220], [230, 110, 110]];
+const BASE = 0.1, STEPS = 63, TOTAL = 1260;
+let isolated = -1;
+let marker = 10;
 function setup() {
-  createCanvas(600, 280);
+  createCanvas(600, 330);
   textFont("monospace");
+}
+function rateAt(which, step) {
+  const epoch = step / STEPS;
+  if (which === 0) return BASE;
+  if (which === 1) return BASE / (1 + step / (STEPS * 5));
+  if (which === 2) return BASE * Math.pow(0.9, step / (STEPS * 2));
+  if (which === 3) return epoch < 8 ? BASE : (epoch < 15 ? BASE / 10 : BASE / 100);
+  const peak = BASE, start = BASE / 10;
+  const up = Math.floor(0.45 * TOTAL), down = Math.floor(0.9 * TOTAL);
+  if (step < up) return start + (peak - start) * step / up;
+  if (step < down) return peak - (peak - start) * (step - up) / (down - up);
+  return start * (1 - 0.9 * Math.min((step - down) / Math.max(TOTAL - down, 1), 1));
 }
 function draw() {
   background(13, 17, 23);
-  const gx = 46, gy = 20, gw = width - 80, gh = height - 60;
+  const gx = 66, gy = 42, gw = width - 130, gh = 180;
+  const px = (epoch) => gx + epoch / 20 * gw;
+  const py = (rate) => {
+    const l = Math.log10(Math.max(rate, 1e-4));
+    return gy + gh - (l + 4) / 4 * gh;
+  };
   stroke(60, 70, 84);
   strokeWeight(1);
   line(gx, gy + gh, gx + gw, gy + gh);
   line(gx, gy, gx, gy + gh);
-  noStroke();
-  fill(160);
-  textSize(11);
-  text("epoch 0", gx, gy + gh + 16);
-  text("epoch T", gx + gw - 34, gy + gh + 16);
-  text("lr", gx - 30, gy + 6);
-
-  // one shared "training run" progress value, looping every PERIOD frames
-  const period = 200;
-  const t = (frameCount % period) / period;
-
-  function plot(fn, col, label, ly) {
-    // faint full curve for context
-    stroke(col[0], col[1], col[2], 55);
-    strokeWeight(1.5);
+  for (const level of [-4, -3, -2, -1]) {
+    stroke(40, 48, 58);
+    line(gx, py(Math.pow(10, level)), gx + gw, py(Math.pow(10, level)));
+    noStroke();
+    fill(120);
+    textSize(9);
+    textAlign(RIGHT, CENTER);
+    text("1e" + level, gx - 6, py(Math.pow(10, level)));
+  }
+  for (let which = 0; which < NAMES.length; which++) {
+    if (isolated >= 0 && which !== isolated) continue;
+    stroke(COLORS[which][0], COLORS[which][1], COLORS[which][2]);
+    strokeWeight(2);
     noFill();
     beginShape();
-    for (let i = 0; i <= 100; i++) {
-      const tt = i / 100;
-      const y = constrain(fn(tt), 0, 1);
-      vertex(gx + tt * gw, gy + gh - y * gh);
+    for (let step = 0; step < TOTAL; step += 4) {
+      vertex(px(step / STEPS), py(rateAt(which, step)));
     }
     endShape();
-
-    // bright portion traced so far this run
-    stroke(col[0], col[1], col[2]);
-    strokeWeight(2.5);
-    beginShape();
-    for (let i = 0; i <= 100; i++) {
-      const tt = i / 100;
-      if (tt > t) break;
-      const y = constrain(fn(tt), 0, 1);
-      vertex(gx + tt * gw, gy + gh - y * gh);
-    }
-    endShape();
-
-    // moving marker at the current epoch
-    noStroke();
-    fill(col[0], col[1], col[2]);
-    ellipse(gx + t * gw, gy + gh - constrain(fn(t), 0, 1) * gh, 8, 8);
-
-    fill(col);
-    textSize(12);
-    textAlign(LEFT, CENTER);
-    text(label, gx + gw - 120, ly);
   }
-  plot((tt) => 1 / (1 + tt * 6), [240, 150, 90], "power", gy + 16);
-  plot((tt) => Math.pow(0.1, tt), [75, 139, 190], "exponential", gy + 34);
-  plot((tt) => (tt < 0.45 ? tt / 0.45 : tt < 0.9 ? 1 - (tt - 0.45) / 0.45 : Math.max(0.02, 1 - (tt - 0.9) / 0.1)), [120, 200, 120], "1cycle", gy + 52);
+  stroke(230, 230, 230, 120);
+  strokeWeight(1);
+  line(px(marker), gy, px(marker), gy + gh);
+  noStroke();
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("learning rate against epoch (base 0.1, 20 epochs)", 66, 20);
+  let y = 240;
+  for (let which = 0; which < NAMES.length; which++) {
+    const dim = isolated >= 0 && which !== isolated;
+    fill(COLORS[which][0], COLORS[which][1], COLORS[which][2], dim ? 70 : 255);
+    textSize(11);
+    textAlign(LEFT, TOP);
+    const value = rateAt(which, Math.round(marker * STEPS));
+    text(NAMES[which].padEnd(12) + value.toFixed(5), 66 + (which % 2) * 220,
+      y + Math.floor(which / 2) * 16);
+  }
+  fill(150);
+  textSize(10);
+  textAlign(LEFT, TOP);
+  text("epoch " + marker.toFixed(1) + " — click a name to isolate, drag the plot",
+    66, 306);
+}
+function mousePressed() {
+  if (mouseY > 236 && mouseY < 288) {
+    const column = mouseX < 286 ? 0 : 1;
+    const row = Math.floor((mouseY - 240) / 16);
+    const which = row * 2 + column;
+    isolated = (which === isolated || which >= NAMES.length) ? -1 : which;
+    return;
+  }
+  setMarker();
+}
+function mouseDragged() { setMarker(); }
+function setMarker() {
+  const gx = 66, gw = width - 130;
+  if (mouseY > 30 && mouseY < 230) {
+    marker = Math.max(0, Math.min(20, (mouseX - gx) / gw * 20));
+  }
 }
 ```
 
-## Mini-checkpoint
+## Three ways to write a schedule in Keras
 
-You've trained for a while and validation loss has plateaued for the last several
-epochs, but you don't want to hand-pick a decay formula. Which callback fits best?
+```python title="1. A LearningRateSchedule object, passed to the optimizer"
+schedule = keras.optimizers.schedules.ExponentialDecay(
+    initial_learning_rate=0.1, decay_steps=126, decay_rate=0.9)
+model.compile(keras.optimizers.SGD(schedule), loss="...")
+```
 
-- `ReduceLROnPlateau` — it watches validation loss directly and cuts the
-  learning rate only when progress actually stalls.
+```python title="2. A callback that recomputes the rate every epoch"
+def by_epoch(epoch, rate):
+    return 0.1 / (1 + epoch / 5)
 
-:::tip[From the book]
-Géron summarizes a 2013 study comparing schedules for speech recognition models:
-both performance scheduling and exponential scheduling worked well, with
-exponential scheduling favored for being easy to tune and implement. But his
-final verdict is that **1cycle performs even better still** — it's the schedule
-listed as the default recommendation in the chapter's summary table, right
-alongside He initialization, ELU, and Nadam/momentum optimization.
-:::
+model.fit(..., callbacks=[keras.callbacks.LearningRateScheduler(by_epoch)])
+```
 
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
+```python title="3. React to the metric instead of the clock"
+model.fit(..., callbacks=[keras.callbacks.ReduceLROnPlateau(
+    monitor="val_loss", factor=0.5, patience=3, min_lr=1e-5)])
+```
 
-## 🧪 Try It Yourself
+Form 1 is per-*step* and is the one to use for anything smooth — it is also what
+gets saved with the optimizer, so a reloaded model resumes on the right part of the
+curve. Form 2 is per-*epoch*, which is coarser but easier to reason about. Form 3
+is the only one that adapts to what is actually happening.
 
-### Exercise 1 – Build an Exponential Decay Schedule
+Verified: `ExponentialDecay(0.1, 126, 0.9)` matches
+$0.1 \times 0.9^{\text{step}/126}$ to **7.13e-09** across steps 0 through 2,520.
 
-<DataCampExercise
-  lang="python"
-  hint={`\`tf.keras.optimizers.schedules.ExponentialDecay(initial_lr, decay_steps, decay_rate)\` returns a schedule object you pass straight to an optimizer.`}
-  code={`# Task: Exercise 1 - Build an Exponential Decay Schedule
-import tensorflow as tf
+```p5 title="The measured table, ranked" desc="Click a column to rank every row by it. The bars are that column's values and the highest and lowest are computed from the numbers, not written in." height="384"
+let metric = 0;
+const COLUMNS = ["Loss on that batch"];
+const ROWS = [
+  ["0.00001", 2.3408],
+  ["0.00065", 2.3288],
+  ["0.00263", 2.1945],
+  ["0.01060", 2.0891],
+  ["0.04268", 1.7232],
+  ["0.17191", 1.3173],
+  ["0.69237", 1.4831],
+  ["2.78855", 3.2875],
+  ["10.00000", 3.2027]
+];
+function setup() {
+  createCanvas(620, 384);
+  textFont("monospace");
+}
+function fmt(v) {
+  if (v === 0) { return "0"; }
+  const a = Math.abs(v);
+  if (a >= 1000 || a < 0.001) { return v.toExponential(2); }
+  if (a >= 100) { return v.toFixed(1); }
+  return v.toFixed(4);
+}
+function draw() {
+  background(13, 17, 23);
+  noStroke();
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("Learning Rate Scheduling", 26, 16);
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (i === metric) { fill(255, 211, 67); } else { fill(48, 56, 68); }
+    rect(x, 40, w, 22, 4);
+    if (i === metric) { fill(13, 17, 23); } else { fill(180); }
+    textSize(9);
+    text(COLUMNS[i], x + 8, 47);
+    x += w + 6;
+    if (x > 500) { break; }
+  }
+  const values = ROWS.map((r) => r[metric + 1]);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo === 0 ? 1 : hi - lo;
+  const order = ROWS.slice().sort((a, b) => b[metric + 1] - a[metric + 1]);
+  for (let i = 0; i < order.length; i++) {
+    const y = 78 + i * 26;
+    const v = order[i][metric + 1];
+    fill(160);
+    textSize(9);
+    text(order[i][0], 26, y + 5);
+    fill(34, 40, 50);
+    rect(230, y, 280, 18, 3);
+    const frac = (v - lo) / span;
+    if (v === hi) { fill(126, 192, 143); }
+    else if (v === lo) { fill(224, 108, 117); }
+    else { fill(107, 169, 221); }
+    rect(230, y, Math.max(frac * 280, 3), 18, 3);
+    fill(225);
+    textSize(9);
+    text(fmt(v), 518, y + 5);
+  }
+  const top = order[0];
+  const bottom = order[order.length - 1];
+  fill(150);
+  textSize(9);
+  const base = 78 + order.length * 26 + 8;
+  text("highest " + COLUMNS[metric] + ": " + top[0] + " at " + fmt(top[1]),
+       26, base);
+  text("lowest  " + COLUMNS[metric] + ": " + bottom[0] + " at "
+       + fmt(bottom[1]), 26, base + 14);
+  text("bars are scaled within the chosen column - lowest is not zero", 26,
+       base + 30);
+}
+function mousePressed() {
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (mouseX > x && mouseX < x + w && mouseY > 40 && mouseY < 62) {
+      metric = i;
+    }
+    x += w + 6;
+  }
+}
+```
 
-schedule = tf.keras.optimizers.schedules.___(0.01, 20, 0.1)   # replace ___ with ExponentialDecay
-print(round(float(schedule(0)), 2))
+## Pitfalls
 
-# ── Expected Output ───────────────────────────────────────────
-# 0.01
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
+- **Scheduling before tuning the base rate.** The base rate is worth an order of
+  magnitude; the schedule was worth 0.0015 here.
+- **Trusting the "one tenth of the range-test minimum" rule.** It suggested 0.0153;
+  0.1 trained better. Use the test to bracket, then sweep.
+- **Comparing schedules on one seed.** The entire spread across five schedules was
+  0.0045, well inside seed-to-seed noise on a 2,000-row validation set.
+- **Mixing a schedule object with `ReduceLROnPlateau`.** The callback cannot
+  override a `LearningRateSchedule` passed to the optimizer — it writes to a value
+  the schedule ignores. Pick one mechanism.
+- **Decaying too early.** The plateau schedule did not touch the rate until epoch
+  34, and every cut after that helped. A clock-based decay would have cut it at
+  epoch 8.
+- **Forgetting that 1cycle starts low.** Its first epochs run at a tenth of the
+  base rate by design; a short run may never reach the peak.
+- **Assuming a schedule fixes divergence.** If the base rate is past the stability
+  limit, the early steps have already destroyed the weights.
 
-schedule = tf.keras.optimizers.schedules.ExponentialDecay(0.01, 20, 0.1)
-print(round(float(schedule(0)), 2))`}
-  sct={`test_output_contains("0.01")
-success_msg("Exponential decay schedule created — it starts at the initial rate!")`}
-  height={140}
-/>
+## Recap
 
-### Exercise 2 – ReduceLROnPlateau Callback
-
-<DataCampExercise
-  lang="python"
-  hint={`Pass \`factor=0.5\` and \`patience=5\` to \`tf.keras.callbacks.ReduceLROnPlateau\`.`}
-  code={`# Task: Exercise 2 - ReduceLROnPlateau Callback
-import tensorflow as tf
-
-lr_scheduler = tf.keras.callbacks.___(factor=0.5, patience=5)   # replace ___ with ReduceLROnPlateau
-print("factor:", lr_scheduler.factor, "patience:", lr_scheduler.patience)
-
-# ── Expected Output ───────────────────────────────────────────
-# factor: 0.5 patience: 5
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
-
-lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=5)
-print("factor:", lr_scheduler.factor, "patience:", lr_scheduler.patience)`}
-  sct={`test_output_contains("factor: 0.5 patience: 5")
-success_msg("The learning rate will now halve after 5 stagnant epochs!")`}
-  height={140}
-/>
-
-### Exercise 3 – A Piecewise Constant Schedule Function
-
-<DataCampExercise
-  lang="python"
-  hint={`Return a smaller learning rate as the epoch number increases, using plain if/elif/else.`}
-  code={`# Task: Exercise 3 - A Piecewise Constant Schedule Function
-def piecewise_constant_fn(epoch):
-    if epoch < 5:
-        return 0.01
-    elif epoch < 15:
-        return ___   # replace ___ with 0.005
-    else:
-        return 0.001
-
-print(piecewise_constant_fn(0), piecewise_constant_fn(10), piecewise_constant_fn(20))
-
-# ── Expected Output ───────────────────────────────────────────
-# 0.01 0.005 0.001
-# ──────────────────────────────────────────────────────────────`}
-  solution={`def piecewise_constant_fn(epoch):
-    if epoch < 5:
-        return 0.01
-    elif epoch < 15:
-        return 0.005
-    else:
-        return 0.001
-
-print(piecewise_constant_fn(0), piecewise_constant_fn(10), piecewise_constant_fn(20))`}
-  sct={`test_output_contains("0.01 0.005 0.001")
-success_msg("Piecewise schedule wired up correctly!")`}
-  height={165}
-/>
+- The range test found the loss minimum at lr 0.1531 and divergence past
+  roughly 0.8, in one epoch of compute.
+- The conventional tenth-of-the-minimum rule gave 0.0153, while 0.1 trained
+  better — treat the test as a bracket.
+- Five schedules on identical 20-epoch runs spanned 0.8480 to 0.8525, with
+  constant at 0.8510. Two schedules were worse than no schedule.
+- Constant reached the lowest training loss and mid-table validation accuracy;
+  decay trades one for the other, and here the trade was worth almost nothing.
+- `ReduceLROnPlateau` over 60 epochs cut the rate seven times and reached 0.8690,
+  though it also had three times the epochs.
+- Keras offers per-step schedule objects, per-epoch callbacks, and metric-driven
+  reduction. Do not combine the first with the third.
 
 ## Next
 
-Continue to **The Universal Workflow of Machine Learning** — you now have a
-full toolkit for training deep nets; the next three pages zoom back out to the
-project-level workflow that toolkit fits into, before Phase 3 puts it all to
-work on real images.
+Six pages of individual techniques, and the question of how to assemble them into
+a process that works on a problem you have not seen before:
+[The Universal Workflow of Machine
+Learning](/deep-learning/phase-02---training-deep-neural-networks/the-universal-workflow-of-machine-learning/).
+
+<Quiz
+  questions={[
+    {
+      q: "Five schedules on identical runs gave 0.8480 to 0.8525, with a constant rate at 0.8510. What is the correct conclusion?",
+      options: [
+        "Schedules are useless and should never be used",
+        "At a well-chosen base rate on a short run, the schedule's shape made no measurable difference here — the entire spread is within seed noise, so the base rate deserved the tuning effort instead",
+        "Piecewise decay is the best schedule",
+        "The experiment was too small to conclude anything",
+      ],
+      answer: 1,
+      explain: "Two of the five were worse than doing nothing. That is the signature of a difference inside the noise band, not of a ranking.",
+    },
+    {
+      q: "The range test's minimum was at lr = 0.1531 and the usual rule suggests training at a tenth of that. What happened when the rate was set to 0.1 instead?",
+      options: [
+        "Training diverged",
+        "It trained well and reached 0.8510 — the tenth-of-the-minimum rule was too conservative here, so the test is best read as a bracket (1e-3 too low, 0.8 diverges) to sweep inside",
+        "It made no difference at all",
+        "The loss went to nan after one epoch",
+      ],
+      answer: 1,
+      explain: "The test tells you where the useful range is. Picking a single number from it by formula is less reliable than trying two or three rates inside the range.",
+    },
+    {
+      q: "Why can ReduceLROnPlateau outperform a clock-based decay?",
+      options: [
+        "Because it uses a smaller learning rate overall",
+        "Because it only reduces the rate when validation loss stops improving — in the measured run it left the rate at 0.1 until epoch 34, whereas a fixed schedule would have decayed it from epoch 8",
+        "Because it also applies early stopping",
+        "Because it changes the rate every batch rather than every epoch",
+      ],
+      answer: 1,
+      explain: "Spending the high rate for as long as it is still working is the whole advantage. The confound in that run is that it also had three times the epochs.",
+    },
+    {
+      q: "What goes wrong if you pass a LearningRateSchedule object to the optimizer and also add ReduceLROnPlateau?",
+      options: [
+        "Keras raises an error immediately",
+        "The callback writes a value the schedule ignores, so the reduction silently has no effect — the schedule keeps computing the rate from the step count",
+        "The two rates are multiplied together",
+        "Training becomes much slower",
+      ],
+      answer: 1,
+      explain: "Nothing errors, so it is easy to believe the reduction is working. Choose one mechanism: a schedule object, a callback, or plateau reduction.",
+    },
+    {
+      q: "1cycle starts at a tenth of the base rate and reaches the peak at epoch 9 of 20. What does that imply for a short run?",
+      options: [
+        "It converges faster than everything else",
+        "A run shorter than the ramp-up never reaches the peak rate at all, so 1cycle's behaviour depends on knowing the total number of steps in advance",
+        "The base rate should be set ten times higher",
+        "It behaves identically to exponential decay",
+      ],
+      answer: 1,
+      explain: "Every 1cycle implementation takes the total step count as a parameter for exactly this reason. Change the epoch count and you change the schedule.",
+    },
+  ]}
+/>
+
+## 🧪 Try It Yourself
+
+<DataCampExercise
+  lang="python"
+  hint={`Each schedule is a plain function of the global step. Power decay divides by (1 + step / decay_steps); exponential raises the decay rate to the power of step / decay_steps.`}
+  code={`# Task: Exercise 1 - Write the five schedules and tabulate them
+BASE, STEPS_PER_EPOCH, TOTAL = 0.1, 63, 1260
+
+
+def constant(step):
+    return BASE
+
+
+def power_decay(step):
+    return BASE / (1 + step / (STEPS_PER_EPOCH * 5))
+
+
+def exponential(step):
+    return BASE * 0.9 ** (step / (STEPS_PER_EPOCH * ___))   # replace ___ with 2
+
+
+def piecewise(step):
+    epoch = step / STEPS_PER_EPOCH
+    if epoch < 8:
+        return BASE
+    if epoch < 15:
+        return BASE / 10
+    return BASE / 100
+
+
+def one_cycle(step):
+    peak, start = BASE, BASE / 10
+    up, down = int(0.45 * TOTAL), int(0.9 * TOTAL)
+    if step < up:
+        return start + (peak - start) * step / up
+    if step < down:
+        return peak - (peak - start) * (step - up) / (down - up)
+    remaining = max(TOTAL - down, 1)
+    return start * (1 - 0.9 * min((step - down) / remaining, 1.0))
+
+
+schedules = {"constant": constant, "power": power_decay,
+             "exponential": exponential, "piecewise": piecewise,
+             "1cycle": one_cycle}
+print(f"{'schedule':14s} " + " ".join(f"{e:>9}" for e in (0, 5, 10, 15, 19)))
+for name, schedule in schedules.items():
+    row = [schedule(int(e * STEPS_PER_EPOCH)) for e in (0, 5, 10, 15, 19)]
+    print(f"{name:14s} " + " ".join(f"{v:9.5f}" for v in row))
+
+# -- Expected Output -------------------------------------------
+# schedule               0         5        10        15        19
+# constant         0.10000   0.10000   0.10000   0.10000   0.10000
+# power            0.10000   0.05000   0.03333   0.02500   0.02083
+# exponential      0.10000   0.07684   0.05905   0.04538   0.03675
+# piecewise        0.10000   0.10000   0.01000   0.00100   0.00100
+# 1cycle           0.01000   0.06000   0.09000   0.04000   0.00550
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`ExponentialDecay computes initial_rate * decay_rate ** (step / decay_steps) when staircase is False. Call the schedule object with a step to read its value.`}
+  code={`# Task: Exercise 2 - Match Keras' ExponentialDecay by hand
+from tensorflow import keras
+
+base, decay_steps, decay_rate = 0.1, 126, 0.9
+schedule = keras.optimizers.schedules.ExponentialDecay(
+    base, decay_steps, decay_rate, staircase=___)      # replace ___ with False
+
+print(f"{'step':>7} {'mine':>10} {'keras':>10}")
+worst = 0.0
+for step in (0, 63, 126, 500, 1000, 2520):
+    mine = base * decay_rate ** (step / decay_steps)
+    theirs = float(schedule(step))
+    worst = max(worst, abs(mine - theirs))
+    print(f"{step:7d} {mine:10.6f} {theirs:10.6f}")
+print(f"max difference {worst:.2e}")
+
+# -- Expected Output -------------------------------------------
+#    step       mine      keras
+#       0   0.100000   0.100000
+#      63   0.094868   0.094868
+#     126   0.090000   0.090000
+#     500   0.065830   0.065830
+#    1000   0.043336   0.043336
+#    2520   0.012158   0.012158
+# max difference 7.13e-09
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Multiply the rate by a constant factor every batch so the sweep is uniform on a log scale, and assign it to optimizer.learning_rate before each step.`}
+  code={`# Task: Exercise 3 - The learning rate range test
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+
+(x_train, y_train), _ = keras.datasets.fashion_mnist.load_data()
+x_train = x_train[:8000].reshape(8000, -1).astype("float32") / 255.0
+y_train = y_train[:8000]
+
+keras.utils.set_random_seed(0)
+model = keras.Sequential([
+    keras.layers.Input((784,)),
+    keras.layers.Dense(128, activation="relu"),
+    keras.layers.Dense(10, activation="softmax"),
+])
+optimizer = keras.optimizers.SGD(1e-5)
+loss_fn = keras.losses.SparseCategoricalCrossentropy()
+
+steps, batch = 120, 128
+rates, losses = [], []
+for step in range(steps):
+    rate = 1e-5 * (10.0 / 1e-5) ** (step / (steps - ___))   # replace ___ with 1
+    optimizer.learning_rate.assign(rate)
+    start = (step * batch) % (len(x_train) - batch)
+    with tf.GradientTape() as tape:
+        loss = loss_fn(y_train[start:start + batch],
+                       model(x_train[start:start + batch], training=True))
+    optimizer.apply_gradients(
+        zip(tape.gradient(loss, model.trainable_variables),
+            model.trainable_variables))
+    rates.append(rate)
+    losses.append(float(loss.numpy()))
+
+smoothed = np.convolve(losses, np.ones(5) / 5, mode="same")
+best = int(np.nanargmin(smoothed))
+print(f"minimum smoothed loss {smoothed[best]:.4f} at lr {rates[best]:.5f}")
+print(f"suggested base rate (a tenth of it): {rates[best] / 10:.5f}")
+for index in range(0, len(rates), 24):
+    print(f"  lr {rates[index]:10.5f}  loss {losses[index]:10.4f}")
+print(f"  lr {rates[-1]:10.5f}  loss {losses[-1]:10.4f}")
+
+# -- Expected Output -------------------------------------------
+# minimum smoothed loss 1.3040 at lr 0.15306
+# suggested base rate (a tenth of it): 0.01531
+#   lr    0.00001  loss     2.3408
+#   lr    0.00016  loss     2.4349
+#   lr    0.00263  loss     2.1945
+#   lr    0.04268  loss     1.7232
+#   lr    0.69237  loss     1.4831
+#   lr   10.00000  loss     3.2027
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`A LambdaCallback with on_batch_begin lets you set the rate per step rather than per epoch. Keep a mutable counter so the step index survives across epochs.`}
+  code={`# Task: Exercise 4 - Train all five schedules on one problem
+import numpy as np
+from tensorflow import keras
+
+BASE, EPOCHS, BATCH = 0.1, 20, 128
+(x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()
+x_train = x_train[:8000].reshape(8000, -1).astype("float32") / 255.0
+y_train = y_train[:8000]
+x_test = x_test[:2000].reshape(2000, -1).astype("float32") / 255.0
+y_test = y_test[:2000]
+STEPS_PER_EPOCH = int(np.ceil(len(x_train) / BATCH))
+TOTAL = STEPS_PER_EPOCH * EPOCHS
+
+
+def piecewise(step):
+    epoch = step / STEPS_PER_EPOCH
+    return BASE if epoch < 8 else (BASE / 10 if epoch < 15 else BASE / 100)
+
+
+def one_cycle(step):
+    peak, start = BASE, BASE / 10
+    up, down = int(0.45 * TOTAL), int(0.9 * TOTAL)
+    if step < up:
+        return start + (peak - start) * step / up
+    if step < down:
+        return peak - (peak - start) * (step - up) / (down - up)
+    return start * (1 - 0.9 * min((step - down) / max(TOTAL - down, 1), 1.0))
+
+
+schedules = {
+    "constant": lambda s: BASE,
+    "power": lambda s: BASE / (1 + s / (STEPS_PER_EPOCH * 5)),
+    "exponential": lambda s: BASE * 0.9 ** (s / (STEPS_PER_EPOCH * 2)),
+    "piecewise": piecewise,
+    "1cycle": one_cycle,
+}
+
+print(f"{'schedule':14s} {'final val acc':>14} {'best val acc':>13} "
+      f"{'final train loss':>17}")
+for name, schedule in schedules.items():
+    keras.utils.set_random_seed(0)
+    model = keras.Sequential([
+        keras.layers.Input((784,)),
+        keras.layers.Dense(128, activation="relu"),
+        keras.layers.Dense(10, activation="softmax"),
+    ])
+    model.compile(keras.optimizers.SGD(BASE),
+                  "sparse_categorical_crossentropy", metrics=["accuracy"])
+    step = [0]
+
+    def by_batch(batch, logs, schedule=schedule, step=step):
+        model.optimizer.learning_rate.assign(schedule(step[0]))
+        step[0] += ___                                  # replace ___ with 1
+
+    history = model.fit(
+        x_train, y_train, epochs=EPOCHS, batch_size=BATCH, verbose=0,
+        validation_data=(x_test, y_test),
+        callbacks=[keras.callbacks.LambdaCallback(on_batch_begin=by_batch)])
+    accuracies = history.history["val_accuracy"]
+    print(f"{name:14s} {accuracies[-1]:14.4f} {max(accuracies):13.4f} "
+          f"{history.history['loss'][-1]:17.4f}")
+
+# -- Expected Output -------------------------------------------
+# schedule        final val acc  best val acc  final train loss
+# constant               0.8510        0.8510            0.3514
+# power                  0.8480        0.8480            0.4178
+# exponential            0.8485        0.8485            0.3782
+# piecewise              0.8525        0.8530            0.4090
+# 1cycle                 0.8525        0.8525            0.3939
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Track the optimizer's learning rate at the end of every epoch with a tiny callback, then print only the epochs where it changed.`}
+  code={`# Task: Exercise 5 - Watch ReduceLROnPlateau decide
+import numpy as np
+from tensorflow import keras
+
+(x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()
+x_train = x_train[:8000].reshape(8000, -1).astype("float32") / 255.0
+y_train = y_train[:8000]
+x_test = x_test[:2000].reshape(2000, -1).astype("float32") / 255.0
+y_test = y_test[:2000]
+
+keras.utils.set_random_seed(0)
+model = keras.Sequential([
+    keras.layers.Input((784,)),
+    keras.layers.Dense(128, activation="relu"),
+    keras.layers.Dense(10, activation="softmax"),
+])
+model.compile(keras.optimizers.SGD(0.1), "sparse_categorical_crossentropy",
+              metrics=["accuracy"])
+
+rates = []
+
+
+class Track(keras.callbacks.Callback):
+    def on_epoch_end(self, epoch, logs=None):
+        rates.append(float(self.model.optimizer.learning_rate))
+
+
+history = model.fit(
+    x_train, y_train, epochs=60, batch_size=128, verbose=0,
+    validation_data=(x_test, y_test),
+    callbacks=[keras.callbacks.ReduceLROnPlateau(
+        monitor="val_loss", factor=___, patience=3, min_lr=1e-5), Track()])
+# replace ___ with 0.5
+
+print(f"{'epoch':>6} {'rate':>10} {'val_loss':>10} {'val_acc':>9}")
+previous = None
+for epoch, (rate, loss, accuracy) in enumerate(
+        zip(rates, history.history["val_loss"],
+            history.history["val_accuracy"]), start=1):
+    if previous is not None and abs(rate - previous) > 1e-12:
+        print(f"{epoch:6d} {rate:10.6f} {loss:10.4f} {accuracy:9.4f}   "
+              f"<- reduced")
+    previous = rate
+print(f"reductions: "
+      f"{sum(1 for a, b in zip(rates, rates[1:]) if abs(a - b) > 1e-12)}")
+print(f"final val acc {history.history['val_accuracy'][-1]:.4f}  "
+      f"best {max(history.history['val_accuracy']):.4f}")
+
+# -- Expected Output -------------------------------------------
+#  epoch       rate   val_loss   val_acc
+#     34   0.050000     0.4233    0.8530   <- reduced
+#     39   0.025000     0.4099    0.8620   <- reduced
+#     43   0.012500     0.4016    0.8660   <- reduced
+#     47   0.006250     0.3962    0.8675   <- reduced
+#     51   0.003125     0.3942    0.8685   <- reduced
+#     55   0.001563     0.3939    0.8690   <- reduced
+#     58   0.000781     0.3943    0.8655   <- reduced
+# reductions: 7
+# final val acc 0.8655  best 0.8690
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`1cycle has three phases measured in steps, not epochs: ramp up to the peak, ramp back down to the start, then anneal below it. The total step count decides where the boundaries fall.`}
+  code={`# Task: Exercise 6 - Build 1cycle and check its three phases
+BASE, TOTAL = 0.1, 1260
+
+
+def one_cycle(step):
+    peak, start = BASE, BASE / 10
+    up, down = int(0.45 * TOTAL), int(0.9 * TOTAL)
+    if step < up:
+        return start + (peak - start) * step / up
+    if step < ___:                            # replace ___ with down
+        return peak - (peak - start) * (step - up) / (down - up)
+    remaining = max(TOTAL - down, 1)
+    return start * (1 - 0.9 * min((step - down) / remaining, 1.0))
+
+
+up, down = int(0.45 * TOTAL), int(0.9 * TOTAL)
+print(f"total steps {TOTAL}: ramp up to step {up}, down to step {down}, "
+      f"then anneal")
+print(f"{'step':>7} {'rate':>10} {'phase':>10}")
+for step in (0, up // 2, up, (up + down) // 2, down, TOTAL - 1):
+    phase = "up" if step < up else ("down" if step < down else "anneal")
+    print(f"{step:7d} {one_cycle(step):10.5f} {phase:>10}")
+print(f"peak rate {max(one_cycle(s) for s in range(TOTAL)):.5f} at step "
+      f"{max(range(TOTAL), key=one_cycle)}")
+print(f"final rate {one_cycle(TOTAL - 1):.5f}, which is "
+      f"{BASE / one_cycle(TOTAL - 1):.0f}x below the base rate")
+
+# -- Expected Output -------------------------------------------
+# total steps 1260: ramp up to step 567, down to step 1134, then anneal
+#    step       rate      phase
+#       0    0.01000         up
+#     283    0.05492         up
+#     567    0.10000       down
+#     850    0.05508       down
+#    1134    0.01000     anneal
+#    1259    0.00107     anneal
+# peak rate 0.10000 at step 567
+# final rate 0.00107, which is 93x below the base rate
+# --------------------------------------------------------------`}
+/>

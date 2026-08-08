@@ -1,493 +1,936 @@
 ---
 title: Q-Learning & Deep Q-Networks
-description: Learn Markov decision processes, Q-values, temporal difference learning, and how a DQN approximates Q-values with a neural network.
+description: Replay and a target network ablated on CartPole - together 144.20 mean episode length, either one alone 53.45, neither 48.81 against a random baseline of 23.09.
 sidebar:
   order: 462
 ---
 
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Figure from "../../../../components/Figure.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+Tabular Q-learning is a lookup table with one number per state-action pair, updated by a rule
+that provably converges. A **Deep Q-Network** is the same rule with a neural network in place of
+the table — and that substitution breaks the convergence guarantee outright.
+
+Two mechanisms exist to patch it: **experience replay** and a **target network**. Both are
+usually presented as sensible ideas. Here they are ablated on CartPole, three seeds each:
+
+| Configuration | Final episode length | sd | Worst seed | Best seed |
+| --- | --- | --- | --- | --- |
+| **Replay + target** | **144.20** | 7.91 | 136.82 | 155.17 |
+| Replay only | 53.45 | 1.84 | 51.98 | 56.05 |
+| Target only | 53.45 | **36.58** | **25.47** | 105.12 |
+| Neither | 48.81 | 10.50 | 40.32 | 63.60 |
+| *Random policy* | *23.09* | — | — | — |
+
+Neither mechanism does much alone — 53.45 either way, against 48.81 for nothing at all. Together
+they reach 144.20. The interesting row is **target only**, whose seeds ranged from 25.47 (barely
+better than random) to 105.12.
+
 ## What you'll learn
 
-- what a **Markov decision process (MDP)** is, and the Bellman Optimality Equation
-- the difference between **state values** and **Q-values**
-- **Temporal Difference (TD) Learning** and the **Q-Learning** update rule
-- why tabular Q-Learning breaks down at scale, and how a **Deep Q-Network (DQN)** fixes it
-- replay buffers, target networks, and the epsilon-greedy exploration policy
+- The Q-learning update, and the one property that makes the tabular version safe.
+- Why replacing the table with a network breaks it, in two distinct ways.
+- What replay and the target network each fix, measured by ablation.
+- Why a learning rate of 1.0 destroys tabular learning in a *stochastic* world — reward
+  −1.6025, goal rate 0.0100.
 
-## Markov decision processes
+## The update
 
-A **Markov decision process (MDP)** looks like a Markov chain, but at each
-step the agent chooses an **action**, and that action determines the
-transition probabilities and the reward. Formally, an MDP is described by:
+$$
+Q(s, a) \leftarrow Q(s, a) + \alpha\Big[\underbrace{r + \gamma \max_{a'} Q(s', a')}_{\text{target}} - Q(s, a)\Big]
+$$
 
-- `T(s, a, s')` — the probability of landing in state `s'` after taking action `a` in state `s`
-- `R(s, a, s')` — the reward received for that same transition
-- a discount factor `γ` (gamma) that controls how much future rewards matter
+The bracket is a **temporal-difference error**: the difference between what we thought this
+state-action was worth and what one step of real experience suggests. The tabular version is
+safe because each entry is independent — updating $Q(s, a)$ changes nothing else.
 
-Bellman showed that the **optimal value** of a state, `V*(s)`, obeys a
-recursive relationship called the **Bellman Optimality Equation**: the value
-of the current state equals the best action's expected reward, plus the
-discounted value of wherever that action leads. Iterating this equation
-(**Value Iteration**) is guaranteed to converge to the optimal state values.
+That independence is exactly what a network destroys. Every weight update changes the predicted
+value of *every* state, including the $s'$ used to compute the target.
 
-Knowing state values doesn't hand you a policy directly, though — for that
-you want **Q-Values** (Quality Values): the value of taking a specific action
-`a` in state `s`, before seeing where it leads. Once you have accurate
-Q-Values, the optimal policy is simply: *pick the action with the highest
-Q-Value*.
+### Learning rate and exploration, on the gridworld
+
+Before adding a network, here is the tabular version on the stochastic gridworld from the
+[previous page](/deep-learning/phase-07---reinforcement-learning/introduction-to-reinforcement-learning/),
+where value iteration scores 0.6849 reward with a 0.9033 goal rate:
+
+<Figure
+  src="/images/dl/phase-07-rl/q-learning-and-dqn/tabular"
+  alt="Two panels against learning rate on a shared x-axis of 0.05 to 1.0. Left: mean reward for three exploration rates, all reasonable at low learning rates and collapsing to around -1.5 at learning rate 1.0, with a dashed line marking the value-iteration optimum. Right: the share of states whose greedy action matches the optimal policy, peaking near 0.82 and falling to 0.23 at learning rate 1.0."
+  title="3,000 episodes per cell, greedy evaluation over 300 episodes"
+  caption="A learning rate of 1.0 means each update throws away the old estimate entirely and believes the single most recent transition. In a world where actions slip 15% of the time, that single transition is often unrepresentative, and the table never settles — reward -1.6025 with a goal rate of 0.0100, far worse than random wandering. The best cell measured was alpha 0.05 with epsilon 0.10, at 0.6951."
+/>
+
+| α | ε | Reward | Goal rate | Policy match |
+| --- | --- | --- | --- | --- |
+| 0.05 | 0.10 | **0.6951** | **0.9133** | 0.7273 |
+| 0.20 | 0.10 | 0.6872 | 0.9067 | **0.8182** |
+| 0.50 | 0.01 | 0.6765 | 0.9033 | 0.7727 |
+| 0.50 | 0.10 | **−1.8901** | **0.0200** | 0.5000 |
+| 1.00 | 0.01 | −1.6025 | 0.0100 | 0.2273 |
+| 1.00 | 0.30 | −1.2294 | 0.1633 | 0.5909 |
+
+Two things worth noticing. First, the **α = 0.50, ε = 0.10** cell scored −1.8901 while its
+neighbours at α = 0.50 scored 0.6765 and 0.4990 — a single unlucky combination, which is a
+reminder that each cell here is one run, not an average. Second, **policy match never exceeds
+0.8182**: even the best runs disagree with the optimal policy on a fifth of states, because
+ε-greedy rarely visits the safe corridor.
+
+## Why a network breaks it
 
 ```mermaid
-flowchart LR
-  S["State s"] -->|"Action a"| Env["Environment"]
-  Env -->|"Reward r"| Update["Update Q(s, a)"]
-  Env -->|"Next State s'"| Update
-  Update --> S
+flowchart TD
+  T["tabular Q-learning"] --> I["each entry independent"]
+  I --> C["converges"]
+  N["network Q-learning"] --> P1["one update changes<br/>every state's value"]
+  N --> P2["consecutive samples<br/>are highly correlated"]
+  P1 --> B["the target moves<br/>while you fit it"]
+  P2 --> D["gradient steps on<br/>near-duplicate data"]
+  B -->|"fix: target network"| F1["freeze a copy for 200 frames"]
+  D -->|"fix: experience replay"| F2["sample from a 10k buffer"]
+  F1 --> R["144.20 together"]
+  F2 --> R
 ```
 
-## Q-Value iteration on a tiny MDP
+**Correlated samples.** Consecutive CartPole states differ by one 0.02-second Euler step. A
+network fitted on a stream of them sees a hundred near-duplicates in a row, drifts to fit that
+narrow slice, and forgets the rest. Replay fixes this by keeping the last 10,000 transitions and
+sampling a random batch of 64.
 
-Here's a 3-state MDP from the book: each state has up to three possible
-actions, with its own transition probabilities and rewards. We can compute
-the optimal Q-Values directly with **Q-Value Iteration**, since we already
-know `T` and `R` for this toy example:
+**A moving target.** The regression target is $r + \gamma \max_{a'} Q(s', a')$, computed with the
+same network being updated. Fitting a target that shifts every time you fit it is not regression
+in any usual sense. The target network fixes this by scoring $s'$ with a frozen copy, refreshed
+every 200 frames.
 
-```python title="q_value_iteration.py" showLineNumbers{1}
-import numpy as np
+```python title="The two mechanisms, in the lines that implement them"
+# Replay: a random batch from the buffer, not the last few transitions.
+batch = rng.integers(0, filled, BATCH) if replay else recent_indices()
 
-transition_probabilities = [  # shape=[s, a, s']
-    [[0.7, 0.3, 0.0], [1.0, 0.0, 0.0], [0.8, 0.2, 0.0]],
-    [[0.0, 1.0, 0.0], None, [0.0, 0.0, 1.0]],
-    [None, [0.8, 0.1, 0.1], None],
-]
-rewards = [  # shape=[s, a, s']
-    [[+10, 0, 0], [0, 0, 0], [0, 0, 0]],
-    [[0, 0, 0], [0, 0, 0], [0, 0, -50]],
-    [[0, 0, 0], [+40, 0, 0], [0, 0, 0]],
-]
-possible_actions = [[0, 1, 2], [0, 2], [1]]
+# Target network: score the next state with a frozen copy.
+scorer = target_q if target_network else online_q
+future = scorer(following[batch]).max(axis=1)
+wanted = rewards[batch] + GAMMA * future * (1 - finished[batch])
 
-Q_values = np.full((3, 3), -np.inf)
-for state, actions in enumerate(possible_actions):
-    Q_values[state, actions] = 0.0
+current = online_q(states[batch])
+current[np.arange(len(batch)), actions[batch]] = wanted
+step(states[batch], current)                    # one gradient step
 
-gamma = 0.90
-for iteration in range(50):
-    Q_prev = Q_values.copy()
-    for s in range(3):
-        for a in possible_actions[s]:
-            Q_values[s, a] = np.sum([
-                transition_probabilities[s][a][sp] *
-                (rewards[s][a][sp] + gamma * np.max(Q_prev[sp]))
-                for sp in range(3)
-            ])
-
-print(Q_values)
-print("Best action per state:", np.argmax(Q_values, axis=1))
+if target_network and frame % TARGET_SYNC == 0:
+    target.set_weights(online.get_weights())
 ```
 
-That prints the optimal action for every state — `[0, 0, 1]` with
-`gamma = 0.90` — meaning: in state `s0` choose `a0`, in `s1` stay put with
-`a0`, and in `s2` the only choice is `a1`.
+## The ablation
 
-## Temporal difference learning and Q-Learning
+<Figure
+  src="/images/dl/phase-07-rl/q-learning-and-dqn/dqn-ablation"
+  alt="Left: mean episode length against environment frames for four configurations, with replay-plus-target climbing steadily past 140 while the other three plateau near 50, and dashed lines at the random baseline of 23 and the episode cap of 200. Right: horizontal bars of final episode length with error bars across three seeds, showing replay+target at 144.20, replay only and target only both at 53.45, and neither at 48.81."
+  title="6,000 frames across 16 parallel environments, 3 seeds each"
+  caption="The two mechanisms are not independently useful here — each alone lands at 53.45, barely above the 48.81 of using neither. Together they reach 144.20. The error bars carry the other half of the story: replay-only is remarkably consistent (sd 1.84) because it reliably plateaus, while target-only ranges from 25.47 to 105.12 depending on the seed."
+/>
 
-Value Iteration works great — but only if you already know `T(s, a, s')` and
-`R(s, a, s')`. Usually the agent has no idea what those are; it has to
-*experience* transitions to learn about them. **Temporal Difference (TD)
-Learning** adapts Value Iteration to this partial-knowledge setting by
-keeping a running average of observed rewards plus expected future value.
-**Q-Learning** does the same thing for Q-Values:
+The pattern is worth stating carefully, because "both matter" is the easy reading and it
+understates the result. Each mechanism addresses a *different* failure, and fixing one while
+leaving the other in place leaves the agent broken by the one that remains:
 
-```
-Q(s, a)  ←  (1 - α) · Q(s, a)  +  α · (r + γ · max Q(s', a'))
-```
+- With **replay but no target network**, the data is decorrelated but the regression target still
+  moves with every gradient step.
+- With a **target network but no replay**, the target is stable but the network is being fitted on
+  64 near-identical consecutive transitions.
 
-`α` is the learning rate. The agent just watches itself act — even
-*randomly* — and gradually improves its Q-Value estimates:
+Only removing both obstacles produces learning, which is why DQN is usually described as needing
+both — and why the measured 53.45 / 53.45 / 48.81 cluster is more informative than the headline
+144.20.
 
-```python title="tabular_q_learning.py" showLineNumbers{1}
-import numpy as np
+## What the learned values look like
 
-def step(state, action):
-    probas = transition_probabilities[state][action]
-    next_state = np.random.choice([0, 1, 2], p=probas)
-    reward = rewards[state][action][next_state]
-    return next_state, reward
+<Figure
+  src="/images/dl/phase-07-rl/q-learning-and-dqn/q-values"
+  alt="Left: a scatter plot of learned maximum Q-value against the true optimal value for 22 states, clustered around the diagonal but with a visible tendency to fall below it. Right: a histogram of the gap between the best and second-best action per state, concentrated at small values with a mean marked by a dashed line."
+  title="Tabular Q-learning against value iteration, gridworld"
+  caption="The mean signed error is -0.1273 — the learned values UNDERESTIMATE the true ones. Textbooks predict the opposite, because the max in the update is taken over noisy estimates and so tends to select overestimates. That bias is real, but here it is swamped by a larger effect: epsilon-greedy rarely visits the safe corridor, so those states keep values learned from too few visits."
+/>
 
-def exploration_policy(state):
-    return np.random.choice(possible_actions[state])
+:::note[When the textbook prediction does not reproduce]
+Maximisation bias is the standard motivation for **Double DQN**, which decouples choosing the
+best action from evaluating it. The effect is genuine — taking a max over noisy estimates does
+select for the ones that happened to be too high — but it is not the dominant error in every
+setting. Here, under-exploration produced a net *under*-estimate of −0.1273.
 
-Q_values = np.full((3, 3), -np.inf)
-for state, actions in enumerate(possible_actions):
-    Q_values[state, actions] = 0.0
+Reporting the measured sign rather than the expected one is the whole point of running the
+experiment.
+:::
 
-alpha0, decay, gamma = 0.05, 0.005, 0.90
-state = 0
-for iteration in range(10_000):
-    action = exploration_policy(state)
-    next_state, reward = step(state, action)
-    next_value = np.max(Q_values[next_state])
-    alpha = alpha0 / (1 + iteration * decay)
-    Q_values[state, action] *= 1 - alpha
-    Q_values[state, action] += alpha * (reward + gamma * next_value)
-    state = next_state
+The right-hand histogram matters for a different reason: it shows how *close* the best and
+second-best actions usually are. In states where that gap is small, a tiny estimation error
+flips the greedy action, which is why policy match tops out at 0.8182 even when the values
+themselves are roughly right.
 
-print(Q_values)
-```
-
-Q-Learning is called an **off-policy** algorithm: the policy being trained
-(always greedy w.r.t. the current Q-Values) is different from the policy
-being *executed* to explore (here, pure random). A common middle ground is
-the **ε-greedy policy**: act randomly with probability `ε`, and greedily
-otherwise — starting with `ε` near `1.0` and decaying it toward `0.05` or so
-as training progresses.
-
-## From tables to Deep Q-Networks
-
-A Q-*table* needs one entry per `(state, action)` pair. That's fine for 3
-states — but Ms. Pac-Man alone has more possible states than there are atoms
-on Earth. The fix is **Approximate Q-Learning**: replace the table with a
-parameterized function, and when that function is a neural network, it's
-called a **Deep Q-Network (DQN)**.
-
-A DQN takes a state and outputs one Q-Value *per possible action* — much
-more efficient than one network call per `(s, a)` pair:
-
-```python title="dqn_cartpole.py" showLineNumbers{1}
-import gym
-import numpy as np
-import tensorflow as tf
-from tensorflow import keras
-from collections import deque
-
-env = gym.make("CartPole-v0")
-input_shape = [4]     # env.observation_space.shape
-n_outputs = 2          # env.action_space.n
-
-model = keras.models.Sequential([
-    keras.layers.Dense(32, activation="elu", input_shape=input_shape),
-    keras.layers.Dense(32, activation="elu"),
-    keras.layers.Dense(n_outputs),
-])
-
-replay_buffer = deque(maxlen=2000)
-
-def epsilon_greedy_policy(state, epsilon=0):
-    if np.random.rand() < epsilon:
-        return np.random.randint(n_outputs)
-    Q_values = model.predict(state[np.newaxis], verbose=0)
-    return np.argmax(Q_values[0])
-
-def play_one_step(env, state, epsilon):
-    action = epsilon_greedy_policy(state, epsilon)
-    next_state, reward, done, info = env.step(action)
-    replay_buffer.append((state, action, reward, next_state, done))
-    return next_state, reward, done, info
-
-def sample_experiences(batch_size):
-    indices = np.random.randint(len(replay_buffer), size=batch_size)
-    batch = [replay_buffer[index] for index in indices]
-    return [np.array([exp[i] for exp in batch]) for i in range(5)]
-
-batch_size, discount_factor = 32, 0.95
-optimizer = keras.optimizers.Adam(learning_rate=1e-3)
-loss_fn = keras.losses.mean_squared_error
-
-def training_step(batch_size):
-    states, actions, rewards, next_states, dones = sample_experiences(batch_size)
-    next_Q_values = model.predict(next_states, verbose=0)
-    max_next_Q_values = np.max(next_Q_values, axis=1)
-    target_Q_values = rewards + (1 - dones) * discount_factor * max_next_Q_values
-    mask = tf.one_hot(actions, n_outputs)
-    with tf.GradientTape() as tape:
-        all_Q_values = model(states)
-        Q_values = tf.reduce_sum(all_Q_values * mask, axis=1, keepdims=True)
-        loss = tf.reduce_mean(loss_fn(target_Q_values, Q_values))
-    grads = tape.gradient(loss, model.trainable_variables)
-    optimizer.apply_gradients(zip(grads, model.trainable_variables))
-
-for episode in range(600):
-    obs = env.reset()
-    for step in range(200):
-        epsilon = max(1 - episode / 500, 0.01)
-        obs, reward, done, info = play_one_step(env, obs, epsilon)
-        if done:
-            break
-    if episode > 50:
-        training_step(batch_size)
-```
-
-The **replay buffer** stores past experiences so training batches are
-sampled randomly rather than from perfectly-correlated consecutive steps —
-this stabilizes Gradient Descent considerably. Training a DQN this way is
-notoriously unstable: DeepMind's original fix was to add a second, slow-moving
-**target network** — a clone of the online model that only supplies the
-"next state" Q-Values used to build training targets, and gets its weights
-copied from the online model every so often instead of every step.
-
-## Stabilizing DQN even further
-
-The target network above is the first stabilization trick DeepMind needed
-to learn Atari games from raw pixels — but it wasn't the only one. A few
-more variants of Deep Q-Learning became standard soon after:
-
-- **Double DQN** — the target network tends to *overestimate* Q-values: if
-  several actions are equally good, sampling noise makes one of them look
-  best purely by chance, and `max()` always grabs it — a bit like judging a
-  pool's depth by the height of its tallest random wave. The fix: use the
-  **online** model to *choose* the best next action, and the **target**
-  model only to *evaluate* how good that chosen action is.
-
-```python title="double_dqn_training_step.py" showLineNumbers{1}
-def training_step(batch_size):
-    experiences = sample_experiences(batch_size)
-    states, actions, rewards, next_states, dones = experiences
-    next_Q_values = model.predict(next_states, verbose=0)   # online model picks the action
-    best_next_actions = np.argmax(next_Q_values, axis=1)
-    next_mask = tf.one_hot(best_next_actions, n_outputs).numpy()
-    next_best_Q_values = (target.predict(next_states, verbose=0) * next_mask).sum(axis=1)
-    target_Q_values = rewards + (1 - dones) * discount_factor * next_best_Q_values
-    # ... the rest (loss, gradients, optimizer step) is identical to before
-```
-
-- **Prioritized Experience Replay (PER)** — instead of sampling the replay
-  buffer uniformly, sample transitions with a large **TD error** more
-  often, since a big surprise usually means there's more to learn from that
-  transition. Sampled experiences are then down-weighted during training to
-  correct for the bias this introduces.
-- **Dueling DQN** — split the network into two heads instead of one: one
-  estimates the state's overall value `V(s)`, the other estimates each
-  action's **advantage** `A(s, a)` over that state's average action.
-  Recombining them as `Q(s, a) = V(s) + A(s, a)` (after centering the
-  advantages so the best one is exactly `0`) tends to learn faster,
-  especially in states where the choice of action barely matters.
-
-These tricks combine freely — DeepMind's 2017 **Rainbow** agent stacked six
-of them together and beat every earlier result. Implementing, debugging,
-and tuning all of this from scratch is a lot of work, though, which is
-exactly why real projects usually reach for a maintained library like
-**TF-Agents** instead of reinventing each variant by hand.
-
-## Visualize it
-
-Here's a small grid world: the agent starts top-left and must reach the
-goal, bottom-right, while avoiding the red trap. Cells are shaded by their
-current Q-value estimate (brighter = higher expected return) — watch the
-shading spread backward from the goal as the agent's path improves. The
-agent's dot flips color each step depending on whether it just **exploited**
-its Q-values (teal) or **explored** at random (amber), with `epsilon`
-decaying as episodes go by — exactly the ε-greedy policy described above:
-
-```p5 title="Grid-world Q-Learning" desc="Cell brightness shows the current Q-value estimate for the best action out of that cell. The dot is teal while exploiting (greedy) and amber while exploring (random) — that mix is what an epsilon-greedy policy looks like in motion." height="300"
-const N = 6;
-let Q, agent, goal, trap, path, ep, cell, wasExplore, epsNow;
-function idx(x, y) { return y * N + x; }
-function resetWorld() {
-  Q = new Array(N * N).fill(0);
-  agent = { x: 0, y: 0 };
-  goal = { x: N - 1, y: N - 1 };
-  trap = { x: 3, y: 1 };
-  path = [];
-  ep = 0;
-  wasExplore = false;
-  epsNow = 0.4;
-}
+```p5 title="The moving target problem" desc="Step the two fitting processes and watch the difference. On the left the target moves with the estimate; on the right it is frozen and refreshed periodically." height="360"
+let chasing = 0.0;
+let frozen = 0.0;
+let frozenTarget = 1.0;
+let steps = 0;
+let historyA = [];
+let historyB = [];
+const RATE = 0.35;
 function setup() {
-  createCanvas(600, 300);
+  createCanvas(620, 360);
   textFont("monospace");
-  cell = 240 / N;
-  resetWorld();
+  reset();
 }
-function stepAgent() {
-  // epsilon-greedy walk that gets greedier as Q fills in
-  epsNow = Math.max(0.4 - ep / 400, 0.05);
-  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-  let best = dirs[0], bestVal = -Infinity;
-  for (const d of dirs) {
-    const nx = agent.x + d[0], ny = agent.y + d[1];
-    if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
-    if (Q[idx(nx, ny)] > bestVal) { bestVal = Q[idx(nx, ny)]; best = d; }
-  }
-  wasExplore = random() < epsNow;
-  const move = wasExplore ? random(dirs) : best;
-  const nx = constrain(agent.x + move[0], 0, N - 1);
-  const ny = constrain(agent.y + move[1], 0, N - 1);
-  let reward = -1;
-  if (nx === trap.x && ny === trap.y) reward = -20;
-  if (nx === goal.x && ny === goal.y) reward = 50;
-  const alpha = 0.3, gamma = 0.9;
-  const oldQ = Q[idx(agent.x, agent.y)];
-  Q[idx(agent.x, agent.y)] = oldQ + alpha * (reward + gamma * Q[idx(nx, ny)] - oldQ);
-  agent.x = nx; agent.y = ny;
-  path.push({ x: nx, y: ny });
-  if (path.length > 40) path.shift();
-  if ((nx === goal.x && ny === goal.y) || (nx === trap.x && ny === trap.y)) {
-    ep++;
-    agent = { x: 0, y: 0 };
-    path = [];
+function reset() {
+  chasing = 0.0;
+  frozen = 0.0;
+  frozenTarget = 1.0;
+  steps = 0;
+  historyA = [0];
+  historyB = [0];
+}
+function advance() {
+  for (let n = 0; n < 5; n++) {
+    steps += 1;
+    // No target network: the target is a function of the current estimate,
+    // so chasing it moves it.
+    const movingTarget = 1.0 + 0.9 * chasing;
+    chasing += RATE * (movingTarget - chasing);
+    // With a target network: the target is frozen, refreshed every 20 steps.
+    if (steps % 20 === 0) { frozenTarget = 1.0 + 0.9 * frozen; }
+    frozen += RATE * (frozenTarget - frozen);
+    historyA.push(chasing);
+    historyB.push(frozen);
+    if (historyA.length > 120) { historyA.shift(); historyB.shift(); }
   }
 }
 function draw() {
   background(13, 17, 23);
-  for (let i = 0; i < 3; i++) stepAgent();
-  const ox = 30, oy = 30;
-  const qmax = Math.max(1, ...Q.map((v) => Math.abs(v)));
-  for (let y = 0; y < N; y++) {
-    for (let x = 0; x < N; x++) {
-      const v = Q[idx(x, y)] / qmax;
-      const bright = constrain(map(v, -1, 1, 20, 200), 20, 200);
-      noStroke();
-      fill(30, bright * 0.5, bright);
-      rect(ox + x * cell, oy + y * cell, cell - 3, cell - 3, 4);
+  noStroke();
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("fitting a target that depends on your own estimate", 30, 20);
+  fill(150);
+  textSize(10.5);
+  text("step " + steps + "   (the true fixed point is 10.0)", 30, 42);
+  const left = 40;
+  const right = 580;
+  const baseline = 280;
+  const scale = 20;
+  stroke(60, 70, 84);
+  line(left, baseline, right, baseline);
+  drawingContext.setLineDash([4, 4]);
+  stroke(120);
+  line(left, baseline - 10 * scale, right, baseline - 10 * scale);
+  drawingContext.setLineDash([]);
+  noStroke();
+  fill(120);
+  textSize(9);
+  text("10.0", right - 34, baseline - 10 * scale - 14);
+  const series = [[historyA, 224, 108, 117], [historyB, 126, 192, 143]];
+  for (const entry of series) {
+    const points = entry[0];
+    stroke(entry[1], entry[2], entry[3]);
+    strokeWeight(2);
+    noFill();
+    beginShape();
+    for (let i = 0; i < points.length; i++) {
+      const x = left + (i / 119) * (right - left);
+      vertex(x, baseline - Math.min(points[i], 12) * scale);
     }
+    endShape();
+    strokeWeight(1);
   }
   noStroke();
-  fill(230, 90, 90);
-  rect(ox + trap.x * cell, oy + trap.y * cell, cell - 3, cell - 3, 4);
-  fill(255, 211, 67);
-  rect(ox + goal.x * cell, oy + goal.y * cell, cell - 3, cell - 3, 4);
-  fill(wasExplore ? color(255, 211, 67) : color(75, 200, 190));
-  ellipse(ox + agent.x * cell + cell / 2, oy + agent.y * cell + cell / 2, cell * 0.5, cell * 0.5);
-  fill(107, 169, 221);
-  textAlign(LEFT, CENTER);
-  textSize(13);
-  text("episodes finished: " + ep, ox, oy + N * cell + 16);
-  fill(wasExplore ? color(255, 211, 67) : color(107, 200, 190));
-  textSize(12);
-  text((wasExplore ? "explore" : "exploit") + "  (epsilon " + epsNow.toFixed(2) + ")", ox, oy + N * cell + 34);
+  fill(224, 108, 117);
+  textSize(11);
+  text("no target network: " + chasing.toFixed(4), 40, 300);
+  fill(126, 192, 143);
+  text("frozen target: " + frozen.toFixed(4), 320, 300);
+  const buttons = [["+5 steps", 40], ["reset", 160]];
+  for (const entry of buttons) {
+    fill(60, 70, 84);
+    rect(entry[1], 324, 100, 24, 4);
+    fill(200);
+    textSize(10.5);
+    textAlign(CENTER, CENTER);
+    text(entry[0], entry[1] + 50, 337);
+  }
+  textAlign(LEFT, TOP);
+  fill(120);
+  textSize(9);
+  text("both converge here - the point is HOW: one chases, one steps", 290, 331);
 }
-function mousePressed() { resetWorld(); }
+function mousePressed() {
+  if (mouseY < 324 || mouseY > 348) { return; }
+  if (mouseX > 40 && mouseX < 140) { advance(); }
+  else if (mouseX > 160 && mouseX < 260) { reset(); }
+}
 ```
 
-:::tip[From the book]
-Géron calls Q-Learning "capable of learning the optimal policy by just
-watching an agent act randomly" — like learning golf from a teacher who's a
-drunk monkey. It works, but slowly: the book's tiny 3-state MDP takes about
-8,000 iterations to converge with tabular Q-Learning, versus fewer than 20
-for Value Iteration when the transition probabilities are already known.
-That gap only gets wider as the state space grows — which is exactly why
-DQNs replace the table with a trainable function.
-:::
+```p5 title="The measured table, ranked" desc="Click a column to rank every row by it. The bars are that column's values and the highest and lowest are computed from the numbers, not written in." height="306"
+let metric = 0;
+const COLUMNS = ["ε", "Reward", "Goal rate", "Policy match"];
+const ROWS = [
+  ["0.05", 0.1, 0.6951, 0.9133, 0.7273],
+  ["0.20", 0.1, 0.6872, 0.9067, 0.8182],
+  ["0.50", 0.01, 0.6765, 0.9033, 0.7727],
+  ["0.50", 0.1, -1.8901, 0.02, 0.5],
+  ["1.00", 0.01, -1.6025, 0.01, 0.2273],
+  ["1.00", 0.3, -1.2294, 0.1633, 0.5909]
+];
+function setup() {
+  createCanvas(620, 306);
+  textFont("monospace");
+}
+function fmt(v) {
+  if (v === 0) { return "0"; }
+  const a = Math.abs(v);
+  if (a >= 1000 || a < 0.001) { return v.toExponential(2); }
+  if (a >= 100) { return v.toFixed(1); }
+  return v.toFixed(4);
+}
+function draw() {
+  background(13, 17, 23);
+  noStroke();
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("Q-Learning & Deep Q-Networks", 26, 16);
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (i === metric) { fill(255, 211, 67); } else { fill(48, 56, 68); }
+    rect(x, 40, w, 22, 4);
+    if (i === metric) { fill(13, 17, 23); } else { fill(180); }
+    textSize(9);
+    text(COLUMNS[i], x + 8, 47);
+    x += w + 6;
+    if (x > 500) { break; }
+  }
+  const values = ROWS.map((r) => r[metric + 1]);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo === 0 ? 1 : hi - lo;
+  const order = ROWS.slice().sort((a, b) => b[metric + 1] - a[metric + 1]);
+  for (let i = 0; i < order.length; i++) {
+    const y = 78 + i * 26;
+    const v = order[i][metric + 1];
+    fill(160);
+    textSize(9);
+    text(order[i][0], 26, y + 5);
+    fill(34, 40, 50);
+    rect(230, y, 280, 18, 3);
+    const frac = (v - lo) / span;
+    if (v === hi) { fill(126, 192, 143); }
+    else if (v === lo) { fill(224, 108, 117); }
+    else { fill(107, 169, 221); }
+    rect(230, y, Math.max(frac * 280, 3), 18, 3);
+    fill(225);
+    textSize(9);
+    text(fmt(v), 518, y + 5);
+  }
+  const top = order[0];
+  const bottom = order[order.length - 1];
+  fill(150);
+  textSize(9);
+  const base = 78 + order.length * 26 + 8;
+  text("highest " + COLUMNS[metric] + ": " + top[0] + " at " + fmt(top[1]),
+       26, base);
+  text("lowest  " + COLUMNS[metric] + ": " + bottom[0] + " at "
+       + fmt(bottom[1]), 26, base + 14);
+  text("bars are scaled within the chosen column - lowest is not zero", 26,
+       base + 30);
+}
+function mousePressed() {
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (mouseX > x && mouseX < x + w && mouseY > 40 && mouseY < 62) {
+      metric = i;
+    }
+    x += w + 6;
+  }
+}
+```
 
-## Mini-checkpoint
+## Pitfalls
 
-Why is Q-Learning called an **off-policy** algorithm, while policy gradients
-(coming up next) are **on-policy**?
+- **Using a high learning rate in a stochastic environment.** α = 1.0 replaces the estimate with
+  the latest transition, and scored −1.6025 with a 0.0100 goal rate.
+- **Adding replay or a target network alone and concluding it did not help.** Each scored 53.45;
+  together they scored 144.20.
+- **Reading a single seed.** Target-only ranged from 25.47 to 105.12 across three seeds.
+- **Assuming learned Q-values overestimate.** Measured here at −0.1273, because under-exploration
+  outweighed maximisation bias.
+- **Judging a policy by value accuracy.** Policy match peaked at 0.8182 even where the values were
+  close, because many states have a tiny gap between the best and second-best action.
+- **Calling `predict()` inside the loop.** Measured at roughly 470ms per call against 1.2ms for a
+  traced `tf.function` — an RL loop makes several calls per frame.
+- **Treating a time-limit ending as a terminal state.** This implementation does, which is the
+  standard simplification, and it slightly under-values states near the 200-step cap.
 
-- Q-Learning can learn the optimal (greedy) policy while *exploring* with a completely different policy, like a random one. Policy gradients only ever learn about the exact policy that is currently exploring the environment.
+## Recap
 
-## 🧪 Try It Yourself
-
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
-
-### Exercise 1 – Initialize Q-Values
-
-<DataCampExercise
-  lang="python"
-  hint={`Use \`np.full((3, 3), -np.inf)\` to start every Q-value at negative infinity (impossible), then set possible actions to 0.0.`}
-  code={`# Task: Exercise 1 - Initialize Q-Values
-import numpy as np
-
-possible_actions = [[0, 1, 2], [0, 2], [1]]
-
-Q_values = np.___((3, 3), -np.inf)   # replace ___ with full
-for state, actions in enumerate(possible_actions):
-    Q_values[state, actions] = 0.0
-
-print("Impossible action Q-value:", Q_values[1, 1])
-print("Possible action Q-value:", Q_values[1, 0])
-
-# ── Expected Output ───────────────────────────────────────────
-# Impossible action Q-value: -inf
-# Possible action Q-value: 0.0
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import numpy as np
-
-possible_actions = [[0, 1, 2], [0, 2], [1]]
-
-Q_values = np.full((3, 3), -np.inf)
-for state, actions in enumerate(possible_actions):
-    Q_values[state, actions] = 0.0
-
-print("Impossible action Q-value:", Q_values[1, 1])
-print("Possible action Q-value:", Q_values[1, 0])`}
-  sct={`test_output_contains("-inf")
-test_output_contains("0.0")
-success_msg("Q-value table initialized correctly!")`}
-  height={160}
-/>
-
-### Exercise 2 – Epsilon-Greedy Policy
-
-<DataCampExercise
-  lang="python"
-  hint={`With probability \`epsilon\` return a random action index; otherwise return the argmax of \`Q_values[0]\`.`}
-  code={`# Task: Exercise 2 - Epsilon-Greedy Policy
-import numpy as np
-np.random.seed(0)
-
-Q_values = np.array([[1.0, 5.0, 2.0]])
-
-def epsilon_greedy_policy(state_Q, epsilon=0):
-    if np.random.rand() < epsilon:
-        return np.random.randint(3)
-    return np.___(state_Q)   # replace ___ with argmax
-
-action = epsilon_greedy_policy(Q_values[0], epsilon=0)
-print("Greedy action:", action)
-
-# ── Expected Output ───────────────────────────────────────────
-# Greedy action: 1
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import numpy as np
-np.random.seed(0)
-
-Q_values = np.array([[1.0, 5.0, 2.0]])
-
-def epsilon_greedy_policy(state_Q, epsilon=0):
-    if np.random.rand() < epsilon:
-        return np.random.randint(3)
-    return np.argmax(state_Q)
-
-action = epsilon_greedy_policy(Q_values[0], epsilon=0)
-print("Greedy action:", action)`}
-  sct={`test_output_contains("Greedy action: 1")
-success_msg("Epsilon-greedy policy implemented correctly!")`}
-  height={168}
-/>
-
-### Exercise 3 – TD Target for Q-Learning
-
-<DataCampExercise
-  lang="python"
-  hint={`The TD target is \`reward + gamma * max(next Q-values)\`. Use \`np.max(...)\` on \`next_Q_values\`.`}
-  code={`# Task: Exercise 3 - TD Target for Q-Learning
-import numpy as np
-
-reward = 10
-gamma = 0.9
-next_Q_values = np.array([2.0, 7.0, 4.0])
-
-target = reward + gamma * np.___(next_Q_values)   # replace ___ with max
-print(f"TD target: {target:.1f}")
-
-# ── Expected Output ───────────────────────────────────────────
-# TD target: 16.3
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import numpy as np
-
-reward = 10
-gamma = 0.9
-next_Q_values = np.array([2.0, 7.0, 4.0])
-
-target = reward + gamma * np.max(next_Q_values)
-print(f"TD target: {target:.1f}")`}
-  sct={`test_output_contains("TD target: 16.3")
-success_msg("TD target computed correctly!")`}
-  height={148}
-/>
+- Q-learning updates towards $r + \gamma \max_{a'} Q(s', a')$; the tabular version is safe because
+  entries are independent.
+- A network couples every state to every other, which breaks that independence in two ways:
+  correlated samples and a moving target.
+- Replay and a target network fix one each, and measured alone neither was enough — 53.45 and
+  53.45, against 48.81 for neither and 144.20 for both.
+- In the tabular world, α = 0.05 with ε = 0.10 was best (0.6951); α = 1.0 collapsed to −1.6025.
+- Learned values underestimated the optimum by 0.1273 on average, the opposite of the textbook
+  prediction, because exploration was the larger error source.
+- Policy match never exceeded 0.8182, since small value errors flip the greedy action wherever
+  two actions are close.
 
 ## Next
 
-Continue to **Policy Gradients (Intro)** — instead of estimating Q-values and
-acting greedily, learn a policy directly by nudging its parameters toward
-higher reward.
+DQN learns a value and derives a policy from it. The alternative is to skip the value function
+and adjust the policy directly, which trades one problem for a noisier one:
+[Policy Gradients (Intro)](/deep-learning/phase-07---reinforcement-learning/policy-gradients-intro/).
+
+<Quiz
+  questions={[
+    {
+      q: "Replay alone scored 53.45, a target network alone scored 53.45, and both together scored 144.20. What does that show?",
+      options: [
+        "The two mechanisms are redundant",
+        "They fix different failures — correlated samples and a moving regression target — so removing one obstacle while leaving the other still leaves the agent broken by the remaining one",
+        "The target network is unnecessary",
+        "The measurements are within noise of each other",
+      ],
+      answer: 1,
+      explain: "Both-together is nearly three times either-alone, and either-alone is barely above the 48.81 of using neither.",
+    },
+    {
+      q: "Why does replacing a Q-table with a network break Q-learning's convergence guarantee?",
+      options: [
+        "Networks are not expressive enough",
+        "The table's entries are independent, so updating one changes nothing else; a network's weights are shared, so every update changes the predicted value of every state including the one used to build the target",
+        "Gradient descent cannot minimise a temporal-difference error",
+        "Because the reward becomes stochastic",
+      ],
+      answer: 1,
+      explain: "That shared-parameter coupling is precisely what the target network works around, by freezing a copy to compute targets with.",
+    },
+    {
+      q: "Tabular Q-learning with a learning rate of 1.0 scored -1.6025 with a goal rate of 0.0100, worse than random. Why?",
+      options: [
+        "The learning rate caused numerical overflow",
+        "Alpha 1.0 discards the running estimate and adopts the single most recent transition — and in a world where actions slip 15% of the time, that transition is frequently unrepresentative, so the table never settles",
+        "It converged to a local optimum",
+        "It needed more episodes",
+      ],
+      answer: 1,
+      explain: "In a deterministic world alpha 1.0 is harmless. The failure is specific to stochastic transitions.",
+    },
+    {
+      q: "The learned Q-values had a mean signed error of -0.1273 against the exact values, while the textbook predicts overestimation. What is the honest interpretation?",
+      options: [
+        "The measurement is wrong",
+        "Maximisation bias is real but was not the dominant error here — epsilon-greedy rarely visited the safe corridor, so those states retained values learned from too few visits, producing a net underestimate",
+        "Double DQN is unnecessary",
+        "The exact values were computed incorrectly",
+      ],
+      answer: 1,
+      explain: "Reporting the measured sign rather than the expected one is the reason for running the experiment at all.",
+    },
+    {
+      q: "Even the best tabular run matched the optimal policy in only 0.8182 of states, despite scoring near-optimal reward. How can both be true?",
+      options: [
+        "The reward measurement is unreliable",
+        "Many states have a very small gap between the best and second-best action, so a tiny value error flips the greedy choice without costing much reward",
+        "Policy match is computed on terminal states too",
+        "The evaluation used too few episodes",
+      ],
+      answer: 1,
+      explain: "The histogram of best-minus-second-best action values is concentrated near zero, which is exactly the condition for this to happen.",
+    },
+  ]}
+/>
+
+## 🧪 Try It Yourself
+
+<DataCampExercise
+  lang="python"
+  hint={`The new estimate is the old one plus alpha times the temporal-difference error. With alpha 1.0 the old estimate disappears entirely.`}
+  code={`# Task: Exercise 1 - What the learning rate actually does
+REWARDS = (1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0)   # a noisy signal, true mean 0.5
+
+
+def learn(alpha, rewards=REWARDS):
+    """Follow the running estimate under a fixed learning rate."""
+    estimate = 0.0
+    history = []
+    for reward in rewards:
+        error = reward - estimate
+        estimate = estimate + ___ * error        # replace ___ with alpha
+        history.append(estimate)
+    return history
+
+
+print(f"{'alpha':>6} " + " ".join(f"{i:>7}" for i in range(1, 9)))
+for alpha in (0.05, 0.2, 0.5, 1.0):
+    row = " ".join(f"{v:7.3f}" for v in learn(alpha))
+    print(f"{alpha:6.2f} {row}")
+
+print("\\nalpha 1.0 just repeats the last reward - it has no memory at all,")
+print("which is why it scored -1.6025 in a world with 15% slip")`}
+  solution={`REWARDS = (1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0)   # a noisy signal, true mean 0.5
+
+
+def learn(alpha, rewards=REWARDS):
+    """Follow the running estimate under a fixed learning rate."""
+    estimate = 0.0
+    history = []
+    for reward in rewards:
+        error = reward - estimate
+        estimate = estimate + alpha * error
+        history.append(estimate)
+    return history
+
+
+print(f"{'alpha':>6} " + " ".join(f"{i:>7}" for i in range(1, 9)))
+for alpha in (0.05, 0.2, 0.5, 1.0):
+    row = " ".join(f"{v:7.3f}" for v in learn(alpha))
+    print(f"{alpha:6.2f} {row}")
+
+print("\\nalpha 1.0 just repeats the last reward - it has no memory at all,")
+print("which is why it scored -1.6025 in a world with 15% slip")`}
+  expectedOutput={` alpha       1       2       3       4       5       6       7       8
+  0.05   0.050  -0.003   0.048   0.095   0.040   0.088   0.134   0.177
+  0.20   0.200  -0.040   0.168   0.334   0.068   0.254   0.403   0.523
+  0.50   0.500  -0.250   0.375   0.688  -0.156   0.422   0.711   0.855
+  1.00   1.000  -1.000   1.000   1.000  -1.000   1.000   1.000   1.000`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Consecutive states differ by one small integration step, so their correlation is close to 1. A random batch from a large buffer breaks that.`}
+  code={`# Task: Exercise 2 - How correlated are consecutive samples?
+import numpy as np
+
+# A stand-in for a CartPole trajectory: a smooth path with small steps.
+rng = np.random.default_rng(0)
+trajectory = np.cumsum(rng.normal(0, 0.02, (2000, 4)), axis=0)
+
+
+def batch_spread(batch):
+    """Mean distance between pairs of samples in a batch.
+
+    Not a correlation: centring each batch first would remove exactly the
+    property being measured, which is that consecutive samples are all bunched
+    in the same small region of state space.
+    """
+    squared = (np.sum(batch ** 2, axis=1)[:, None]
+               + np.sum(batch ** 2, axis=1)[None, :]
+               - 2 * batch @ batch.T)
+    distance = np.sqrt(np.maximum(squared, 0))
+    return float(distance[np.triu_indices(len(batch), k=1)].mean())
+
+
+consecutive = trajectory[500:564]
+replayed = trajectory[rng.integers(0, len(trajectory), ___)]   # replace with 64
+
+print(f"consecutive batch spread: {batch_spread(consecutive):.4f}")
+print(f"replayed batch spread:    {batch_spread(replayed):.4f}")
+print(f"ratio: {batch_spread(replayed) / batch_spread(consecutive):.1f}x")
+print("\\na batch of consecutive transitions covers a tiny region of state")
+print("space, which is what experience replay exists to prevent")`}
+  solution={`import numpy as np
+
+# A stand-in for a CartPole trajectory: a smooth path with small steps.
+rng = np.random.default_rng(0)
+trajectory = np.cumsum(rng.normal(0, 0.02, (2000, 4)), axis=0)
+
+
+def batch_spread(batch):
+    """Mean distance between pairs of samples in a batch.
+
+    Not a correlation: centring each batch first would remove exactly the
+    property being measured, which is that consecutive samples are all bunched
+    in the same small region of state space.
+    """
+    squared = (np.sum(batch ** 2, axis=1)[:, None]
+               + np.sum(batch ** 2, axis=1)[None, :]
+               - 2 * batch @ batch.T)
+    distance = np.sqrt(np.maximum(squared, 0))
+    return float(distance[np.triu_indices(len(batch), k=1)].mean())
+
+
+consecutive = trajectory[500:564]
+replayed = trajectory[rng.integers(0, len(trajectory), 64)]
+
+print(f"consecutive batch spread: {batch_spread(consecutive):.4f}")
+print(f"replayed batch spread:    {batch_spread(replayed):.4f}")
+print(f"ratio: {batch_spread(replayed) / batch_spread(consecutive):.1f}x")
+print("\\na batch of consecutive transitions covers a tiny region of state")
+print("space, which is what experience replay exists to prevent")`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Without a target network the target is recomputed from the current estimate every step; with one it is refreshed only every sync interval.`}
+  code={`# Task: Exercise 3 - Chasing a target that moves when you move
+def fit(sync, steps=60, rate=0.35):
+    """sync = 1 means no target network; larger values freeze the target."""
+    estimate = 0.0
+    target = 1.0 + 0.9 * estimate
+    path = []
+    for step in range(1, steps + 1):
+        if step % sync == 0:
+            target = 1.0 + 0.9 * ___             # replace ___ with estimate
+        estimate += rate * (target - estimate)
+        path.append(estimate)
+    return path
+
+
+TRUE_FIXED_POINT = 1.0 / (1.0 - 0.9)
+print(f"the fixed point is {TRUE_FIXED_POINT:.2f}")
+print(f"{'sync every':>11} {'after 10':>10} {'after 30':>10} {'after 60':>10}")
+for sync in (1, 5, 20):
+    path = fit(sync)
+    print(f"{sync:11d} {path[9]:10.4f} {path[29]:10.4f} {path[59]:10.4f}")
+
+print("\\nboth reach the same place; the frozen version does it in clean")
+print("regression steps rather than by chasing a receding target")`}
+  solution={`def fit(sync, steps=60, rate=0.35):
+    """sync = 1 means no target network; larger values freeze the target."""
+    estimate = 0.0
+    target = 1.0 + 0.9 * estimate
+    path = []
+    for step in range(1, steps + 1):
+        if step % sync == 0:
+            target = 1.0 + 0.9 * estimate
+        estimate += rate * (target - estimate)
+        path.append(estimate)
+    return path
+
+
+TRUE_FIXED_POINT = 1.0 / (1.0 - 0.9)
+print(f"the fixed point is {TRUE_FIXED_POINT:.2f}")
+print(f"{'sync every':>11} {'after 10':>10} {'after 30':>10} {'after 60':>10}")
+for sync in (1, 5, 20):
+    path = fit(sync)
+    print(f"{sync:11d} {path[9]:10.4f} {path[29]:10.4f} {path[59]:10.4f}")
+
+print("\\nboth reach the same place; the frozen version does it in clean")
+print("regression steps rather than by chasing a receding target")`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Build the target as reward + gamma * max(next Q) for non-terminal transitions, and just the reward for terminal ones.`}
+  code={`# Task: Exercise 4 - Build a DQN target batch by hand
+import numpy as np
+
+GAMMA = 0.99
+rewards = np.array([1.0, 1.0, 1.0, 1.0], dtype="float32")
+finished = np.array([0.0, 0.0, 1.0, 0.0], dtype="float32")
+next_q = np.array([[3.2, 4.1], [5.0, 4.4], [0.3, 0.2], [6.1, 6.4]], "float32")
+current_q = np.array([[3.9, 4.0], [4.6, 4.9], [1.1, 0.7], [5.8, 6.0]], "float32")
+actions = np.array([1, 0, 0, 1], dtype="int32")
+
+
+def targets(rewards, finished, next_q):
+    """A terminal transition has no future, so its target is just the reward."""
+    future = next_q.max(axis=1)
+    return rewards + GAMMA * future * (1 - ___)     # replace ___ with finished
+
+
+wanted = targets(rewards, finished, next_q)
+updated = current_q.copy()
+updated[np.arange(len(actions)), actions] = wanted
+
+print(f"{'i':>3} {'reward':>7} {'done':>5} {'max next Q':>11} {'target':>8}")
+for i in range(len(rewards)):
+    print(f"{i:3d} {rewards[i]:7.1f} {finished[i]:5.0f} "
+          f"{next_q[i].max():11.2f} {wanted[i]:8.4f}")
+
+print("\\nonly the taken action's value is changed:")
+print(current_q)
+print(updated)`}
+  solution={`import numpy as np
+
+GAMMA = 0.99
+rewards = np.array([1.0, 1.0, 1.0, 1.0], dtype="float32")
+finished = np.array([0.0, 0.0, 1.0, 0.0], dtype="float32")
+next_q = np.array([[3.2, 4.1], [5.0, 4.4], [0.3, 0.2], [6.1, 6.4]], "float32")
+current_q = np.array([[3.9, 4.0], [4.6, 4.9], [1.1, 0.7], [5.8, 6.0]], "float32")
+actions = np.array([1, 0, 0, 1], dtype="int32")
+
+
+def targets(rewards, finished, next_q):
+    """A terminal transition has no future, so its target is just the reward."""
+    future = next_q.max(axis=1)
+    return rewards + GAMMA * future * (1 - finished)
+
+
+wanted = targets(rewards, finished, next_q)
+updated = current_q.copy()
+updated[np.arange(len(actions)), actions] = wanted
+
+print(f"{'i':>3} {'reward':>7} {'done':>5} {'max next Q':>11} {'target':>8}")
+for i in range(len(rewards)):
+    print(f"{i:3d} {rewards[i]:7.1f} {finished[i]:5.0f} "
+          f"{next_q[i].max():11.2f} {wanted[i]:8.4f}")
+
+print("\\nonly the taken action's value is changed:")
+print(current_q)
+print(updated)`}
+  expectedOutput={`  i  reward  done  max next Q   target
+  0     1.0     0        4.10   5.0590
+  1     1.0     0        5.00   5.9500
+  2     1.0     1        0.30   1.0000
+  3     1.0     0        6.40   7.3360
+
+only the taken action's value is changed:
+[[3.9 4. ]
+ [4.6 4.9]
+ [1.1 0.7]
+ [5.8 6. ]]
+[[3.9   5.059]
+ [5.95  4.9  ]
+ [1.    0.7  ]
+ [5.8   7.336]]`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Take the max over noisy estimates of equal-valued actions and average it over many trials. The max of several noisy zeros is reliably above zero.`}
+  code={`# Task: Exercise 5 - Maximisation bias, on its own
+import numpy as np
+
+rng = np.random.default_rng(0)
+TRIALS = 20000
+
+
+def bias(actions, noise=1.0):
+    """All actions are truly worth 0. How high does the max estimate them?"""
+    estimates = rng.normal(0.0, noise, (TRIALS, actions))
+    return float(estimates.max(axis=___).mean())    # replace ___ with 1
+
+
+print(f"{'actions':>8} {'mean of the max':>17}")
+for actions in (1, 2, 4, 10, 50):
+    print(f"{actions:8d} {bias(actions):17.4f}")
+
+print("\\nevery action is worth exactly 0, yet the max of their estimates is")
+print("reliably positive - that is maximisation bias, and it grows with the")
+print("number of actions. On the page it was outweighed by under-exploration")`}
+  solution={`import numpy as np
+
+rng = np.random.default_rng(0)
+TRIALS = 20000
+
+
+def bias(actions, noise=1.0):
+    """All actions are truly worth 0. How high does the max estimate them?"""
+    estimates = rng.normal(0.0, noise, (TRIALS, actions))
+    return float(estimates.max(axis=1).mean())
+
+
+print(f"{'actions':>8} {'mean of the max':>17}")
+for actions in (1, 2, 4, 10, 50):
+    print(f"{actions:8d} {bias(actions):17.4f}")
+
+print("\\nevery action is worth exactly 0, yet the max of their estimates is")
+print("reliably positive - that is maximisation bias, and it grows with the")
+print("number of actions. On the page it was outweighed by under-exploration")`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Run the loop with replay on and off and compare the final mean episode length. Keep the frame budget small so it finishes quickly.`}
+  code={`# Task: Exercise 6 - A DQN loop you can run
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+
+keras.utils.set_random_seed(0)
+GAMMA, BATCH, FRAMES, ENVS = 0.99, 64, 1500, 8
+
+
+class CartPole:
+    """The classic dynamics, vectorised over several environments at once."""
+
+    def __init__(self, count, seed=0):
+        self.count = count
+        self.rng = np.random.default_rng(seed)
+        self.state = self.rng.uniform(-0.05, 0.05, (count, 4)).astype("float32")
+        self.steps = np.zeros(count, "int32")
+
+    def step(self, actions):
+        x, x_dot, theta, theta_dot = self.state.T
+        force = np.where(actions == 1, 10.0, -10.0)
+        cos, sin = np.cos(theta), np.sin(theta)
+        temp = (force + 0.05 * theta_dot ** 2 * sin) / 1.1
+        theta_acc = ((9.8 * sin - cos * temp)
+                     / (0.5 * (4.0 / 3.0 - 0.1 * cos ** 2 / 1.1)))
+        x_acc = temp - 0.05 * theta_acc * cos / 1.1
+        self.state = np.stack([x + 0.02 * x_dot, x_dot + 0.02 * x_acc,
+                               theta + 0.02 * theta_dot,
+                               theta_dot + 0.02 * theta_acc], 1).astype("float32")
+        self.steps += 1
+        done = ((np.abs(self.state[:, 0]) > 2.4)
+                | (np.abs(self.state[:, 2]) > 0.2095) | (self.steps >= 200))
+        return self.state.copy(), np.ones(self.count, "float32"), done
+
+    def reset(self, mask):
+        n = int(mask.sum())
+        self.state[mask] = self.rng.uniform(-0.05, 0.05, (n, 4)).astype("float32")
+        self.steps[mask] = 0
+
+
+def build():
+    model = keras.Sequential([keras.layers.Input((4,)),
+                              keras.layers.Dense(64, activation="relu"),
+                              keras.layers.Dense(2)])
+    model.compile(keras.optimizers.Adam(1e-3), "mse")
+    return model
+
+
+def run(replay):
+    online = build()
+    target = keras.models.clone_model(online)
+    target.set_weights(online.get_weights())
+    forward = tf.function(lambda m, x: m(x, training=False))
+    env = CartPole(ENVS, seed=0)
+    rng = np.random.default_rng(0)
+    buffer = {"s": [], "a": [], "r": [], "n": [], "d": []}
+    lengths, running = [], np.zeros(ENVS)
+    for frame in range(1, FRAMES + 1):
+        state = env.state.copy()
+        epsilon = max(0.05, 1.0 - frame / (FRAMES * 0.5))
+        q = np.array(forward(online, tf.constant(state)))
+        chosen = np.where(rng.random(ENVS) < epsilon,
+                          rng.integers(0, 2, ENVS), q.argmax(1))
+        nxt, reward, done = env.step(chosen)
+        running += 1
+        for i in range(ENVS):
+            for key, value in zip("sarnd", (state[i], chosen[i], reward[i],
+                                            nxt[i], float(done[i]))):
+                buffer[key].append(value)
+        for key in buffer:
+            buffer[key] = buffer[key][-5000:]
+        if done.any():
+            lengths.extend(running[done].tolist())
+            running[done] = 0
+            env.reset(done)
+        if len(buffer["s"]) >= 200 and frame % 4 == 0:
+            size = len(buffer["s"])
+            index = (rng.integers(0, size, BATCH) if replay
+                     else np.arange(size - BATCH, size))
+            s = np.array([buffer["s"][i] for i in index], "float32")
+            n = np.array([buffer["n"][i] for i in index], "float32")
+            a = np.array([buffer["a"][i] for i in index], "int32")
+            r = np.array([buffer["r"][i] for i in index], "float32")
+            d = np.array([buffer["d"][i] for i in index], "float32")
+            future = np.array(forward(target, tf.constant(n))).max(1)
+            wanted = r + GAMMA * future * (1 - d)
+            current = np.array(forward(online, tf.constant(s)))
+            current[np.arange(BATCH), a] = wanted
+            online.train_on_batch(s, current)
+        if frame % 200 == 0:
+            target.set_weights(online.get_weights())
+    return float(np.mean(lengths[-30:])) if lengths else 0.0
+
+
+for replay in (True, ___):                       # replace ___ with False
+    print(f"replay={replay}: final mean episode length {run(replay):.2f}")`}
+  solution={`import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+
+keras.utils.set_random_seed(0)
+GAMMA, BATCH, FRAMES, ENVS = 0.99, 64, 1500, 8
+
+
+class CartPole:
+    """The classic dynamics, vectorised over several environments at once."""
+
+    def __init__(self, count, seed=0):
+        self.count = count
+        self.rng = np.random.default_rng(seed)
+        self.state = self.rng.uniform(-0.05, 0.05, (count, 4)).astype("float32")
+        self.steps = np.zeros(count, "int32")
+
+    def step(self, actions):
+        x, x_dot, theta, theta_dot = self.state.T
+        force = np.where(actions == 1, 10.0, -10.0)
+        cos, sin = np.cos(theta), np.sin(theta)
+        temp = (force + 0.05 * theta_dot ** 2 * sin) / 1.1
+        theta_acc = ((9.8 * sin - cos * temp)
+                     / (0.5 * (4.0 / 3.0 - 0.1 * cos ** 2 / 1.1)))
+        x_acc = temp - 0.05 * theta_acc * cos / 1.1
+        self.state = np.stack([x + 0.02 * x_dot, x_dot + 0.02 * x_acc,
+                               theta + 0.02 * theta_dot,
+                               theta_dot + 0.02 * theta_acc], 1).astype("float32")
+        self.steps += 1
+        done = ((np.abs(self.state[:, 0]) > 2.4)
+                | (np.abs(self.state[:, 2]) > 0.2095) | (self.steps >= 200))
+        return self.state.copy(), np.ones(self.count, "float32"), done
+
+    def reset(self, mask):
+        n = int(mask.sum())
+        self.state[mask] = self.rng.uniform(-0.05, 0.05, (n, 4)).astype("float32")
+        self.steps[mask] = 0
+
+
+def build():
+    model = keras.Sequential([keras.layers.Input((4,)),
+                              keras.layers.Dense(64, activation="relu"),
+                              keras.layers.Dense(2)])
+    model.compile(keras.optimizers.Adam(1e-3), "mse")
+    return model
+
+
+def run(replay):
+    online = build()
+    target = keras.models.clone_model(online)
+    target.set_weights(online.get_weights())
+    forward = tf.function(lambda m, x: m(x, training=False))
+    env = CartPole(ENVS, seed=0)
+    rng = np.random.default_rng(0)
+    buffer = {"s": [], "a": [], "r": [], "n": [], "d": []}
+    lengths, running = [], np.zeros(ENVS)
+    for frame in range(1, FRAMES + 1):
+        state = env.state.copy()
+        epsilon = max(0.05, 1.0 - frame / (FRAMES * 0.5))
+        q = np.array(forward(online, tf.constant(state)))
+        chosen = np.where(rng.random(ENVS) < epsilon,
+                          rng.integers(0, 2, ENVS), q.argmax(1))
+        nxt, reward, done = env.step(chosen)
+        running += 1
+        for i in range(ENVS):
+            for key, value in zip("sarnd", (state[i], chosen[i], reward[i],
+                                            nxt[i], float(done[i]))):
+                buffer[key].append(value)
+        for key in buffer:
+            buffer[key] = buffer[key][-5000:]
+        if done.any():
+            lengths.extend(running[done].tolist())
+            running[done] = 0
+            env.reset(done)
+        if len(buffer["s"]) >= 200 and frame % 4 == 0:
+            size = len(buffer["s"])
+            index = (rng.integers(0, size, BATCH) if replay
+                     else np.arange(size - BATCH, size))
+            s = np.array([buffer["s"][i] for i in index], "float32")
+            n = np.array([buffer["n"][i] for i in index], "float32")
+            a = np.array([buffer["a"][i] for i in index], "int32")
+            r = np.array([buffer["r"][i] for i in index], "float32")
+            d = np.array([buffer["d"][i] for i in index], "float32")
+            future = np.array(forward(target, tf.constant(n))).max(1)
+            wanted = r + GAMMA * future * (1 - d)
+            current = np.array(forward(online, tf.constant(s)))
+            current[np.arange(BATCH), a] = wanted
+            online.train_on_batch(s, current)
+        if frame % 200 == 0:
+            target.set_weights(online.get_weights())
+    return float(np.mean(lengths[-30:])) if lengths else 0.0
+
+
+for replay in (True, False):
+    print(f"replay={replay}: final mean episode length {run(replay):.2f}")`}
+/>

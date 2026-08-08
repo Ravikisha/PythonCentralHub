@@ -1,454 +1,647 @@
 ---
 title: Transfer Learning - Using Pre-trained Models
-description: Reuse knowledge from a model trained on a large dataset to solve your smaller task faster.
+description: Four strategies measured against training from scratch, where fine-tuning won by 0.0014, freezing lost, and a wrong learning rate cost 0.4026.
 sidebar:
   order: 424
 ---
 
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Figure from "../../../../components/Figure.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+Transfer learning is usually sold as free accuracy: take a model somebody else trained,
+reuse its features, win. This page builds the setup properly — a source task and a
+target task from the same sensor with **disjoint labels** — and measures four strategies
+against training from scratch.
+
+The honest headline is that **transfer bought almost nothing here**, and the reasons why
+are more useful than another demonstration that it works.
+
+| Target rows | From scratch | Frozen features | Fine-tuned 1e-3 | Fine-tuned 1e-4 |
+| --- | --- | --- | --- | --- |
+| 250 | 0.8628 | 0.8064 (**−0.0564**) | **0.8642** (+0.0014) | 0.4602 (**−0.4026**) |
+| 1,000 | 0.9154 | 0.8726 (−0.0428) | **0.9170** (+0.0016) | 0.8434 (−0.0720) |
+| 4,000 | 0.9286 | 0.9106 (−0.0180) | **0.9424** (+0.0138) | 0.8958 (−0.0328) |
+
+Fine-tuning won by 0.0014 where transfer is supposed to matter most. Freezing the
+backbone *lost* at every size. And the only large number in the table is the damage done
+by one wrong hyperparameter.
+
+## The setup
+
+Nothing is downloaded. The backbone is pre-trained here, on a task that is genuinely
+different from the target:
+
+| | Classes | Rows | Source accuracy |
+| --- | --- | --- | --- |
+| **source (related)** | t-shirt, pullover, dress, coat, shirt | 12,000 | 0.7114 |
+| **source (unrelated)** | MNIST handwritten digits | 12,000 | 0.9240 |
+| **target** | trouser, sandal, sneaker, bag, boot | 250 – 4,000 | — |
+
+The related split is the fair version of the experiment: same 28×28 greyscale sensor,
+same preprocessing, **no shared labels**. A backbone trained to tell a coat from a shirt
+has never seen a shoe.
+
 ## What you'll learn
 
-- why you almost never need to train a CNN like ResNet or Xception from scratch
-- how to load an ImageNet-pretrained model with a single line of `keras.applications`
-- the difference between **feature extraction** (freeze the base) and **fine-tuning** (unfreeze it later)
-- a full transfer-learning workflow: freeze → train the head → unfreeze → fine-tune at a low learning rate
+- The four strategies, and what each one actually trains: **4,485 parameters frozen
+  against 27,781 from scratch**.
+- Why `layer.trainable = False` does nothing until you **recompile**.
+- The learning-rate trap that cost 0.4026 accuracy — and why it is a *fair* comparison
+  only when the rate is held constant.
+- A **linear probe**, the cleanest way to ask what a backbone actually learned.
+- Why the unrelated source scored 0.9124 against the related source's 0.9170 — nearly
+  the same — and what that says about fine-tuning.
+- The conditions under which transfer learning earns its reputation, none of which hold
+  here.
 
-## Why train from scratch when you don't have to
+## The four strategies
 
-Building a GoogLeNet or ResNet from scratch and training it on ImageNet takes
-serious compute and millions of labeled images. Most of us don't have either.
-The good news: `keras.applications` ships dozens of architectures **already
-trained on ImageNet**, ready to download with one line of code:
+```python title="Freeze, or fine-tune, or start over"
+backbone = pretrained_backbone()             # three conv blocks, 23,296 params
 
-```python title="Loading a pretrained ImageNet classifier" showLineNumbers{1}
-import tensorflow as tf
-
-model = tf.keras.applications.resnet50.ResNet50(weights="imagenet")
-```
-
-That's it — this downloads ResNet-50's architecture *and* its ImageNet
-weights. Before you can use it, resize your images to what the model
-expects (224 × 224 for ResNet-50), then run them through that model's own
-`preprocess_input()` function, since every architecture expects pixels
-scaled a little differently:
-
-```python title="Using it to classify an image" showLineNumbers{1}
-images_resized = tf.image.resize(images, [224, 224])
-inputs = tf.keras.applications.resnet50.preprocess_input(images_resized * 255)
-
-Y_proba = model.predict(inputs)
-top_3 = tf.keras.applications.resnet50.decode_predictions(Y_proba, top=3)
-```
-
-`decode_predictions()` turns the raw 1,000-class probability vector into
-human-readable labels like `("n03877845", "palace", 0.41)` — the class ID,
-its name, and the model's confidence.
-
-This is great when your classes are already inside ImageNet's 1,000
-categories. But what if you want to classify something ImageNet never saw —
-say, five specific flower species? That's where **transfer learning**
-comes in.
-
-## Feature extraction vs. fine-tuning
-
-```mermaid title="Transfer learning architecture" desc="A frozen pretrained base extracts general features; only the new head is trained on your dataset at first."
-flowchart LR
-  I["Input image<br/>224x224x3"] --> B["Pretrained base<br/>(Xception / ResNet, frozen)"]
-  B --> P["GlobalAveragePooling2D"]
-  P --> H["New Dense head<br/>(softmax, n_classes)"]
-  H --> O["Prediction"]
-```
-
-A pretrained CNN's early layers learned very general visual features — edges,
-textures, corners — that are useful for almost *any* image task, not just the
-1,000 ImageNet classes. The later layers are more specialized toward those
-specific classes. So the recipe is:
-
-1. **Feature extraction** — throw away the model's final classification
-   layer, keep everything before it (the "base"), **freeze** its weights so
-   they can't change, and bolt on a brand-new head trained only on your data.
-2. **Fine-tuning** (optional, later) — once your new head has learned
-   something reasonable, unfreeze the base too and keep training the *whole*
-   model, using a much smaller learning rate so you nudge the pretrained
-   weights instead of destroying them.
-
-Freezing at first matters for two reasons: it's dramatically cheaper (you're
-only training the small new head), and it prevents large, random gradients
-from the untrained head from wrecking carefully learned pretrained weights
-before they've had a chance to settle.
-
-## A full example: classifying flowers with Xception
-
-Let's reuse a pretrained Xception model to classify photos of flowers into
-five species — a task Xception never saw during its original ImageNet
-training.
-
-```python title="transfer_learning_flowers.py" showLineNumbers{1}
-import tensorflow as tf
-import tensorflow_datasets as tfds
-
-# 1. Load the data and split it ourselves (tf_flowers ships only a train split)
-dataset, info = tfds.load("tf_flowers", as_supervised=True, with_info=True)
-n_classes = info.features["label"].num_classes  # 5
-
-test_set, valid_set, train_set = tfds.load(
-    "tf_flowers",
-    split=["train[:10%]", "train[10%:25%]", "train[25%:]"],
-    as_supervised=True,
-)
-
-# 2. Resize + preprocess for Xception, batch, and prefetch
-def preprocess(image, label):
-    resized = tf.image.resize(image, [224, 224])
-    return tf.keras.applications.xception.preprocess_input(resized), label
-
-batch_size = 32
-train_set = train_set.shuffle(1000).map(preprocess).batch(batch_size).prefetch(1)
-valid_set = valid_set.map(preprocess).batch(batch_size).prefetch(1)
-test_set = test_set.map(preprocess).batch(batch_size).prefetch(1)
-
-# 3. Load Xception WITHOUT its final classification layers
-base_model = tf.keras.applications.xception.Xception(
-    weights="imagenet", include_top=False
-)
-avg = tf.keras.layers.GlobalAveragePooling2D()(base_model.output)
-output = tf.keras.layers.Dense(n_classes, activation="softmax")(avg)
-model = tf.keras.Model(inputs=base_model.input, outputs=output)
-
-# 4. Freeze the base and train only the new head
-for layer in base_model.layers:
+for layer in backbone.layers:                # 1. frozen features
     layer.trainable = False
 
-optimizer = tf.keras.optimizers.SGD(learning_rate=0.2, momentum=0.9)
-model.compile(loss="sparse_categorical_crossentropy", optimizer=optimizer, metrics=["accuracy"])
-model.fit(train_set, epochs=5, validation_data=valid_set)
+for layer in backbone.layers:                # 2. fine-tune the top block
+    layer.trainable = layer.name.startswith("block2_")
 
-# 5. Unfreeze and fine-tune the WHOLE model with a much lower learning rate
-for layer in base_model.layers:
-    layer.trainable = True
-
-optimizer = tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9)
-model.compile(loss="sparse_categorical_crossentropy", optimizer=optimizer, metrics=["accuracy"])
-model.fit(train_set, epochs=10, validation_data=valid_set)
+model = keras.Model(backbone.input, head(backbone.output))
+model.compile(keras.optimizers.Adam(1e-3), ...)   # <- the freeze takes effect HERE
 ```
 
-`include_top=False` strips off the average-pooling + dense-softmax layers
-that Xception used for its original 1,000 ImageNet classes, leaving just the
-convolutional "feature extractor." From there, we bolt on our own
-`GlobalAveragePooling2D` + `Dense(n_classes, "softmax")` head.
+`trainable` is read at **compile** time. Flip it afterwards and the already-built
+training function keeps updating the weights you thought you had frozen — Exercise 3
+measures exactly that, and it is silent.
 
-After a few epochs of frozen training, validation accuracy typically climbs
-to somewhere around 75–80% and plateaus — a sign the new head has learned
-what it can from fixed features. Unfreezing and fine-tuning at a low learning
-rate usually pushes accuracy up toward 90%+, since now the pretrained filters
-can adapt slightly to flower photos specifically.
-
-:::caution[Watch out]
-Setting `base_model.trainable = False` on the *model object* has no effect if
-your new model was built from `base_model.output`/`base_model.input` (as
-above) — you're using its **layers** directly, so you must loop over
-`base_model.layers` and freeze each one individually, as shown.
-:::
-
-## A more surgical fine-tune: unfreezing only the top layers
-
-The workflow above unfreezes the *entire* base for the fine-tuning step,
-which works, but it's not the only option — and it's not always the best
-one. Chollet's version of fine-tuning is more surgical: instead of
-unfreezing everything, unfreeze only the **last few layers** of the
-convolutional base and leave the rest frozen.
-
-Two reasons to prefer that:
-
-- **Early layers learn generic features** (edges, colors, simple textures)
-  that are useful for almost any image task — there's little to gain, and
-  fast-decreasing returns, from fine-tuning them. The **later layers**
-  encode more specialized features, which are exactly the ones that benefit
-  from being nudged toward your specific dataset.
-- **Fewer trainable parameters means less overfitting risk.** A base like
-  VGG16 has around 15 million parameters — unfreezing all of it to train on
-  a dataset of a few thousand images is asking for trouble. Unfreezing just
-  the last convolutional block keeps the trainable parameter count small
-  enough to fine-tune safely.
-
-```python title="fine_tune_top_layers_only.py" showLineNumbers{1}
-import tensorflow as tf
-
-conv_base = tf.keras.applications.vgg16.VGG16(weights="imagenet", include_top=False)
-
-# Step 1: freeze the whole base and train your new head first (as before) --
-# fine-tuning only makes sense once that head is no longer randomly initialized.
-
-# Step 2: unfreeze the base, then re-freeze everything except the last few layers
-conv_base.trainable = True
-for layer in conv_base.layers[:-4]:
-    layer.trainable = False
-
-# Step 3: recompile (Keras only picks up trainable changes at compile time)
-# with a very low learning rate, so you nudge -- not overwrite -- the
-# pretrained weights in the layers you did unfreeze.
-model.compile(
-    loss="binary_crossentropy",
-    optimizer=tf.keras.optimizers.RMSprop(learning_rate=1e-5),
-    metrics=["accuracy"],
-)
-
-callbacks = [
-    tf.keras.callbacks.ModelCheckpoint(
-        filepath="fine_tuning.keras", save_best_only=True, monitor="val_loss"
-    ),
-]
-model.fit(train_dataset, epochs=30, validation_data=validation_dataset, callbacks=callbacks)
-```
-
-Either approach — unfreeze everything at a low learning rate, or unfreeze
-just the last few layers — is a legitimate fine-tuning strategy. Start with
-the "unfreeze everything" version from the flowers example above since it's
-simpler; reach for the more surgical top-layers-only version when your
-dataset is small and you're seeing overfitting creep back in once the base
-becomes trainable.
-
-## Mini-checkpoint
-
-Why start with the base model frozen instead of fine-tuning everything at once?
-
-- A freshly attached head has random weights, so its first gradients are
-  large and noisy. If the pretrained base were trainable from the start,
-  those noisy gradients could wreck weeks of ImageNet training in a few
-  batches. Freezing first lets the head "catch up" safely.
-
-:::tip[From the book]
-Géron's advice: after the frozen head plateaus, don't forget to
-**re-compile the model** every time you freeze or unfreeze layers — Keras
-only picks up `trainable` changes at compile time. And when you do unfreeze,
-use a noticeably smaller learning rate than you'd use for training from
-scratch, precisely so you nudge the pretrained weights instead of erasing
-them.
-:::
-
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
-
-## 🧪 Try It Yourself
-
-### Exercise 1 – Freeze a Pretrained Base
-
-<DataCampExercise
-  lang="python"
-  hint={`Freezing a layer means setting its \`.trainable\` attribute to \`False\` so its weights won't update during training.`}
-  code={`# Task: Exercise 1 - Freeze a Pretrained Base
-import tensorflow as tf
-
-base_model = tf.keras.Sequential([
-    tf.keras.layers.Conv2D(32, 3, activation="relu", input_shape=(64, 64, 3)),
-    tf.keras.layers.Conv2D(64, 3, activation="relu"),
-])
-
-for layer in base_model.layers:
-    layer.trainable = ___   # replace ___ with False
-
-trainable_layers = sum(layer.trainable for layer in base_model.layers)
-print("Trainable layers:", trainable_layers)
-
-# ── Expected Output ───────────────────────────────────────────
-# Trainable layers: 0
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
-
-base_model = tf.keras.Sequential([
-    tf.keras.layers.Conv2D(32, 3, activation="relu", input_shape=(64, 64, 3)),
-    tf.keras.layers.Conv2D(64, 3, activation="relu"),
-])
-
-for layer in base_model.layers:
-    layer.trainable = False
-
-trainable_layers = sum(layer.trainable for layer in base_model.layers)
-print("Trainable layers:", trainable_layers)`}
-  sct={`test_output_contains("Trainable layers: 0")
-success_msg("Frozen! Now only a new head would train on top of this base.")`}
-  height={170}
+<Figure
+  src="/images/dl/phase-03-vision/transfer-learning/transfer-against-scratch"
+  alt="Two panels. Left: best validation accuracy against target rows on a log axis for four strategies. From scratch, fine-tuned 1e-3 and frozen features cluster between 0.80 and 0.94, while fine-tuned 1e-4 starts far below at 0.4602 and catches up by 4,000 rows. Right: per-epoch curves at 250 rows showing fine-tuned 1e-3 and from scratch rising together to about 0.86, frozen features trailing at 0.81, and fine-tuned 1e-4 still climbing through 0.46 at epoch 12."
+  title="Garments to footwear and bags, same sensor, disjoint labels"
+  caption="Three of the four curves are on top of each other, which is the result: at 250 target rows, training from scratch reaches 0.8628 and the best transfer strategy reaches 0.8642. The outlier is the low learning rate, and the right panel shows why — at 1e-4 the model is simply still training at epoch 12. That is not a property of fine-tuning, it is a budget mismatch, and it is the most common way transfer-learning comparisons get rigged."
 />
 
-### Exercise 2 – Add a New Classification Head
+## Why transfer bought so little
 
-<DataCampExercise
-  lang="python"
-  hint={`Global average pooling collapses each feature map to a single number, so the output shape becomes (None, n_classes) after the final Dense layer.`}
-  code={`# Task: Exercise 2 - Add a New Classification Head
-import tensorflow as tf
+Three conditions have to hold before a pre-trained backbone helps, and none of them do
+here.
 
-base_model = tf.keras.Sequential([
-    tf.keras.layers.Conv2D(32, 3, activation="relu", input_shape=(64, 64, 3)),
-])
-base_model.trainable = False
+1. **The source model must be better than what you can train yourself.** This backbone
+   is 23,296 parameters trained on 12,000 rows to 0.7114 accuracy. ImageNet backbones
+   are 10⁷–10⁸ parameters trained on 10⁶ images. There is no knowledge advantage to
+   transfer.
+2. **The target task must be hard enough that data is the binding constraint.** Telling
+   a trouser from a sneaker from a bag is easy: **from scratch reaches 0.8628 with 250
+   examples**. There is no gap for a backbone to close.
+3. **The domains must differ in the right way.** The source and target are the same
+   sensor, same resolution, same statistics — so the low-level features a fresh model
+   learns in two epochs are the same ones the backbone offers.
 
-inputs = tf.keras.Input(shape=(64, 64, 3))
-x = base_model(inputs)
-x = tf.keras.layers.___()(x)   # replace ___ with GlobalAveragePooling2D
-outputs = tf.keras.layers.Dense(5, activation="softmax")(x)
-model = tf.keras.Model(inputs, outputs)
+The fourth column of the unfreeze sweep makes the point precisely:
 
-print("Output shape:", model.output_shape)
+| Blocks unfrozen | Trainable parameters | Best validation accuracy |
+| --- | --- | --- |
+| 0 (frozen features) | 4,485 | 0.8726 |
+| 1 | 22,981 | 0.9170 |
+| 2 | 27,621 | 0.9174 |
+| **3 (all — nothing frozen)** | **27,781** | **0.9226** |
 
-# ── Expected Output ───────────────────────────────────────────
-# Output shape: (None, 5)
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
-
-base_model = tf.keras.Sequential([
-    tf.keras.layers.Conv2D(32, 3, activation="relu", input_shape=(64, 64, 3)),
-])
-base_model.trainable = False
-
-inputs = tf.keras.Input(shape=(64, 64, 3))
-x = base_model(inputs)
-x = tf.keras.layers.GlobalAveragePooling2D()(x)
-outputs = tf.keras.layers.Dense(5, activation="softmax")(x)
-model = tf.keras.Model(inputs, outputs)
-
-print("Output shape:", model.output_shape)`}
-  sct={`test_output_contains("Output shape: (None, 5)")
-success_msg("That is a brand-new 5-class head sitting on top of a frozen base!")`}
-  height={190}
+<Figure
+  src="/images/dl/phase-03-vision/transfer-learning/unfreeze-depth"
+  alt="A bar chart of best validation accuracy against how many backbone blocks are unfrozen: 0.8726 with none unfrozen and 4,485 trainable parameters, 0.9170 with one, 0.9174 with two, and 0.9226 with all three and 27,781 trainable."
+  title="1,000 target rows — how much to unfreeze"
+  caption="Accuracy increases monotonically with how much of the backbone you let move, and the best result is the one that keeps nothing frozen. On a task where the pre-trained features are not better than freshly learned ones, freezing is a pure constraint — the usual advice to freeze first exists for the opposite regime, where the backbone is strong and the target data is too small to fine-tune safely without destroying it."
 />
 
-### Exercise 3 – Unfreeze for Fine-Tuning
+## The source task mattered less than expected
 
-<DataCampExercise
-  lang="python"
-  hint={`Fine-tuning means flipping \`layer.trainable\` back to \`True\` for every layer in the base model, then re-compiling with a lower learning rate.`}
-  code={`# Task: Exercise 3 - Unfreeze for Fine-Tuning
-import tensorflow as tf
+| Source | Frozen features | Fine-tuned 1e-3 |
+| --- | --- | --- |
+| related (garments) | 0.8726 | **0.9170** |
+| unrelated (MNIST digits) | 0.8598 | 0.9124 |
 
-base_model = tf.keras.Sequential([
-    tf.keras.layers.Conv2D(16, 3, activation="relu", input_shape=(32, 32, 3)),
-    tf.keras.layers.Conv2D(32, 3, activation="relu"),
-])
+A backbone trained on **handwritten digits** transferred to footwear almost as well as
+one trained on clothing — 0.9124 against 0.9170. Frozen, the gap is larger (0.8598
+against 0.8726), which is the expected direction: when the features cannot move, their
+relevance matters. Once fine-tuning is allowed to rewrite them at 1e-3, the
+initialisation is mostly forgotten.
 
-for layer in base_model.layers:
-    layer.trainable = False
-print("Frozen:", sum(l.trainable for l in base_model.layers))
+This is worth stating plainly because it cuts against the usual advice. "Choose a source
+task close to your target" is sound, but its effect here was **0.0046** — an order of
+magnitude smaller than the effect of choosing the learning rate correctly.
 
-for layer in base_model.layers:
-    layer.trainable = ___   # replace ___ with True
-print("Fine-tuning:", sum(l.trainable for l in base_model.layers))
+## The linear probe
 
-# ── Expected Output ───────────────────────────────────────────
-# Frozen: 0
-# Fine-tuning: 2
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
+The cleanest question you can ask a backbone is: *how good are your features, ignoring
+the classifier?* Freeze everything, extract the 64-dimensional pooled vector, and fit
+plain logistic regression to it — then do the same with the 784 raw pixels.
 
-base_model = tf.keras.Sequential([
-    tf.keras.layers.Conv2D(16, 3, activation="relu", input_shape=(32, 32, 3)),
-    tf.keras.layers.Conv2D(32, 3, activation="relu"),
-])
+| Target rows | On 64 related features | On 64 unrelated features | On 784 raw pixels |
+| --- | --- | --- | --- |
+| 250 | **0.9138** | 0.8978 | 0.9002 |
+| 1,000 | 0.9380 | 0.9250 | 0.9360 |
+| 4,000 | 0.9490 | 0.9394 | **0.9490** |
 
-for layer in base_model.layers:
-    layer.trainable = False
-print("Frozen:", sum(l.trainable for l in base_model.layers))
-
-for layer in base_model.layers:
-    layer.trainable = True
-print("Fine-tuning:", sum(l.trainable for l in base_model.layers))`}
-  sct={`test_output_contains("Frozen: 0")
-test_output_contains("Fine-tuning: 2")
-success_msg("That is the freeze-then-fine-tune workflow in a nutshell!")`}
-  height={210}
+<Figure
+  src="/images/dl/phase-03-vision/transfer-learning/feature-quality"
+  alt="Two panels. Left: linear-probe test accuracy against target rows for three feature sets — 64 related features, 64 unrelated features and 784 raw pixels — all between 0.89 and 0.95 and converging as rows increase. Right: bars comparing frozen features and fine-tuning from a related and an unrelated source at 1,000 rows, against a dashed from-scratch line."
+  title="A linear probe measures the features, not the classifier"
+  caption="At 250 rows the pre-trained features beat raw pixels by 0.0136 — a 64-number summary outperforming 784 pixels is a real compression win. By 4,000 rows the advantage is exactly 0.0000: given enough data, a linear model on raw pixels does just as well. That convergence is the whole shape of transfer learning in one chart, and it is why the technique is described as a small-data method."
 />
 
-## Two ways to do feature extraction
+The probe result is the most positive number on this page, and it is also the smallest
+one that matters: 64 numbers, from a network that never saw a shoe, carry as much
+linearly-separable information as 784 raw pixels — and slightly more when data is
+scarce.
 
-There's actually a choice to make about *how* you run the frozen base over
-your data, and it comes with a real speed/flexibility trade-off:
+```mermaid
+flowchart TB
+  A["is your target data small<br/>relative to the task's difficulty?"] -->|"no"| B["train from scratch<br/>— 0.9286 here at 4,000 rows"]
+  A -->|"yes"| C["is the source model much stronger<br/>than anything you can train?"]
+  C -->|"no"| D["transfer buys ~0<br/>— +0.0014 measured"]
+  C -->|"yes"| E["fine-tune, same learning rate<br/>as your scratch baseline"]
+  E --> F{"target data tiny<br/>or very different?"}
+  F -->|"yes"| G["freeze the lower blocks first"]
+  F -->|"no"| H["unfreeze everything<br/>— best result here, 0.9226"]
+```
 
-1. **Fast feature extraction (no augmentation)** — run the frozen
-   convolutional base over every training image *once*, save its output
-   (the extracted features) to a NumPy array, and train a small, plain
-   `Dense` classifier on those cached features. Since the expensive
-   convolutional base only ever runs once per image, an epoch over a few
-   thousand images can finish in well under a second on CPU. The catch:
-   because the features are precomputed, you can't apply data augmentation —
-   there's no convolutional base left in the trainable pipeline to feed
-   augmented images through.
+```p5 title="Freeze, fine-tune, or start over" desc="Click blocks to freeze or unfreeze them and see the trainable-parameter count, with the measured accuracy at 1,000 target rows." height="330"
+const BLOCKS = [
+  { name: "block0 conv 16", params: 160 },
+  { name: "block1 conv 32", params: 4640 },
+  { name: "block2 conv 64", params: 18496 },
+  { name: "head (dense)", params: 4485, always: true },
+];
+const MEASURED = { 0: 0.8726, 1: 0.9170, 2: 0.9174, 3: 0.9226 };
+let frozen = [true, true, true, false];
+function setup() {
+  createCanvas(620, 330);
+  textFont("monospace");
+}
+function draw() {
+  background(13, 17, 23);
+  noStroke();
+  fill(230);
+  textSize(11.5);
+  textAlign(LEFT, TOP);
+  text("click a block to freeze or unfreeze it", 30, 20);
+  let trainable = 0;
+  let total = 0;
+  BLOCKS.forEach((block, index) => {
+    const y = 50 + index * 46;
+    const isFrozen = block.always ? false : frozen[index];
+    total += block.params;
+    if (!isFrozen) trainable += block.params;
+    fill(isFrozen ? 60 : 46, isFrozen ? 68 : 96, isFrozen ? 82 : 140);
+    rect(30, y, 330, 38, 4);
+    fill(isFrozen ? 150 : 235);
+    textSize(11);
+    textAlign(LEFT, CENTER);
+    text(block.name, 44, y + 19);
+    textAlign(RIGHT, CENTER);
+    text(block.params.toLocaleString() + (isFrozen ? "  frozen" : "  training"),
+      348, y + 19);
+    textAlign(LEFT, TOP);
+  });
+  let unfrozenBlocks = 0;
+  for (let i = 0; i < 3; i++) if (!frozen[i]) unfrozenBlocks++;
+  fill(255, 211, 67);
+  textSize(11.5);
+  text("trainable: " + trainable.toLocaleString() + " of "
+    + total.toLocaleString(), 30, 240);
+  const contiguous = (!frozen[2] || unfrozenBlocks === 0)
+    && (frozen[1] || !frozen[2] ? true : false);
+  const measured = MEASURED[unfrozenBlocks];
+  fill(165, 214, 164);
+  textSize(11);
+  text("measured at 1,000 target rows with the top " + unfrozenBlocks
+    + " block(s) unfrozen: " + measured.toFixed(4), 30, 262);
+  fill(150);
+  textSize(10.5);
+  text("accuracy rose monotonically with how much was allowed to move,", 30, 288);
+  text("which is what happens when the backbone is not better than scratch",
+    30, 304);
+  fill(120);
+  textSize(9.5);
+  textAlign(RIGHT, TOP);
+  text(contiguous ? "" : "", 590, 240);
+  textAlign(LEFT, TOP);
+}
+function mousePressed() {
+  BLOCKS.forEach((block, index) => {
+    const y = 50 + index * 46;
+    if (!block.always && mouseX > 30 && mouseX < 360 && mouseY > y
+      && mouseY < y + 38) {
+      frozen[index] = !frozen[index];
+    }
+  });
+}
+```
 
-   ```python title="fast_feature_extraction.py" showLineNumbers{1}
-   import numpy as np
-   import tensorflow as tf
+```p5 title="The measured table, ranked" desc="Click a column to rank every row by it. The bars are that column's values and the highest and lowest are computed from the numbers, not written in." height="254"
+let metric = 0;
+const COLUMNS = ["Trainable parameters", "Best validation accuracy"];
+const ROWS = [
+  ["0 (frozen features)", 4485, 0.8726],
+  ["1", 22981, 0.917],
+  ["2", 27621, 0.9174],
+  ["3 (all - nothing frozen)", 27781, 0.9226]
+];
+function setup() {
+  createCanvas(620, 254);
+  textFont("monospace");
+}
+function fmt(v) {
+  if (v === 0) { return "0"; }
+  const a = Math.abs(v);
+  if (a >= 1000 || a < 0.001) { return v.toExponential(2); }
+  if (a >= 100) { return v.toFixed(1); }
+  return v.toFixed(4);
+}
+function draw() {
+  background(13, 17, 23);
+  noStroke();
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("Transfer Learning - Using Pre-trai", 26, 16);
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (i === metric) { fill(255, 211, 67); } else { fill(48, 56, 68); }
+    rect(x, 40, w, 22, 4);
+    if (i === metric) { fill(13, 17, 23); } else { fill(180); }
+    textSize(9);
+    text(COLUMNS[i], x + 8, 47);
+    x += w + 6;
+    if (x > 500) { break; }
+  }
+  const values = ROWS.map((r) => r[metric + 1]);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo === 0 ? 1 : hi - lo;
+  const order = ROWS.slice().sort((a, b) => b[metric + 1] - a[metric + 1]);
+  for (let i = 0; i < order.length; i++) {
+    const y = 78 + i * 26;
+    const v = order[i][metric + 1];
+    fill(160);
+    textSize(9);
+    text(order[i][0], 26, y + 5);
+    fill(34, 40, 50);
+    rect(230, y, 280, 18, 3);
+    const frac = (v - lo) / span;
+    if (v === hi) { fill(126, 192, 143); }
+    else if (v === lo) { fill(224, 108, 117); }
+    else { fill(107, 169, 221); }
+    rect(230, y, Math.max(frac * 280, 3), 18, 3);
+    fill(225);
+    textSize(9);
+    text(fmt(v), 518, y + 5);
+  }
+  const top = order[0];
+  const bottom = order[order.length - 1];
+  fill(150);
+  textSize(9);
+  const base = 78 + order.length * 26 + 8;
+  text("highest " + COLUMNS[metric] + ": " + top[0] + " at " + fmt(top[1]),
+       26, base);
+  text("lowest  " + COLUMNS[metric] + ": " + bottom[0] + " at "
+       + fmt(bottom[1]), 26, base + 14);
+  text("bars are scaled within the chosen column - lowest is not zero", 26,
+       base + 30);
+}
+function mousePressed() {
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (mouseX > x && mouseX < x + w && mouseY > 40 && mouseY < 62) {
+      metric = i;
+    }
+    x += w + 6;
+  }
+}
+```
 
-   conv_base = tf.keras.applications.vgg16.VGG16(weights="imagenet", include_top=False)
+## Pitfalls
 
-   def get_features_and_labels(dataset):
-       all_features, all_labels = [], []
-       for images, labels in dataset:
-           preprocessed = tf.keras.applications.vgg16.preprocess_input(images)
-           all_features.append(conv_base.predict(preprocessed))
-           all_labels.append(labels)
-       return np.concatenate(all_features), np.concatenate(all_labels)
+- **Comparing fine-tuning against scratch at different learning rates.** 1e-4 scored
+  0.4602 against scratch's 0.8628 at 250 rows — a 0.4026 gap that says nothing about
+  transfer learning and everything about the budget.
+- **Flipping `trainable` after compiling.** The change is ignored until you recompile,
+  silently.
+- **Freezing by default.** Freezing lost at all three sizes here (−0.0564, −0.0428,
+  −0.0180), and the best unfreeze setting was "unfreeze everything".
+- **Assuming a weak backbone still helps.** A 23,296-parameter backbone at 0.7114 source
+  accuracy has nothing to lend; the technique's reputation comes from backbones three
+  orders of magnitude larger.
+- **Choosing the source task carefully and the learning rate carelessly.** Related vs
+  unrelated source was worth 0.0046; the learning rate was worth 0.4026.
+- **Reporting transfer results without a from-scratch baseline.** 0.9424 sounds
+  excellent until scratch scores 0.9286.
+- **Skipping the linear probe.** It separates "the features are good" from "the
+  classifier trained well", and it takes seconds.
 
-   train_features, train_labels = get_features_and_labels(train_dataset)
-   # train_features.shape == (num_samples, 5, 5, 512) for a 5x5x512 VGG16 output
+## Recap
 
-   inputs = tf.keras.Input(shape=(5, 5, 512))
-   x = tf.keras.layers.Flatten()(inputs)
-   x = tf.keras.layers.Dense(256)(x)
-   x = tf.keras.layers.Dropout(0.5)(x)
-   outputs = tf.keras.layers.Dense(1, activation="sigmoid")(x)
-   model = tf.keras.Model(inputs, outputs)
-   model.compile(loss="binary_crossentropy", optimizer="rmsprop", metrics=["accuracy"])
-   model.fit(train_features, train_labels, epochs=20)
-   ```
-
-2. **Feature extraction together with data augmentation** — chain a data
-   augmentation stage, the frozen `conv_base`, and a new classifier into
-   *one* end-to-end model, so every training image is re-augmented and
-   re-run through the whole convolutional base on every epoch. This is much
-   slower (the expensive base now runs on every image, every epoch, instead
-   of once total), but it lets you fight overfitting with augmentation while
-   you still benefit from pretrained features — the best option when your
-   small dataset is prone to overfitting even with a frozen base.
-
-   ```python title="feature_extraction_with_augmentation.py" showLineNumbers{1}
-   import tensorflow as tf
-
-   data_augmentation = tf.keras.Sequential([
-       tf.keras.layers.RandomFlip("horizontal"),
-       tf.keras.layers.RandomRotation(0.1),
-       tf.keras.layers.RandomZoom(0.2),
-   ])
-
-   conv_base = tf.keras.applications.vgg16.VGG16(weights="imagenet", include_top=False)
-   conv_base.trainable = False   # freeze BEFORE building the model that wraps it
-
-   inputs = tf.keras.Input(shape=(180, 180, 3))
-   x = data_augmentation(inputs)
-   x = tf.keras.applications.vgg16.preprocess_input(x)
-   x = conv_base(x)
-   x = tf.keras.layers.Flatten()(x)
-   x = tf.keras.layers.Dense(256)(x)
-   x = tf.keras.layers.Dropout(0.5)(x)
-   outputs = tf.keras.layers.Dense(1, activation="sigmoid")(x)
-   model = tf.keras.Model(inputs, outputs)
-   model.compile(loss="binary_crossentropy", optimizer="rmsprop", metrics=["accuracy"])
-   ```
-
-   With the base frozen, only the new `Dense` layers actually train — but
-   every image still passes through `data_augmentation` and the full
-   `conv_base` on every step, since they're now part of the same model.
-
-:::tip[From the book]
-Chollet's rule of thumb: reach for **fast feature extraction without
-augmentation** first — it's cheap enough to iterate on quickly, and if your
-dataset is large enough (or similar enough to ImageNet) it may already stop
-overfitting on its own. Only pay the much higher compute cost of **feature
-extraction with augmentation** if you actually see overfitting in the fast
-version's training curves. Either way, remember to freeze `conv_base`
-*before* you wire it into a larger model — `conv_base.trainable = False`
-only empties that model's own list of trainable weights at the moment you
-set it.
-:::
+- Source: five garment classes (0.7114). Target: five footwear-and-bag classes, disjoint
+  labels, same sensor.
+- Best transfer against scratch: **+0.0014 at 250 rows, +0.0016 at 1,000, +0.0138 at
+  4,000**. Freezing lost at every size.
+- Fine-tuning at 1e-4 while scratch ran at 1e-3 cost 0.4026 at 250 rows — a budget
+  artefact, not a finding.
+- Unfreezing more always helped: 0.8726 → 0.9170 → 0.9174 → 0.9226.
+- An unrelated source (MNIST digits) fine-tuned to 0.9124 against the related source's
+  0.9170 — once the weights can move, the initialisation mostly washes out.
+- A linear probe on 64 frozen features beat 784 raw pixels by 0.0136 at 250 rows and by
+  0.0000 at 4,000.
 
 ## Next
 
-Continue to **Data Augmentation for Small Datasets** — the technique that
-makes feature extraction with augmentation (and training a convnet from
-scratch) far more resistant to overfitting.
+Freezing and fine-tuning are the two ends of a spectrum, and there is a third option in
+between that trains under 3% of the weights:
+[Fine-Tuning and Parameter-Efficient Tuning (LoRA)](/deep-learning/phase-03---computer-vision-with-cnns/fine-tuning-and-parameter-efficient-tuning-lora/).
+
+<Quiz
+  questions={[
+    {
+      q: "Fine-tuning beat training from scratch by 0.0014 at 250 target rows. What is the most likely reason transfer bought so little?",
+      options: [
+        "The fine-tuning was implemented incorrectly",
+        "The backbone is 23,296 parameters trained to 0.7114 accuracy — it has no knowledge advantage over what a fresh model learns on the same easy target task",
+        "250 rows is too many for transfer to help",
+        "The source and target must share labels",
+      ],
+      answer: 1,
+      explain: "Transfer learning's reputation comes from backbones three orders of magnitude larger trained on far more data. Scale is the mechanism, not the ceremony of loading weights.",
+    },
+    {
+      q: "Fine-tuning at 1e-4 scored 0.4602 while training from scratch at 1e-3 scored 0.8628. What does that comparison establish?",
+      options: [
+        "Fine-tuning is worse than training from scratch",
+        "Nothing about transfer learning — the two runs used different learning rates, so the 0.4026 gap measures the budget, and the per-epoch curve shows the 1e-4 model still climbing at epoch 12",
+        "The pre-trained weights were corrupted",
+        "A low learning rate always fails",
+      ],
+      answer: 1,
+      explain: "It is the same class of error as comparing augmented and un-augmented models at a fixed epoch count. Hold everything constant except the thing you are measuring.",
+    },
+    {
+      q: "Accuracy rose monotonically as more of the backbone was unfrozen: 0.8726, 0.9170, 0.9174, 0.9226. When is the usual 'freeze first' advice right?",
+      options: [
+        "Always — freezing prevents overfitting",
+        "When the backbone is genuinely stronger than anything you could train and the target data is small enough that fine-tuning would destroy its features",
+        "Only for models with batch normalisation",
+        "Never; freezing is obsolete",
+      ],
+      answer: 1,
+      explain: "Here neither condition held, so freezing was a pure constraint on capacity and cost accuracy at every dataset size.",
+    },
+    {
+      q: "A backbone pre-trained on MNIST digits fine-tuned to 0.9124 on footwear; one pre-trained on garments reached 0.9170. Why so close?",
+      options: [
+        "MNIST and Fashion-MNIST are the same dataset",
+        "Fine-tuning at 1e-3 with most of the backbone unfrozen rewrites the features, so the initialisation mostly washes out — the gap was larger (0.8598 vs 0.8726) when the features were frozen",
+        "The measurement was not repeated",
+        "Digit features are known to be optimal for clothing",
+      ],
+      answer: 1,
+      explain: "Frozen, source relevance matters because the features cannot change. Fine-tuned, it matters much less than the learning rate did.",
+    },
+    {
+      q: "What does a linear probe tell you that a fine-tuned model's accuracy does not?",
+      options: [
+        "Whether the model has converged",
+        "How much linearly-separable information the frozen features carry, independent of the classifier — here 64 features beat 784 raw pixels by 0.0136 at 250 rows and by 0.0000 at 4,000",
+        "Whether the learning rate was correct",
+        "How many layers to unfreeze",
+      ],
+      answer: 1,
+      explain: "It costs seconds and separates 'the backbone learned something useful' from 'the head trained well', which a single end-to-end accuracy number conflates.",
+    },
+  ]}
+/>
+
+## 🧪 Try It Yourself
+
+<DataCampExercise
+  lang="python"
+  hint={`Select the rows whose label is in each class list, then remap the labels to 0..4 so both tasks have five classes.`}
+  code={`# Task: Exercise 1 - Build a source and target task with disjoint labels
+import numpy as np
+from tensorflow import keras
+
+NAMES = ("t-shirt", "trouser", "pullover", "dress", "coat", "sandal",
+         "shirt", "sneaker", "bag", "boot")
+SOURCE_CLASSES = (0, 2, 3, 4, 6)          # the garments
+TARGET_CLASSES = (1, 5, 7, 8, 9)          # footwear and bags
+
+
+def split(classes):
+    (x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()
+    lookup = {label: index for index, label in enumerate(classes)}
+    out = []
+    for x, y in ((x_train, y_train), (x_test, y_test)):
+        keep = np.isin(y, ___)                   # replace ___ with classes
+        out.append(x[keep].astype("float32")[..., None] / 255.0)
+        out.append(np.array([lookup[int(v)] for v in y[keep]], dtype="int64"))
+    return out
+
+
+sx, sy, sxt, syt = split(SOURCE_CLASSES)
+tx, ty, txt, tyt = split(TARGET_CLASSES)
+print(f"source: {[NAMES[c] for c in SOURCE_CLASSES]}")
+print(f"target: {[NAMES[c] for c in TARGET_CLASSES]}")
+print(f"source {len(sx):,} train / {len(sxt):,} test")
+print(f"target {len(tx):,} train / {len(txt):,} test")
+print(f"labels are disjoint: "
+      f"{set(SOURCE_CLASSES).isdisjoint(TARGET_CLASSES)}")
+print(f"both remapped to 0..{len(SOURCE_CLASSES) - 1}: source max "
+      f"{sy.max()}, target max {ty.max()}")
+print("same sensor, same preprocessing, no shared labels - which is what")
+print("makes this a fair transfer experiment rather than a relabelling")
+
+# -- Expected Output -------------------------------------------
+# source: ['t-shirt', 'pullover', 'dress', 'coat', 'shirt']
+# target: ['trouser', 'sandal', 'sneaker', 'bag', 'boot']
+# source 30,000 train / 5,000 test
+# target 30,000 train / 5,000 test
+# labels are disjoint: True
+# both remapped to 0..4: source max 4, target max 4
+# same sensor, same preprocessing, no shared labels - which is what
+# makes this a fair transfer experiment rather than a relabelling
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Set trainable on each backbone layer, then count model.trainable_weights against model.count_params().`}
+  code={`# Task: Exercise 2 - What freezing does to the parameter counts
+import numpy as np
+from tensorflow import keras
+
+BLOCKS = 3
+
+
+def backbone(seed=0):
+    keras.utils.set_random_seed(seed)
+    inputs = keras.layers.Input((28, 28, 1))
+    x = inputs
+    for index, filters in enumerate((16, 32, 64)):
+        x = keras.layers.Conv2D(filters, 3, padding="same", activation="relu",
+                                name=f"block{index}_conv")(x)
+        x = keras.layers.MaxPooling2D(2, name=f"block{index}_pool")(x)
+    return keras.Model(inputs, x, name="backbone")
+
+
+def attach(base, trainable_blocks, rate=1e-3):
+    for layer in base.layers:
+        layer.trainable = False
+    for index in range(BLOCKS - trainable_blocks, BLOCKS):
+        for layer in base.layers:
+            if layer.name.startswith(f"block{index}_"):
+                layer.trainable = ___             # replace ___ with True
+    x = keras.layers.GlobalAveragePooling2D()(base.output)
+    x = keras.layers.Dense(64, activation="relu")(x)
+    model = keras.Model(base.input,
+                        keras.layers.Dense(5, activation="softmax")(x))
+    model.compile(keras.optimizers.Adam(rate),
+                  "sparse_categorical_crossentropy", metrics=["accuracy"])
+    return model
+
+
+print(f"{'blocks unfrozen':>16} {'total':>9} {'trainable':>11} {'frozen':>9} "
+      f"{'trainable share':>16}")
+for blocks in range(BLOCKS + 1):
+    model = attach(backbone(), blocks)
+    trainable = int(sum(np.prod(w.shape) for w in model.trainable_weights))
+    total = model.count_params()
+    print(f"{f'{blocks} of {BLOCKS}':>16} {total:9,} {trainable:11,} "
+          f"{total - trainable:9,} {trainable / total:16.4f}")
+print("a frozen layer still runs on every forward pass: freezing saves the")
+print("backward pass and the optimizer state, not the inference cost")
+
+# -- Expected Output -------------------------------------------
+#  blocks unfrozen     total   trainable    frozen  trainable share
+#          0 of 3    27,781       4,485    23,296           0.1614
+#          1 of 3    27,781      22,981     4,800           0.8272
+#          2 of 3    27,781      27,621       160           0.9942
+#          3 of 3    27,781      27,781         0           1.0000
+# a frozen layer still runs on every forward pass: freezing saves the
+# backward pass and the optimizer state, not the inference cost
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Snapshot the weights, fit for a couple of epochs, and compare. Then flip trainable without recompiling and do it again.`}
+  code={`# Task: Exercise 3 - trainable=False does nothing until you recompile
+import numpy as np
+from tensorflow import keras
+
+# (backbone, attach, tx, ty from the previous exercises)
+
+model = attach(backbone(), 0)                 # everything frozen
+first_conv = model.layers[1]
+for label in ("frozen", "flipped without recompiling", "after recompiling"):
+    if label == "flipped without recompiling":
+        first_conv.trainable = True
+    if label == "after recompiling":
+        model.compile(keras.optimizers.Adam(1e-3),
+                      "sparse_categorical_crossentropy", metrics=["accuracy"])
+    before = [w.numpy().copy() for w in first_conv.weights]
+    model.fit(tx[:500], ty[:500], epochs=2, batch_size=64, verbose=0)
+    after = [w.numpy() for w in first_conv.weights]
+    change = max(float(np.abs(a - b).max()) for a, b in zip(before, ___))
+    # replace ___ with after
+    print(f"{label:30s} max weight change {change:.2e}")
+print("the training function is built at compile time and caches which")
+print("variables it updates - flipping the flag afterwards changes nothing,")
+print("and nothing warns you")
+
+# -- Expected Output -------------------------------------------
+# frozen                         max weight change 0.00e+00
+# flipped without recompiling    max weight change 0.00e+00
+# after recompiling              max weight change (a non-zero value)
+# the training function is built at compile time and caches which
+# variables it updates - flipping the flag afterwards changes nothing,
+# and nothing warns you
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Extract the pooled 64-dimensional features with a small keras.Model, then fit LogisticRegression on those and on the flattened raw pixels.`}
+  code={`# Task: Exercise 4 - A linear probe on the frozen features
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+from tensorflow import keras
+
+# (a pre-trained 'base' backbone, plus tx, ty, txt, tyt)
+
+extractor = keras.Model(
+    base.input, keras.layers.GlobalAveragePooling2D()(base.output))
+print(f"{'rows':>6} {'on 64 features':>15} {'on 784 pixels':>14} {'gap':>8}")
+for size in (250, 1000, 4000):
+    features = extractor.predict(tx[:size], verbose=0)
+    features_test = extractor.predict(txt, verbose=0)
+    on_features = LogisticRegression(max_iter=400).fit(features, ty[:size])
+    on_pixels = LogisticRegression(max_iter=400).fit(
+        tx[:size].reshape(size, ___), ty[:size])        # replace ___ with -1
+    a = float(on_features.score(features_test, tyt))
+    b = float(on_pixels.score(txt.reshape(len(txt), -1), tyt))
+    print(f"{size:6d} {a:15.4f} {b:14.4f} {a - b:+8.4f}")
+print("64 numbers from a network that never saw a shoe carry as much")
+print("linearly-separable information as 784 raw pixels - and the advantage")
+print("shrinks to nothing once there is enough data")
+
+# -- Expected Output -------------------------------------------
+#   rows  on 64 features  on 784 pixels      gap
+#    250          0.9138         0.9002  +0.0136
+#   1000          0.9380         0.9360  +0.0020
+#   4000          0.9490         0.9490  +0.0000
+# 64 numbers from a network that never saw a shoe carry as much
+# linearly-separable information as 784 raw pixels - and the advantage
+# shrinks to nothing once there is enough data
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Hold the learning rate constant across strategies, then vary it deliberately in a separate loop so the two effects are not mixed.`}
+  code={`# Task: Exercise 5 - The comparison, done fairly and then unfairly
+import numpy as np
+from tensorflow import keras
+
+# (backbone, attach, a pre-trained 'transferred()' helper, and the target data)
+
+SIZE = 250
+print("fair: every strategy at the same learning rate")
+print(f"{'strategy':18s} {'rate':>7} {'best val acc':>13}")
+for label, blocks, rate in (("from scratch", 3, 1e-3),
+                            ("frozen features", 0, 1e-3),
+                            ("fine-tuned", 1, 1e-3)):
+    base = backbone(seed=2) if label == "from scratch" else transferred()
+    model = attach(base, blocks, rate=rate)
+    history = model.fit(tx[:SIZE], ty[:SIZE], epochs=12, batch_size=64,
+                        verbose=0, validation_data=(txt, tyt))
+    print(f"{label:18s} {rate:7.0e} "
+          f"{max(history.history['val_accuracy']):13.4f}")
+
+print("unfair: the same strategy at four learning rates")
+print(f"{'strategy':18s} {'rate':>7} {'best val acc':>13} {'epoch 1':>9}")
+for rate in (1e-3, 3e-4, 1e-4, 3e-5):
+    model = attach(transferred(), 1, rate=___)   # replace ___ with rate
+    history = model.fit(tx[:SIZE], ty[:SIZE], epochs=12, batch_size=64,
+                        verbose=0, validation_data=(txt, tyt))
+    print(f"{'fine-tuned':18s} {rate:7.0e} "
+          f"{max(history.history['val_accuracy']):13.4f} "
+          f"{history.history['val_accuracy'][0]:9.4f}")
+print("the second table is a learning-rate sweep, not a transfer-learning")
+print("result - and printing it as one is how 0.4026 gaps get published")
+
+# -- Expected Output -------------------------------------------
+# (in the fair table the three strategies land within about 0.06 of each
+#  other; in the sweep, 1e-4 and below are still climbing at epoch 12 and
+#  score far lower — the same model, a different budget)
+# --------------------------------------------------------------`}
+/>

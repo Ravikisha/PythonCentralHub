@@ -1,221 +1,740 @@
 ---
 title: The Universal Workflow of Machine Learning
-description: A step-by-step blueprint for any ML project — define the task, develop a model that overfits then regularizes, and deploy and monitor it in production.
+description: A five-rung baseline ladder measured end to end, the overfit-then-regularise step made concrete, and the one-batch smoke test that separates bugs from data problems.
 sidebar:
   order: 416
 ---
 
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Figure from "../../../../components/Figure.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+Every technique in this phase was measured in isolation. A real project needs an
+order to apply them in, and that order matters more than the techniques do: most
+failed projects fail at step 1, on a task that was never framed properly or a
+baseline that was never measured. This page runs the whole workflow on one dataset
+and reports what each step bought.
+
 ## What you'll learn
 
-- the three phases every ML project passes through: define, develop, deploy
-- why data quality and problem framing usually matter more than model choice
-- target leaking, sampling bias, and concept drift — three ways a project quietly fails
-- the "beat a baseline, then overfit, then regularize" loop for developing a model
-- what changes once a model ships: monitoring, A/B testing, and retraining
+- A five-rung baseline ladder measured end to end: **0.1015 → 0.8400 → 0.8580 →
+  0.8595 → 0.8635**.
+- Why the 26× parameter jump from rung 3 to rung 4 bought **0.0015**.
+- The overfit-then-regularise step with numbers: gaps of **0.0221, 0.0981 and
+  0.0516** for three capacities.
+- The one-batch smoke test: **32 rows memorised to accuracy 1.0000** with 256
+  units, **0.8750** with 4.
+- The sanity checks worth running before any model exists.
+- Which last layer and loss to pair with each kind of target.
 
-## Why you need a workflow, not just a model
+## Step 1: define the task
 
-Most tutorials — including much of this site — jump straight to "here's a model,
-here's `model.fit()`." That's fine for learning the mechanics, but it skips the two
-hardest, most time-consuming parts of a real project: figuring out what you're
-actually trying to predict, and deciding what happens after the model works.
-François Chollet's **universal workflow of machine learning** is a checklist that
-covers the whole lifecycle, not just the training loop:
+Before code: what is predicted, from what, and what does being wrong cost?
 
-```mermaid title="The universal workflow of ML" desc="Three phases, each feeding the next — and concept drift feeding back into a new round of data collection."
-flowchart LR
-  A["1. Define the task<br/>(frame problem, collect data,<br/>pick a success metric)"] --> B["2. Develop a model<br/>(prepare data, evaluate,<br/>beat baseline, overfit, regularize)"]
-  B --> C["3. Deploy<br/>(ship inference model,<br/>monitor, maintain)"]
-  C -.->|"concept drift:<br/>collect new data"| A
+```mermaid
+flowchart TD
+  A["1. define the task"] --> B["what are the inputs?<br/>what is the target?<br/>what does a mistake cost?"]
+  B --> C["pick a metric<br/>and a loss that has a gradient"]
+  C --> D["2. develop a model"]
+  D --> E["beat a dumb baseline"]
+  E --> F["build something that overfits"]
+  F --> G["regularise and tune"]
+  G --> H["3. deploy"]
+  H --> I["monitor drift, retrain,<br/>keep the test set untouched"]
 ```
 
-## 1. Define the task
+The choice of last layer and loss is mechanical once the target is described:
 
-Before touching Keras, you need to know three things: what your inputs and targets
-actually are, what *type* of ML problem you're facing (binary classification?
-regression? ranking?), and how you'll measure success.
+| Target | Last layer | Loss | Metric to report |
+| --- | --- | --- | --- |
+| binary | `Dense(1, "sigmoid")` | `binary_crossentropy` | accuracy, or precision/recall |
+| multiclass, one label | `Dense(K)` + `from_logits=True` | `sparse_categorical_crossentropy` | accuracy and macro recall |
+| multiclass, many labels | `Dense(K, "sigmoid")` | `binary_crossentropy` | per-label F1 |
+| continuous | `Dense(1)` | `mse` or `huber` | MAE, in the target's units |
+| bounded continuous [0,1] | `Dense(1, "sigmoid")` | `mse` or `binary_crossentropy` | MAE |
 
-- **Frame the problem.** What data is available, and what are you predicting from
-  it? Not every problem is solvable — if the inputs genuinely don't contain enough
-  information to predict the target (say, forecasting a stock's next move from
-  its price history alone), no amount of model tuning will fix that.
-- **Collect a dataset**, and be honest about how expensive this step really is.
-  Chollet's rule of thumb: if you have an extra 50 hours to spend on a project,
-  they're usually better spent collecting more data than tuning the model further.
-- **Understand your data** before you model it — look at samples, plot histograms
-  of numeric features, check class balance, and specifically watch for **target
-  leaking**: a feature that (directly or indirectly) reveals the answer, and
-  that won't be available at prediction time in production.
-- **Choose a measure of success** that lines up with the real business goal —
-  accuracy, ROC AUC, precision/recall — because every technical decision from
-  here on is guided by whatever metric you pick.
+The reasoning behind each pairing — and the `from_logits` trap — is on the [loss
+functions](/deep-learning/phase-02---training-deep-neural-networks/loss-functions---choosing-what-to-minimise/)
+page.
 
-## 2. Develop a model
+### Sanity checks before any model exists
 
-Once you know what you're predicting and how you'll score it, model development
-follows a predictable loop:
-
-1. **Prepare the data** — vectorize it, normalize it into small, homogeneous
-   ranges, and decide how to handle missing values.
-2. **Pick an evaluation protocol** — simple hold-out, K-fold, or iterated K-fold
-   (the next page on this site walks through all three).
-3. **Beat a common-sense baseline** — a random classifier, or "always predict the
-   majority class." If you can't beat that, something about the problem framing
-   or the data is broken, and no architecture will save you.
-4. **Scale up until it overfits** — add layers, widen them, train longer. You
-   need to see the model overfit at least once, so you know your capacity ceiling
-   is high enough.
-5. **Regularize and tune** — now pull it back: add Dropout, L1/L2 penalties, early
-   stopping, or a smaller architecture, guided entirely by validation performance,
-   never the test set.
-
-```python title="Picking a last-layer activation and loss from the problem type" showLineNumbers{1}
-PROBLEM_TYPE_TO_HEAD = {
-    "binary_classification": ("sigmoid", "binary_crossentropy"),
-    "multiclass_single_label": ("softmax", "categorical_crossentropy"),
-    "multiclass_multilabel": ("sigmoid", "binary_crossentropy"),
-}
-
-def head_for(problem_type):
-    activation, loss = PROBLEM_TYPE_TO_HEAD[problem_type]
-    print(f"{problem_type}: activation={activation}, loss={loss}")
-
-head_for("multiclass_single_label")
+```python title="Five minutes that save a day"
+print(x.shape, x.dtype, x.min(), x.max(), x.mean())
+print(np.isnan(x).sum(), np.isinf(x).sum())
+print(np.bincount(y))                                    # class balance
+print(len(x) - len(np.unique(x, axis=0)))                # duplicate rows
 ```
 
-This is exactly the "develop a model that overfits, then regularize" loop this
-phase's other pages give you the tools for: **Batch Normalization**,
-**Regularization & Dropout**, and **Learning Rate Scheduling** are all techniques
-you reach for during step 5, once step 4 has proven the model *can* fit.
+Measured on 8,000 Fashion-MNIST rows: range [0.0000, 1.0000], mean 0.2851, zero
+NaNs, class counts from **747 to 860** — near-balanced, so the majority baseline is
+**0.1075** — and **0 duplicate rows**. Every one of those four numbers changes what
+you do next. A class count of 7,900 against 100 changes the metric; duplicate rows
+change the split, as the [evaluation
+page](/deep-learning/phase-02---training-deep-neural-networks/evaluating-models---generalization-and-validation/)
+measured at 0.9600 accuracy on pure noise.
 
-## 3. Deploy the model
+## Step 2a: beat a dumb baseline
 
-A model that scores well on the test set isn't done — it's ready for its next job:
+Each rung has to justify itself against the one below. Fashion-MNIST, 8,000
+training rows, one held-out test set, everything measured:
 
-- **Set expectations with stakeholders.** "98% accuracy" means very little to a
-  non-specialist; talking about false-positive and false-negative *rates*, and
-  what they cost the business, communicates far more.
-- **Ship an inference-only version.** Production rarely runs your training-time
-  Python object directly — it's exported to TensorFlow Serving (a REST API),
-  TensorFlow Lite (mobile/embedded), or TensorFlow.js (in-browser), often after
-  weight pruning or quantization to shrink it.
-- **Monitor it in the wild.** Track the model's real-world impact (A/B test
-  against the old system if you can), and periodically audit its predictions
-  against freshly annotated data.
-- **Plan to retrain.** Every model faces **concept drift** — the statistical
-  properties of production data shift over time, so today's well-fit model
-  slowly decays. Keep collecting data, especially examples the current model
-  gets wrong.
-
-:::tip[From the book]
-Chollet's cautionary tale for representativeness: a food-recognition app trained
-on professional, well-lit photos from a foodie social network scored over 90% on
-its test set — and then got the dish wrong 8 times out of 10 in production,
-because real users' blurry, badly lit phone photos looked nothing like the
-training data. The test set was representative of itself, not of production. A
-similar trap is **sampling bias**: the 1948 US election night headline "DEWEY
-DEFEATS TRUMAN" was printed because a phone survey oversampled richer,
-Republican-leaning households — phones weren't yet a random sample of voters.
-:::
-
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
-
-## 🧪 Try It Yourself
-
-### Exercise 1 – Beat a Common-Sense Baseline
-
-<DataCampExercise
-  lang="python"
-  hint={`The majority-class baseline predicts the most frequent label for every sample — compare \`y\` against that class, e.g. \`y == 0\`.`}
-  code={`# Task: Exercise 1 - Beat a Common-Sense Baseline
-import numpy as np
-
-y = np.array([0, 0, 0, 0, 0, 0, 0, 0, 1, 1])   # 80% class 0, 20% class 1
-
-baseline_accuracy = np.mean(y == ___)   # replace ___ with 0
-print(round(baseline_accuracy, 2))
-
-# ── Expected Output ───────────────────────────────────────────
-# 0.8
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import numpy as np
-
-y = np.array([0, 0, 0, 0, 0, 0, 0, 0, 1, 1])
-
-baseline_accuracy = np.mean(y == 0)
-print(round(baseline_accuracy, 2))`}
-  sct={`test_output_contains("0.8")
-success_msg("A model needs to beat 0.8 to prove it's learning anything!")`}
-  height={150}
+<Figure
+  src="/images/dl/phase-02-training/universal-workflow/baseline-ladder"
+  alt="Bar chart of five rungs: majority class at 0.1015, logistic regression at 0.8400, a 32-unit MLP at 0.8580, a 512-512 MLP at 0.8595, and the same wide model with dropout and early stopping at 0.8635. Parameter counts and training seconds are annotated on each bar."
+  title="Each rung has to beat the one below it to be worth using"
+  caption="The first two rungs cover 0.7385 of the total climb; everything after them adds 0.0235 between them. The 512-512 model has 26 times the parameters of the 32-unit model and beat it by 0.0015 — inside noise. Only after adding dropout and early stopping does the wide model earn its size, at 0.8635."
 />
 
-### Exercise 2 – Choose the Right Last-Layer Activation
+| Rung | Test accuracy | Parameters | Seconds |
+| --- | --- | --- | --- |
+| majority class | **0.1015** | 0 | 0.00 |
+| logistic regression | **0.8400** | 7,850 | 21.57 |
+| MLP, 32 units | 0.8580 | 25,450 | 15.27 |
+| MLP, 512-512 | 0.8595 | **669,706** | 42.26 |
+| 512-512 + dropout 0.4 + early stopping | **0.8635** | 669,706 | 34.56 |
 
-<DataCampExercise
-  lang="python"
-  hint={`Multiclass, single-label classification uses \`"softmax"\` as the last-layer activation, paired with \`categorical_crossentropy\`.`}
-  code={`# Task: Exercise 2 - Choose the Right Last-Layer Activation
-last_layer_activation = {
-    "binary_classification": "sigmoid",
-    "multiclass_single_label": "___",   # replace ___ with softmax
+Read the ladder as a cost-benefit table, not a leaderboard:
+
+- **Rung 2 does most of the work.** Logistic regression covers 0.7385 of the 0.7620
+  total climb, with 7,850 parameters and no tuning.
+- **Rung 4 is not worth its price on its own.** 26× the parameters of rung 3 for
+  0.0015 accuracy — smaller than the noise on this test set.
+- **Rung 5 is where the extra capacity pays**, and only because it is regularised:
+  0.8635, and it trained *faster* than rung 4 because early stopping cut it short.
+- **The whole neural network contribution is 0.0235** over logistic regression. That
+  is real and it is small, and knowing the size of it is the point of building the
+  ladder.
+
+## Step 2b: build something that overfits, then push back
+
+The recommended order is deliberately counter-intuitive: **first make the model bad
+in the right direction.** A model that cannot overfit has no headroom to
+regularise, and you cannot tell an underfitting model from a badly tuned one.
+
+<Figure
+  src="/images/dl/phase-02-training/universal-workflow/overfit-then-regularise"
+  alt="Two panels. Left: training (dashed) and validation (solid) accuracy for three models — an 8-unit model whose curves nearly coincide, a 512-512 model whose training curve climbs to 0.96 while validation flattens at 0.86, and a dropout model in between. Right: the training-minus-validation gap per epoch, rising to about 0.10 for the wide model, 0.05 with dropout, and staying near 0.02 for the small one."
+  title="Three capacities, one dataset"
+  caption="The 8-unit model has a gap of 0.0221 and cannot do better — it is underfitting, and no regulariser helps. The 512-512 model reaches a gap of 0.0981, which is the signal that there is headroom to trade. Adding dropout 0.4 cuts the gap to 0.0516 and produces the best validation accuracy of the three at its best epoch: 0.8710."
+/>
+
+| Model | Train accuracy | Val accuracy | Gap | Best val accuracy |
+| --- | --- | --- | --- | --- |
+| 8 units (too small) | 0.8656 | 0.8435 | **0.0221** | 0.8435 |
+| 512-512 (overfits) | 0.9576 | 0.8595 | **0.0981** | 0.8605 |
+| 512-512 + dropout 0.4 | 0.9086 | 0.8570 | 0.0516 | **0.8710** |
+
+The 8-unit row is the important one. Its gap is *small*, which looks healthy and is
+not: both numbers are low, and no amount of dropout, weight decay or scheduling will
+raise them. **A small gap is only good news when the scores are high.**
+
+Note also that the regularised model's *final* validation accuracy (0.8570) is
+slightly below the unregularised one's (0.8595), while its *best* is clearly higher
+(0.8710 against 0.8605). With dropout the run is noisier epoch to epoch, so the
+best-epoch weights are what you want — which is exactly what
+[`EarlyStopping(restore_best_weights=True)`](/deep-learning/phase-02---training-deep-neural-networks/callbacks-and-tensorboard/)
+gives you.
+
+### The one-batch smoke test
+
+Before worrying about data, architecture or hyperparameters, check that the model
+can memorise a single batch. Take 32 rows, train for 200 epochs, and demand
+near-zero loss:
+
+| Hidden units | Final training loss on 32 rows | Accuracy |
+| --- | --- | --- |
+| 4 | 0.402435 | **0.8750** |
+| 256 | **0.000253** | **1.0000** |
+
+The 256-unit model memorises 32 rows perfectly, as it must — 200,000 parameters
+against 32 examples. **If your model cannot do this, the problem is a bug**: a
+mislabelled target, a broken preprocessing step, a frozen layer, a learning rate of
+zero. Data volume, regularisation and architecture are all irrelevant until this
+test passes.
+
+The 4-unit model's failure is informative in the other direction: it is not a bug,
+it is a capacity limit, and it stalls at 0.8750 on 32 rows.
+
+```python title="The whole test"
+model.fit(x_train[:32], y_train[:32], epochs=200, batch_size=32)
+# demand a loss near zero. If you cannot get it, stop and find the bug.
+```
+
+## What "scale up until you overfit" looks like
+
+The instruction is precise but the number is not obvious, so here is the sweep: six model
+sizes spanning 146×, no regularisation, everything else held fixed.
+
+<Figure
+  src="/images/dl/phase-02-training/universal-workflow/capacity-frontier"
+  alt="Top: training and validation accuracy against parameter count on a log axis. Training accuracy climbs steadily from 0.8929 to 0.9635 while validation accuracy stays between 0.8365 and 0.8685. Bottom: the gap between them, rising from 0.0394 at 12,730 parameters to a peak of 0.1123 at 203,530 and settling near 0.095."
+  title="Fashion-MNIST, 8,000 rows, 30 epochs, no regularisation"
+  caption="Read the two panels together. Training accuracy rises monotonically — the model is absorbing more of the training set at every size, exactly as intended. Validation accuracy does not: it moves 0.0150 in total across a 146x range of parameters, and not monotonically. The gap panel is the signal the instruction is pointing at: it nearly triples between 12,730 and 203,530 parameters, which is where this model starts memorising rather than learning."
+/>
+
+| Model | Parameters | Train | Validation | Best validation | Gap |
+| --- | --- | --- | --- | --- | --- |
+| 16 | 12,730 | 0.8929 | 0.8535 | 0.8540 | 0.0394 |
+| 64 | 50,890 | 0.9162 | 0.8580 | 0.8600 | 0.0583 |
+| 256 | 203,530 | 0.9488 | 0.8365 | 0.8540 | **0.1123** |
+| 256 × 256 | 269,322 | 0.9548 | 0.8500 | 0.8685 | 0.1047 |
+| 512 × 512 | 669,706 | 0.9576 | 0.8595 | 0.8605 | 0.0981 |
+| 1024 × 1024 | 1,863,690 | **0.9635** | **0.8685** | **0.8725** | 0.0950 |
+
+Two things worth taking from this that the instruction alone does not tell you.
+
+**Overfitting is not the same as getting worse.** The largest model has both the biggest
+training–validation gap *and* the best validation accuracy. "Overfitting" describes the
+gap, not the outcome; a model can memorise heavily and still generalise best of the ones
+you tried.
+
+**146× the parameters bought 0.0150 of validation accuracy.** If the search had stopped
+at 64 units it would have given up almost nothing and trained in a fraction of the time.
+The value of this sweep is knowing that — which you only know by running it.
+
+## Step 3: deploy, then keep measuring
+
+```python title="One evaluation, once, at the end"
+loss, accuracy = model.evaluate(x_test, y_test)   # the first and only time
+```
+
+Three things belong in this step, and only the first is about modelling:
+
+- **Evaluate the test set exactly once.** Every earlier number was used to make a
+  decision and is therefore optimistic — measured on the [IMDB
+  page](/deep-learning/phase-01---neural-network-foundations/first-example-classifying-movie-reviews-imdb-binary/)
+  as 0.8882 validation against 0.8792 test.
+- **Save the whole model, not the weights.** `model.save("name.keras")` carries the
+  architecture, the weights and the non-trainable state that
+  [BatchNormalization](/deep-learning/phase-02---training-deep-neural-networks/batch-normalization/)
+  layers depend on. A round trip reproduces predictions to 0.00e+00.
+- **Expect the input distribution to move.** The model is a fixed function; the
+  world is not. Log the input statistics you checked in step 1 and compare them
+  periodically against the training set. A shifted mean is your early warning.
+
+```p5 title="Walk the ladder" desc="The five measured rungs. Click one to see its accuracy against the rung below it, its parameter count, and whether the gain justified the cost." height="330"
+const RUNGS = [
+  { name: "majority class", acc: 0.1015, params: 0, seconds: 0.0 },
+  { name: "logistic regression", acc: 0.8400, params: 7850, seconds: 21.57 },
+  { name: "MLP 32 units", acc: 0.8580, params: 25450, seconds: 15.27 },
+  { name: "MLP 512-512", acc: 0.8595, params: 669706, seconds: 42.26 },
+  { name: "512-512 + dropout + early stop", acc: 0.8635, params: 669706,
+    seconds: 34.56 },
+];
+let picked = 1;
+function setup() {
+  createCanvas(600, 330);
+  textFont("monospace");
 }
-print(last_layer_activation["multiclass_single_label"])
-
-# ── Expected Output ───────────────────────────────────────────
-# softmax
-# ──────────────────────────────────────────────────────────────`}
-  solution={`last_layer_activation = {
-    "binary_classification": "sigmoid",
-    "multiclass_single_label": "softmax",
+function draw() {
+  background(13, 17, 23);
+  noStroke();
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("click a rung", 44, 22);
+  for (let i = 0; i < RUNGS.length; i++) {
+    const y = 46 + i * 34;
+    const on = i === picked;
+    fill(on ? 46 : 26, on ? 96 : 32, on ? 140 : 40);
+    rect(44, y, 512, 28, 3);
+    const width = RUNGS[i].acc * 300;
+    fill(on ? 120 : 60, on ? 200 : 90, on ? 120 : 70);
+    rect(240, y + 6, width, 16, 2);
+    fill(on ? 245 : 140);
+    textSize(11);
+    textAlign(LEFT, CENTER);
+    text(RUNGS[i].name, 52, y + 14);
+    fill(on ? 255 : 150, on ? 211 : 150, on ? 67 : 150);
+    text(RUNGS[i].acc.toFixed(4), 548 - 44, y + 14);
+  }
+  const current = RUNGS[picked];
+  const below = RUNGS[Math.max(picked - 1, 0)];
+  const gain = current.acc - below.acc;
+  const extra = current.params - below.params;
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text(current.name, 44, 228);
+  fill(150);
+  textSize(11);
+  text("parameters " + current.params.toLocaleString()
+    + "     training " + current.seconds.toFixed(1) + "s", 44, 248);
+  if (picked === 0) {
+    fill(150);
+    text("the floor: predicting one class for everything", 44, 268);
+  } else {
+    fill(gain > 0.01 ? 120 : 230, gain > 0.01 ? 200 : 110,
+         gain > 0.01 ? 120 : 110);
+    text("against the rung below: " + (gain >= 0 ? "+" : "")
+      + gain.toFixed(4) + " accuracy for "
+      + (extra >= 0 ? "+" : "") + extra.toLocaleString() + " parameters",
+      44, 268);
+    fill(150);
+    text(gain > 0.01 ? "worth the cost" :
+      "inside the noise on a 2,000-row test set", 44, 288);
+  }
+  fill(120);
+  textSize(10);
+  text("bars are accuracy from 0 to 1", 240, 310);
 }
-print(last_layer_activation["multiclass_single_label"])`}
-  sct={`test_output_contains("softmax")
-success_msg("Softmax is the standard head for single-label, multiclass problems!")`}
-  height={150}
-/>
+function mousePressed() {
+  for (let i = 0; i < RUNGS.length; i++) {
+    const y = 46 + i * 34;
+    if (mouseY > y && mouseY < y + 28 && mouseX > 44 && mouseX < 556) picked = i;
+  }
+}
+```
 
-### Exercise 3 – Spot and Drop a Leaking Feature
+```p5 title="The measured table, ranked" desc="Click a column to rank every row by it. The bars are that column's values and the highest and lowest are computed from the numbers, not written in." height="306"
+let metric = 0;
+const COLUMNS = ["Parameters", "Train", "Validation", "Best validation"];
+const ROWS = [
+  ["16", 12730, 0.8929, 0.8535, 0.854],
+  ["64", 50890, 0.9162, 0.858, 0.86],
+  ["256", 203530, 0.9488, 0.8365, 0.854],
+  ["256 x 256", 269322, 0.9548, 0.85, 0.8685],
+  ["512 x 512", 669706, 0.9576, 0.8595, 0.8605],
+  ["1024 x 1024", 1863690, 0.9635, 0.8685, 0.8725]
+];
+function setup() {
+  createCanvas(620, 306);
+  textFont("monospace");
+}
+function fmt(v) {
+  if (v === 0) { return "0"; }
+  const a = Math.abs(v);
+  if (a >= 1000 || a < 0.001) { return v.toExponential(2); }
+  if (a >= 100) { return v.toFixed(1); }
+  return v.toFixed(4);
+}
+function draw() {
+  background(13, 17, 23);
+  noStroke();
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("The Universal Workflow of Machine ", 26, 16);
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (i === metric) { fill(255, 211, 67); } else { fill(48, 56, 68); }
+    rect(x, 40, w, 22, 4);
+    if (i === metric) { fill(13, 17, 23); } else { fill(180); }
+    textSize(9);
+    text(COLUMNS[i], x + 8, 47);
+    x += w + 6;
+    if (x > 500) { break; }
+  }
+  const values = ROWS.map((r) => r[metric + 1]);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo === 0 ? 1 : hi - lo;
+  const order = ROWS.slice().sort((a, b) => b[metric + 1] - a[metric + 1]);
+  for (let i = 0; i < order.length; i++) {
+    const y = 78 + i * 26;
+    const v = order[i][metric + 1];
+    fill(160);
+    textSize(9);
+    text(order[i][0], 26, y + 5);
+    fill(34, 40, 50);
+    rect(230, y, 280, 18, 3);
+    const frac = (v - lo) / span;
+    if (v === hi) { fill(126, 192, 143); }
+    else if (v === lo) { fill(224, 108, 117); }
+    else { fill(107, 169, 221); }
+    rect(230, y, Math.max(frac * 280, 3), 18, 3);
+    fill(225);
+    textSize(9);
+    text(fmt(v), 518, y + 5);
+  }
+  const top = order[0];
+  const bottom = order[order.length - 1];
+  fill(150);
+  textSize(9);
+  const base = 78 + order.length * 26 + 8;
+  text("highest " + COLUMNS[metric] + ": " + top[0] + " at " + fmt(top[1]),
+       26, base);
+  text("lowest  " + COLUMNS[metric] + ": " + bottom[0] + " at "
+       + fmt(bottom[1]), 26, base + 14);
+  text("bars are scaled within the chosen column - lowest is not zero", 26,
+       base + 30);
+}
+function mousePressed() {
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (mouseX > x && mouseX < x + w && mouseY > 40 && mouseY < 62) {
+      metric = i;
+    }
+    x += w + 6;
+  }
+}
+```
 
-<DataCampExercise
-  lang="python"
-  hint={`\`np.delete(X, column_index, axis=1)\` drops a column. The leaking column here is index 1.`}
-  code={`# Task: Exercise 3 - Spot and Drop a Leaking Feature
-import numpy as np
+## Pitfalls
 
-# column 0: a real feature; column 1: "already_diagnosed" -- leaks the target!
-X = np.array([
-    [5.1, 1],
-    [4.9, 0],
-    [6.2, 1],
-    [5.8, 0],
-])
-y = np.array([1, 0, 1, 0])
+- **Skipping the dumb baseline.** Logistic regression covered 0.7385 of the total
+  climb here. Without it, 0.8635 has no meaning.
+- **Starting from a big model.** Rung 4's 669,706 parameters beat rung 3's 25,450 by
+  0.0015. Start small, grow only when the small model is clearly the limit.
+- **Regularising before overfitting.** With a 0.0221 gap there is nothing to trade;
+  the 8-unit model needed capacity, not dropout.
+- **Reading a small gap as healthy.** It is only healthy when both scores are high.
+- **Skipping the one-batch smoke test.** A model that cannot memorise 32 rows has a
+  bug, and no amount of data or tuning will fix it.
+- **Choosing a metric that has no gradient.** Train on a differentiable surrogate,
+  report the metric you care about, and keep the two distinct.
+- **Touching the test set more than once.** Every look costs you the guarantee it
+  exists to provide.
+- **Assuming the deployed distribution is the training distribution.** Log the
+  step-1 statistics and re-check them on live data.
 
-X_clean = np.delete(X, ___, axis=1)   # replace ___ with 1
-print("clean feature shape:", X_clean.shape)
+## Recap
 
-# ── Expected Output ───────────────────────────────────────────
-# clean feature shape: (4, 1)
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import numpy as np
-
-X = np.array([
-    [5.1, 1],
-    [4.9, 0],
-    [6.2, 1],
-    [5.8, 0],
-])
-y = np.array([1, 0, 1, 0])
-
-X_clean = np.delete(X, 1, axis=1)
-print("clean feature shape:", X_clean.shape)`}
-  sct={`test_output_contains("clean feature shape: (4, 1)")
-success_msg("Leaking feature removed before training!")`}
-  height={165}
-/>
+- Step 1 is framing: inputs, target, cost of error, then a mechanical choice of last
+  layer and loss. Four cheap sanity checks come before any model.
+- The measured ladder ran 0.1015 → 0.8400 → 0.8580 → 0.8595 → 0.8635, with logistic
+  regression alone covering 0.7385 of the climb.
+- Going from 25,450 to 669,706 parameters bought 0.0015 unregularised, and 0.0055
+  once dropout and early stopping were added.
+- Overfit first: the 8-unit model's 0.0221 gap was underfitting, the 512-512 model's
+  0.0981 gap was the headroom, and dropout converted it into a best-epoch 0.8710.
+- The one-batch smoke test: 256 units memorised 32 rows to loss 0.000253 and
+  accuracy 1.0000; 4 units stalled at 0.8750. Failing it means a bug.
+- Deployment is one test-set evaluation, a full `model.save`, and ongoing comparison
+  of live input statistics against the training set.
 
 ## Next
 
-Continue to **Evaluating Models: Generalization and Validation** — step 2 of the
-workflow ("develop a model") only works if you can trust the number it hands
-you back.
+The measurement discipline this page describes is what the rest of the phase
+supplies the tools for:
+[Evaluating Models: Generalization and
+Validation](/deep-learning/phase-02---training-deep-neural-networks/evaluating-models---generalization-and-validation/)
+covers how to make each rung's number trustworthy in the first place.
+
+<Quiz
+  questions={[
+    {
+      q: "Logistic regression scored 0.8400 and the final tuned network 0.8635 on the same data. Why build the logistic model at all?",
+      options: [
+        "As a fallback in case the network fails to train",
+        "Because it establishes the size of the network's contribution — 0.0235 — which is the only way to judge whether the extra parameters, training time and complexity are worth carrying",
+        "Because linear models generalise better",
+        "It is only needed when the dataset is small",
+      ],
+      answer: 1,
+      explain: "0.8635 sounds impressive alone. Against 0.8400 from 7,850 untuned parameters, it is a modest and quantified gain.",
+    },
+    {
+      q: "A model reaches 0.8656 training accuracy and 0.8435 validation accuracy — a gap of only 0.0221. What should you do?",
+      options: [
+        "Nothing: a small gap means the model generalises well",
+        "Add capacity — both numbers are low, so the model is underfitting and there is nothing for a regulariser to trade against",
+        "Add dropout to close the gap further",
+        "Collect more training data",
+      ],
+      answer: 1,
+      explain: "A small gap is only good news when the scores are high. This is why the workflow says overfit first, then push back.",
+    },
+    {
+      q: "Your model cannot get below 1.8 training loss on a single batch of 32 rows after 200 epochs. What is the most likely cause?",
+      options: [
+        "The dataset is too small overall",
+        "A bug — mislabelled targets, broken preprocessing, a frozen layer or a zero learning rate — because a model with enough parameters must be able to memorise 32 examples",
+        "The model needs more regularisation",
+        "The batch size is too small",
+      ],
+      answer: 1,
+      explain: "Measured: 256 units reached loss 0.000253 and accuracy 1.0000 on 32 rows. Failing that test is a bug, not a data or tuning problem.",
+    },
+    {
+      q: "Rung 4 (669,706 parameters) beat rung 3 (25,450 parameters) by 0.0015 accuracy. What is the right response?",
+      options: [
+        "Ship rung 4 — it has the higher score",
+        "Treat the difference as noise on a 2,000-row test set and keep the smaller model, unless regularisation turns the extra capacity into a real gain, as it did at rung 5",
+        "Increase the model size further",
+        "Rerun rung 3 with a different seed until it wins",
+      ],
+      answer: 1,
+      explain: "Rung 5 is the same architecture as rung 4 with dropout and early stopping, and it reached 0.8635 — the capacity only paid once it was constrained.",
+    },
+    {
+      q: "Why is the last-layer-and-loss choice described as mechanical rather than a design decision?",
+      options: [
+        "Because Keras picks it automatically",
+        "Because it follows from the target's type: a bounded probability needs sigmoid and cross-entropy, one-of-K needs softmax, an unbounded number needs a linear output — the pairings exist so the gradient behaves",
+        "Because any loss works if you train long enough",
+        "Because the metric and the loss are always the same function",
+      ],
+      answer: 1,
+      explain: "The sigmoid-plus-cross-entropy gradient reduces to (prediction - target). Mismatching the pairing removes that cancellation and the model stops learning from confident errors.",
+    },
+  ]}
+/>
+
+## 🧪 Try It Yourself
+
+<DataCampExercise
+  lang="python"
+  hint={`DummyClassifier(strategy="most_frequent") is the floor. Each later rung has to beat the one below it by more than the noise on your test set.`}
+  code={`# Task: Exercise 1 - Build the baseline ladder
+import time
+import numpy as np
+from sklearn.dummy import DummyClassifier
+from sklearn.linear_model import LogisticRegression
+from tensorflow import keras
+
+(x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()
+x_train = x_train[:8000].reshape(8000, -1).astype("float32") / 255.0
+y_train = y_train[:8000]
+x_test = x_test[:2000].reshape(2000, -1).astype("float32") / 255.0
+y_test = y_test[:2000]
+
+print(f"{'rung':24s} {'test acc':>9} {'params':>10}")
+dummy = DummyClassifier(strategy=___).fit(x_train, y_train)
+# replace ___ with "most_frequent"
+print(f"{'majority class':24s} {dummy.score(x_test, y_test):9.4f} {0:10,}")
+
+logistic = LogisticRegression(max_iter=300).fit(x_train, y_train)
+print(f"{'logistic regression':24s} {logistic.score(x_test, y_test):9.4f} "
+      f"{784 * 10 + 10:10,}")
+
+
+def network(units, dropout=0.0, epochs=30, patience=None):
+    keras.utils.set_random_seed(0)
+    layers = [keras.layers.Input((784,))]
+    for width in units:
+        layers.append(keras.layers.Dense(width, activation="relu"))
+        if dropout:
+            layers.append(keras.layers.Dropout(dropout))
+    layers.append(keras.layers.Dense(10, activation="softmax"))
+    model = keras.Sequential(layers)
+    model.compile(keras.optimizers.Adam(1e-3),
+                  "sparse_categorical_crossentropy", metrics=["accuracy"])
+    callbacks = [keras.callbacks.EarlyStopping(
+        monitor="val_loss", patience=patience,
+        restore_best_weights=True)] if patience else []
+    model.fit(x_train, y_train, epochs=epochs, batch_size=128, verbose=0,
+              validation_data=(x_test, y_test), callbacks=callbacks)
+    return model
+
+
+for label, kwargs in (("MLP 32 units", dict(units=[32])),
+                      ("MLP 512-512", dict(units=[512, 512])),
+                      ("512-512 + dropout", dict(units=[512, 512], dropout=0.4,
+                                                 epochs=60, patience=8))):
+    model = network(**kwargs)
+    accuracy = model.evaluate(x_test, y_test, verbose=0)[1]
+    print(f"{label:24s} {accuracy:9.4f} {model.count_params():10,}")
+print("logistic regression alone covers most of the climb; the network's whole")
+print("contribution is about 0.02")
+
+# -- Expected Output -------------------------------------------
+# rung                      test acc     params
+# majority class              0.1015          0
+# logistic regression         0.8400      7,850
+# MLP 32 units                0.8580     25,450
+# MLP 512-512                 0.8595    669,706
+# 512-512 + dropout           0.8635    669,706
+# logistic regression alone covers most of the climb; the network's whole
+# contribution is about 0.02
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Watch the gap between training and validation accuracy. A model that cannot open a gap has no headroom for a regulariser to trade against.`}
+  code={`# Task: Exercise 2 - Overfit first, then push back
+import numpy as np
+from tensorflow import keras
+
+(x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()
+x_train = x_train[:8000].reshape(8000, -1).astype("float32") / 255.0
+y_train = y_train[:8000]
+x_test = x_test[:2000].reshape(2000, -1).astype("float32") / 255.0
+y_test = y_test[:2000]
+
+recipes = {
+    "too small (8 units)": ([8], 0.0),
+    "overfits (512-512)": ([512, 512], 0.0),
+    "regularised (dropout 0.4)": ([512, 512], 0.4),
+}
+print(f"{'model':28s} {'train acc':>10} {'val acc':>9} {'gap':>8} "
+      f"{'best val acc':>13}")
+for label, (units, dropout) in recipes.items():
+    keras.utils.set_random_seed(0)
+    layers = [keras.layers.Input((784,))]
+    for width in units:
+        layers.append(keras.layers.Dense(width, activation="relu"))
+        if dropout:
+            layers.append(keras.layers.Dropout(dropout))
+    layers.append(keras.layers.Dense(10, activation="softmax"))
+    model = keras.Sequential(layers)
+    model.compile(keras.optimizers.Adam(1e-3),
+                  "sparse_categorical_crossentropy", metrics=["accuracy"])
+    history = model.fit(x_train, y_train, epochs=30, batch_size=128, verbose=0,
+                        validation_data=(x_test, y_test))
+    train = history.history["accuracy"][-1]
+    validation = history.history["val_accuracy"][-1]
+    print(f"{label:28s} {train:10.4f} {validation:9.4f} "
+          f"{train - ___:8.4f} "
+          f"{max(history.history['val_accuracy']):13.4f}")
+    # replace ___ with validation
+print("the 8-unit model's small gap is underfitting, not health: both numbers")
+print("are low and no regulariser can raise them")
+
+# -- Expected Output -------------------------------------------
+# model                         train acc   val acc      gap  best val acc
+# too small (8 units)              0.8656    0.8435   0.0221        0.8435
+# overfits (512-512)               0.9576    0.8595   0.0981        0.8605
+# regularised (dropout 0.4)        0.9086    0.8570   0.0516        0.8710
+# the 8-unit model's small gap is underfitting, not health: both numbers
+# are low and no regulariser can raise them
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Run these before writing a model. Each one changes a downstream decision: the metric, the split, or the preprocessing.`}
+  code={`# Task: Exercise 3 - The checks that come before any model
+import numpy as np
+from tensorflow import keras
+
+(x_train, y_train), _ = keras.datasets.fashion_mnist.load_data()
+x = x_train[:8000].reshape(8000, -1).astype("float32") / 255.0
+y = y_train[:8000]
+
+print(f"shape {x.shape}  dtype {x.dtype}")
+print(f"range [{x.min():.4f}, {x.max():.4f}]  mean {x.mean():.4f}")
+print(f"NaNs {int(np.isnan(x).sum())}  infinities {int(np.isinf(x).sum())}")
+counts = np.bincount(y, minlength=10)
+print(f"class counts {counts.tolist()}")
+print(f"most common class is {int(counts.argmax())} with {counts.max()} rows "
+      f"({counts.max() / len(y):.4f})")
+unique = np.unique(x, axis=___)                  # replace ___ with 0
+print(f"duplicate rows: {len(x) - len(unique)}")
+
+# -- Expected Output -------------------------------------------
+# shape (8000, 784)  dtype float32
+# range [0.0000, 1.0000]  mean 0.2851
+# NaNs 0  infinities 0
+# class counts [747, 860, 809, 807, 763, 795, 807, 818, 792, 802]
+# most common class is 1 with 860 rows (0.1075)
+# duplicate rows: 0
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Train on 32 rows only, for many epochs, with no regularisation. A model with enough parameters must reach a loss near zero.`}
+  code={`# Task: Exercise 4 - The one-batch smoke test
+import numpy as np
+from tensorflow import keras
+
+(x_train, y_train), _ = keras.datasets.fashion_mnist.load_data()
+x = x_train[:8000].reshape(8000, -1).astype("float32") / 255.0
+y = y_train[:8000]
+
+for units in (4, 256):
+    keras.utils.set_random_seed(0)
+    model = keras.Sequential([
+        keras.layers.Input((784,)),
+        keras.layers.Dense(units, activation="relu"),
+        keras.layers.Dense(10, activation="softmax"),
+    ])
+    model.compile(keras.optimizers.Adam(1e-2),
+                  "sparse_categorical_crossentropy", metrics=["accuracy"])
+    history = model.fit(x[:___], y[:32], epochs=200, batch_size=32, verbose=0)
+    # replace ___ with 32
+    print(f"{units:4d} units: final train loss "
+          f"{history.history['loss'][-1]:.6f}  "
+          f"accuracy {history.history['accuracy'][-1]:.4f}")
+print("a model that cannot memorise 32 rows has a bug, not a data problem")
+
+# -- Expected Output -------------------------------------------
+#    4 units: final train loss 0.402435  accuracy 0.8750
+#  256 units: final train loss 0.000253  accuracy 1.0000
+# a model that cannot memorise 32 rows has a bug, not a data problem
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`The floor for a classifier is the largest class's share. Anything at or below that number has learned nothing from the inputs.`}
+  code={`# Task: Exercise 5 - What must a model beat?
+import numpy as np
+
+datasets = {
+    "balanced 10-class": np.repeat(np.arange(10), 800),
+    "imbalanced binary": np.concatenate([np.zeros(9500), np.ones(500)]),
+    "three uneven classes": np.concatenate([np.zeros(600), np.ones(300),
+                                            np.full(100, 2)]),
+}
+print(f"{'dataset':22s} {'rows':>7} {'classes':>8} {'majority share':>15} "
+      f"{'uniform guess':>14}")
+for name, labels in datasets.items():
+    labels = labels.astype(int)
+    counts = np.bincount(labels)
+    majority = counts.max() / ___                # replace ___ with len(labels)
+    print(f"{name:22s} {len(labels):7d} {len(counts):8d} {majority:15.4f} "
+          f"{1 / len(counts):14.4f}")
+print("report accuracy against the majority share, never against 1/classes -")
+print("the imbalanced binary set is 0.95 before any model exists")
+
+# -- Expected Output -------------------------------------------
+# dataset                   rows  classes  majority share  uniform guess
+# balanced 10-class         8000       10          0.1000         0.1000
+# imbalanced binary        10000        2          0.9500         0.5000
+# three uneven classes      1000        3          0.6000         0.3333
+# report accuracy against the majority share, never against 1/classes -
+# the imbalanced binary set is 0.95 before any model exists
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Match each target description to its last layer and loss. The pairing follows from the range the output has to cover.`}
+  code={`# Task: Exercise 6 - Pick the last layer and loss for each target
+TASKS = [
+    ("spam or not spam", "Dense(1, 'sigmoid')", "binary_crossentropy"),
+    ("one of 46 topics", "Dense(46)", "sparse_categorical_crossentropy"),
+    ("any of 20 tags at once", "Dense(20, 'sigmoid')", "binary_crossentropy"),
+    ("house price in dollars", "Dense(1)", "mse"),
+    ("price, with outliers", "Dense(1)", "huber"),
+]
+
+print(f"{'target':26s} {'last layer':26s} {'loss':32s}")
+for target, layer, loss in TASKS:
+    print(f"{target:26s} {layer:26s} {loss:32s}")
+
+# the two rules that generate the whole table
+bounded = {"binary_crossentropy"}
+print()
+for target, layer, loss in TASKS:
+    squashing = "sigmoid" in layer or "softmax" in layer
+    needs_bounded = loss in ___                   # replace ___ with bounded
+    consistent = squashing == needs_bounded
+    print(f"{target:26s} squashing={str(squashing):5s} "
+          f"bounded loss={str(needs_bounded):5s} consistent={consistent}")
+print("a bounded loss needs a bounded output; an unbounded target needs a")
+print("linear one. Mismatch either and the gradient stops behaving")
+
+# -- Expected Output -------------------------------------------
+# target                     last layer                 loss                            
+# spam or not spam           Dense(1, 'sigmoid')        binary_crossentropy             
+# one of 46 topics           Dense(46)                  sparse_categorical_crossentropy 
+# any of 20 tags at once     Dense(20, 'sigmoid')       binary_crossentropy             
+# house price in dollars     Dense(1)                   mse                             
+# price, with outliers       Dense(1)                   huber                           
+#
+# spam or not spam           squashing=True  bounded loss=True  consistent=True
+# one of 46 topics           squashing=False bounded loss=False consistent=True
+# any of 20 tags at once     squashing=True  bounded loss=True  consistent=True
+# house price in dollars     squashing=False bounded loss=False consistent=True
+# price, with outliers       squashing=False bounded loss=False consistent=True
+# a bounded loss needs a bounded output; an unbounded target needs a
+# linear one. Mismatch either and the gradient stops behaving
+# --------------------------------------------------------------`}
+/>

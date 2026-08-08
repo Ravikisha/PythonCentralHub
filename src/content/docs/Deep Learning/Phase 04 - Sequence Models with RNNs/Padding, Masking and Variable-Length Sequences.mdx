@@ -1,0 +1,747 @@
+---
+title: Padding, Masking and Variable-Length Sequences
+description: Why post-padding without a mask drops a SimpleRNN to 0.5036 on IMDB - chance - and what pad_sequences, mask_zero and maxlen actually cost, measured.
+sidebar:
+  order: 431.5
+---
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Figure from "../../../../components/Figure.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+Real sequences have different lengths. Tensors do not. Every sequence model therefore
+starts with a compromise — pad everything to one length — and that compromise
+introduces a bug you cannot see in the loss curve, only in the score.
+
+Here is the headline, measured on 5,000 IMDB reviews with an identical
+`SimpleRNN(32)`, five epochs, four setups:
+
+| Padding | `mask_zero` | Best validation accuracy |
+| --- | --- | --- |
+| pre | `False` | 0.5856 |
+| pre | `True` | **0.5868** |
+| post | `False` | **0.5036** |
+| post | `True` | 0.5272 |
+
+Three of those runs learn something. One of them scores **chance** on a balanced binary
+task, and nothing in the code looks wrong.
+
+## What you'll learn
+
+- What `pad_sequences` does, and why `maxlen` is a two-sided trade: at 50 tokens you
+  keep **0.2045** of the text; at 800 tokens **0.6987 of your batch is padding**.
+- Why **post-padding without a mask** destroys a recurrent model but pre-padding
+  survives.
+- What `mask_zero=True` actually produces — a boolean tensor travelling alongside the
+  data, not zeroed values.
+- Which layers respect a mask and which silently ignore it.
+- Why an unmasked `GlobalAveragePooling1D` divides every review by the wrong number:
+  the mean weight on real tokens was **0.8098**, and the shortest review got **0.0800**.
+- Bucketing and `ragged` tensors, and when the padding is cheap enough not to care.
+
+## `pad_sequences` and the cost of `maxlen`
+
+IMDB reviews, 5,000 of them: **min 16 tokens, median 182, mean 243.8, p95 633, max
+1,851**. One tensor has to hold all of them.
+
+```python title="The only two decisions that matter"
+x = keras.preprocessing.sequence.pad_sequences(
+    sequences,
+    maxlen=200,        # every row becomes exactly this long
+    padding="pre",     # where the zeros go:      "pre" = front, "post" = back
+    truncating="pre",  # which end is cut off if the row is too long
+)
+```
+
+| `maxlen` | Share of the batch that is padding | Share of real tokens kept | Rows truncated |
+| --- | --- | --- | --- |
+| 50 | 0.0030 | **0.2045** | 0.9802 |
+| 100 | 0.0332 | 0.3965 | 0.8944 |
+| 200 | 0.1902 | 0.6642 | 0.4386 |
+| 400 | 0.4642 | 0.8790 | 0.1506 |
+| 800 | **0.6987** | 0.9887 | 0.0206 |
+
+<Figure
+  src="/images/dl/phase-04-sequences/padding-and-masking/length-distribution"
+  alt="Two panels. Left: a histogram of IMDB review lengths with a long right tail, a green line at the median of 182 tokens and a red dashed line at maxlen 200. Right: two curves against maxlen on a log axis — the share of the batch that is padding rising from 0.00 to 0.70, and the share of real tokens kept rising from 0.20 to 0.99."
+  title="5,000 IMDB reviews: the length distribution and what each maxlen costs"
+  caption="The two curves cross somewhere around 200 tokens, which is why that value appears in every IMDB tutorial. At 800 the model sees 98.9% of the text and spends 69.9% of its compute on zeros; at 50 it wastes nothing and reads a fifth of each review. There is no setting that is cheap and complete — the distribution has a 1,851-token tail and a 16-token floor."
+/>
+
+Padding is not free even when it is harmless: at `maxlen=800` a recurrent layer runs
+**800 timesteps sequentially**, of which 559 carry no information.
+
+## Why post-padding breaks a recurrent layer
+
+A recurrent layer's output is its **last hidden state**. That is the whole
+explanation.
+
+```mermaid
+flowchart LR
+  subgraph pre["pre-padding: 0 0 0 great film"]
+    A["h after zeros"] --> B["h after 'great'"] --> C["h after 'film'<br/>= output"]
+  end
+  subgraph post["post-padding: great film 0 0 0"]
+    D["h after 'great'"] --> E["h after 'film'"] --> F["h after zeros<br/>= output"]
+  end
+```
+
+With **pre-padding** the padding comes first, and whatever the state accumulated over
+those zeros is then overwritten by the actual review. The last step is a real word, so
+the output is about the review.
+
+With **post-padding** the last step is padding. For a review 68 tokens long inside a
+200-step tensor, the network's answer is the state after **132 consecutive padding
+steps** — and every one of those steps multiplies the state by the recurrent weights
+again. Whatever the review contributed decays away, and the measured result is 0.5036:
+chance.
+
+<Figure
+  src="/images/dl/phase-04-sequences/padding-and-masking/masking-effect"
+  alt="Two panels. Left: a bar chart of four setups — pre-padding unmasked 0.5856, pre-padding masked 0.5868, post-padding unmasked 0.5036 in red, post-padding masked 0.5272. Right: validation accuracy per epoch for the same four, where the two pre-padding curves climb from 0.50 to 0.59 and the two post-padding curves stay between 0.48 and 0.53."
+  title="The same SimpleRNN(32), four ways of handling the same data"
+  caption="The post-padded unmasked run does not diverge, crash or warn — it converges smoothly to chance. Masking recovers about half the damage (0.5036 to 0.5272) but not all of it: the two post-padded runs also see less of each review, because truncating='pre' keeps a different part of the text than the pre-padded runs do. The lesson is not 'masking fixes post-padding', it is 'pre-padding makes the question moot for recurrent layers'."
+/>
+
+### The default is the safe one, and that is why this bug hides
+
+`pad_sequences` defaults to `padding="pre"`. Most tutorials therefore work without ever
+mentioning masking — and the first time you write `padding="post"` because a
+transformer tutorial told you to, your accuracy quietly halves.
+
+## What `mask_zero` actually does
+
+It does **not** zero the padded vectors. It attaches a boolean tensor to the output
+that downstream layers may consult:
+
+```python
+embedding = keras.layers.Embedding(10000, 4, mask_zero=True)
+sample = np.array([[0, 0, 7, 9],
+                   [4, 5, 6, 8]])
+embedded = embedding(sample)                   # (2, 4, 4) — real numbers everywhere
+mask = embedding.compute_mask(sample).numpy()
+# [[False False  True  True]
+#  [ True  True  True  True]]
+```
+
+With `mask_zero=False`, `compute_mask` returns `None` — there is no mask to ignore,
+which is why the failure is silent rather than an error.
+
+Measured on a freshly seeded layer: the padded position's embedding vector has
+$\sum |v| = 0.0939$, **not zero**. Token id 0 is an ordinary row of the embedding
+matrix and it gets ordinary gradients like any other. The mask is metadata; a layer
+that ignores it sees those numbers as data.
+
+| Layer | Respects a mask? |
+| --- | --- |
+| `SimpleRNN`, `LSTM`, `GRU` | **yes** — stops updating the state at masked steps and repeats the last real state |
+| `Bidirectional` | yes, in both directions |
+| `GlobalAveragePooling1D` | **yes** — since TF 2.x it divides by the unmasked count |
+| `GlobalMaxPooling1D` | no in older versions; check your version |
+| `Dense`, `Conv1D` | **no** — they process every position identically |
+| `Flatten` | no, and it destroys the mask |
+| `MultiHeadAttention` | only if you pass `attention_mask` yourself |
+
+The two dangerous rows are `Conv1D` and `Dense`: they consume the padded vectors as
+though they were words, and they never complain.
+
+## Pooling: the dilution nobody notices
+
+`GlobalAveragePooling1D` over an unmasked padded batch computes
+
+$$
+\frac{1}{T}\sum_{t=1}^{T} v_t
+= \frac{L}{T}\cdot\underbrace{\frac{1}{L}\sum_{t \in \text{real}} v_t}_{\text{what you wanted}}
++ \frac{T - L}{T}\cdot v_{\text{pad}}
+$$
+
+where $L$ is the true length and $T$ is `maxlen`. **Every review is scaled by
+$L/T$** — a factor that varies per row and encodes nothing but length.
+
+<Figure
+  src="/images/dl/phase-04-sequences/padding-and-masking/pooling-with-padding"
+  alt="Two panels. Left: a histogram of the weight an unmasked average gives to real tokens, with a large spike at 1.0 for truncated reviews, a spread between 0.2 and 1.0, and a dashed line at the mean of 0.8098. Right: four bars — pre-padding unmasked 0.8004 and masked 0.8092, post-padding unmasked 0.7916 and masked 0.7992."
+  title="How much of an averaged review is actually the review"
+  caption="The spike at 1.0 is the 43.9% of reviews long enough to be truncated — they have no padding at all. The tail reaching 0.2 is short reviews, and the shortest in this sample gets weight 0.0800: 92% of its pooled vector is the embedding of the padding token. Masking recovered +0.0088 (pre) and +0.0076 (post). Small, because the network can partly learn to compensate — and free, because the fix is one keyword."
+/>
+
+Two honest observations about that measurement:
+
+1. **The gain is small.** +0.0088 is not the difference between working and broken. A
+   trained embedding can push the padding token towards zero and partly cancel the
+   dilution itself, which is exactly what it does here.
+2. **It is still worth taking.** One keyword, no cost, and it removes a length signal
+   the model was free to abuse. On tasks where sequence length correlates with the
+   label — support tickets, medical notes — an unmasked average lets the model cheat by
+   reading the length instead of the content.
+
+Also worth noting: the **averaging model scored 0.8004**, while the best
+`SimpleRNN(32)` on this page managed **0.5868**. Averaging the embeddings and throwing
+away all order beat the recurrent layer by 0.21. That is not a masking result, it is a
+warning about `SimpleRNN` over 200 timesteps — the subject of the
+[next page](/deep-learning/phase-04---sequence-models-with-rnns/lstm--gru-networks/).
+
+## Alternatives to one big rectangle
+
+| Approach | How | When |
+| --- | --- | --- |
+| **Pad to a global `maxlen`** | `pad_sequences` | default; simple, wasteful on skewed data |
+| **Bucketing by length** | `tf.data` + `bucket_by_sequence_length` | long-tailed lengths; each batch pads to its own longest row |
+| **Ragged tensors** | `tf.ragged.constant`, `keras.layers.Input(ragged=True)` | genuinely variable length, layers that support it |
+| **Truncate hard** | small `maxlen` | when the signal is front-loaded — sentiment often is |
+
+Bucketing is the practical win, and Exercise 6 measures it: padding all 5,000 reviews
+to the longest one (1,851 tokens) makes **0.8683 of the batch padding**; five length
+buckets bring that to **0.3207** — 0.5476 of the compute recovered with no change to
+the model and no text discarded.
+
+```python title="Bucketing, in the shape you will actually use it"
+dataset = tf.data.Dataset.from_generator(...)          # variable-length rows
+dataset = dataset.bucket_by_sequence_length(
+    element_length_func=lambda x, y: tf.shape(x)[0],
+    bucket_boundaries=[100, 200, 400, 800],
+    bucket_batch_sizes=[64, 64, 32, 16, 8],            # one more than boundaries
+)
+```
+
+```p5 title="Padding, masking and the last hidden state" desc="Toggle pre/post padding and the mask, and watch which step produces the output the classifier sees." height="330"
+let post = false;
+let masked = false;
+const LENGTH = 7;
+const TOTAL = 14;
+function setup() {
+  createCanvas(620, 330);
+  textFont("monospace");
+}
+function cells() {
+  const out = [];
+  for (let t = 0; t < TOTAL; t++) {
+    const isPad = post ? t >= LENGTH : t < TOTAL - LENGTH;
+    out.push({ pad: isPad });
+  }
+  return out;
+}
+function draw() {
+  background(13, 17, 23);
+  const grid = cells();
+  const w = 36;
+  noStroke();
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text((post ? "post" : "pre") + "-padding, "
+    + (masked ? "mask_zero=True" : "no mask"), 24, 22);
+  for (let t = 0; t < TOTAL; t++) {
+    const x = 24 + t * (w + 4);
+    const ignored = grid[t].pad && masked;
+    if (grid[t].pad) fill(ignored ? 40 : 120, ignored ? 48 : 130, ignored ? 58 : 145);
+    else fill(46, 96, 140);
+    rect(x, 52, w, 40, 4);
+    fill(grid[t].pad ? 200 : 235);
+    textSize(11);
+    textAlign(CENTER, CENTER);
+    text(grid[t].pad ? "0" : "w" + (post ? t : t - (TOTAL - LENGTH)), x + w / 2, 72);
+  }
+  let outputStep = TOTAL - 1;
+  if (masked) {
+    for (let t = TOTAL - 1; t >= 0; t--) {
+      if (!grid[t].pad) { outputStep = t; break; }
+    }
+  }
+  const ox = 24 + outputStep * (w + 4);
+  stroke(255, 211, 67);
+  strokeWeight(2);
+  noFill();
+  rect(ox - 2, 50, w + 4, 44, 5);
+  noStroke();
+  fill(255, 211, 67);
+  textSize(11);
+  textAlign(CENTER, TOP);
+  text("output", ox + w / 2, 98);
+  fill(220);
+  textSize(11.5);
+  textAlign(LEFT, TOP);
+  const realStepsAfter = TOTAL - 1 - outputStep;
+  text("the classifier reads the hidden state at step " + outputStep, 24, 132);
+  if (grid[outputStep].pad) {
+    fill(230, 90, 90);
+    text("that step is padding: the review's contribution has decayed through "
+      + (TOTAL - LENGTH) + " zero steps", 24, 152);
+  } else {
+    fill(165, 214, 164);
+    text("that step is a real token" + (realStepsAfter
+      ? " — the mask made the layer skip " + realStepsAfter + " padded steps" : ""),
+      24, 152);
+  }
+  fill(60, 70, 84);
+  rect(24, 210, 150, 30, 4);
+  rect(200, 210, 150, 30, 4);
+  fill(220);
+  textSize(11);
+  textAlign(CENTER, CENTER);
+  text(post ? "padding = post" : "padding = pre", 99, 225);
+  text(masked ? "mask on" : "mask off", 275, 225);
+  fill(150);
+  textSize(10.5);
+  textAlign(LEFT, TOP);
+  text("measured on IMDB with SimpleRNN(32): pre 0.5856, pre+mask 0.5868,",
+    24, 264);
+  text("post 0.5036 (chance), post+mask 0.5272", 24, 280);
+}
+function mousePressed() {
+  if (mouseY > 210 && mouseY < 240) {
+    if (mouseX > 24 && mouseX < 174) post = !post;
+    if (mouseX > 200 && mouseX < 350) masked = !masked;
+  }
+}
+```
+
+```p5 title="The measured table, ranked" desc="Click a column to rank every row by it. The bars are that column's values and the highest and lowest are computed from the numbers, not written in." height="280"
+let metric = 0;
+const COLUMNS = ["Share of the batch that is padding", "Share of real tokens kept", "Rows truncated"];
+const ROWS = [
+  ["50", 0.003, 0.2045, 0.9802],
+  ["100", 0.0332, 0.3965, 0.8944],
+  ["200", 0.1902, 0.6642, 0.4386],
+  ["400", 0.4642, 0.879, 0.1506],
+  ["800", 0.6987, 0.9887, 0.0206]
+];
+function setup() {
+  createCanvas(620, 280);
+  textFont("monospace");
+}
+function fmt(v) {
+  if (v === 0) { return "0"; }
+  const a = Math.abs(v);
+  if (a >= 1000 || a < 0.001) { return v.toExponential(2); }
+  if (a >= 100) { return v.toFixed(1); }
+  return v.toFixed(4);
+}
+function draw() {
+  background(13, 17, 23);
+  noStroke();
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("Padding, Masking and Variable-Leng", 26, 16);
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (i === metric) { fill(255, 211, 67); } else { fill(48, 56, 68); }
+    rect(x, 40, w, 22, 4);
+    if (i === metric) { fill(13, 17, 23); } else { fill(180); }
+    textSize(9);
+    text(COLUMNS[i], x + 8, 47);
+    x += w + 6;
+    if (x > 500) { break; }
+  }
+  const values = ROWS.map((r) => r[metric + 1]);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo === 0 ? 1 : hi - lo;
+  const order = ROWS.slice().sort((a, b) => b[metric + 1] - a[metric + 1]);
+  for (let i = 0; i < order.length; i++) {
+    const y = 78 + i * 26;
+    const v = order[i][metric + 1];
+    fill(160);
+    textSize(9);
+    text(order[i][0], 26, y + 5);
+    fill(34, 40, 50);
+    rect(230, y, 280, 18, 3);
+    const frac = (v - lo) / span;
+    if (v === hi) { fill(126, 192, 143); }
+    else if (v === lo) { fill(224, 108, 117); }
+    else { fill(107, 169, 221); }
+    rect(230, y, Math.max(frac * 280, 3), 18, 3);
+    fill(225);
+    textSize(9);
+    text(fmt(v), 518, y + 5);
+  }
+  const top = order[0];
+  const bottom = order[order.length - 1];
+  fill(150);
+  textSize(9);
+  const base = 78 + order.length * 26 + 8;
+  text("highest " + COLUMNS[metric] + ": " + top[0] + " at " + fmt(top[1]),
+       26, base);
+  text("lowest  " + COLUMNS[metric] + ": " + bottom[0] + " at "
+       + fmt(bottom[1]), 26, base + 14);
+  text("bars are scaled within the chosen column - lowest is not zero", 26,
+       base + 30);
+}
+function mousePressed() {
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (mouseX > x && mouseX < x + w && mouseY > 40 && mouseY < 62) {
+      metric = i;
+    }
+    x += w + 6;
+  }
+}
+```
+
+## Pitfalls
+
+- **`padding="post"` with a recurrent layer and no mask.** Measured 0.5036 — chance —
+  with no error, no warning and a smooth loss curve.
+- **Assuming `mask_zero=True` zeroes the padded vectors.** It does not: the measured
+  padded embedding had $\sum|v| = 0.1477$. It attaches a boolean mask that layers may
+  ignore.
+- **Putting `Flatten` or `Dense` after a masked embedding.** The mask is dropped and
+  every padded position becomes a feature.
+- **Reserving id 0 for a real token.** `mask_zero=True` means *id 0 is padding*. If your
+  vocabulary starts at 0, every occurrence of that word is masked away.
+- **Choosing `maxlen` from the maximum length.** At 800 here, 69.9% of the batch is
+  padding to accommodate a 1,851-token tail. Use a percentile — p95 was 633 — or bucket.
+- **Truncating the wrong end.** `truncating="pre"` keeps the *end* of the text. For
+  sentiment that is often right; for a news headline task it is exactly wrong.
+- **Comparing a padded model against an unpadded baseline.** The padded model sees less
+  text; that is a data difference, not an architecture result.
+
+## Recap
+
+- `pad_sequences(maxlen=..., padding=..., truncating=...)` is the only place these
+  decisions are made, and its defaults (`pre`, `pre`) are the safe ones for RNNs.
+- On 5,000 IMDB reviews: `maxlen=200` keeps 0.6642 of the tokens and spends 0.1902 of
+  the batch on padding; `maxlen=800` keeps 0.9887 and spends 0.6987.
+- A recurrent layer outputs its **last** hidden state, so post-padding hands the
+  classifier the state after the zeros: 0.5036 against 0.5856 for pre-padding.
+- `mask_zero=True` attaches a boolean mask; RNNs, `Bidirectional` and
+  `GlobalAveragePooling1D` honour it, while `Dense`, `Conv1D` and `Flatten` do not.
+- An unmasked average weights the real tokens by $L/T$ — mean 0.8098, minimum 0.0800 in
+  this sample — and masking bought +0.0088.
+- Bucketing by length is the fix that scales: padding everything to 1,851 tokens wastes
+  0.8683 of the batch, five buckets waste 0.3207.
+
+## Next
+
+`SimpleRNN` managed 0.5868 here while averaging the embeddings scored 0.8004. The
+gates that fix it — and the exact reason a plain recurrent state cannot hold
+information for 200 steps — are next:
+[LSTM & GRU Networks](/deep-learning/phase-04---sequence-models-with-rnns/lstm--gru-networks/).
+
+<Quiz
+  questions={[
+    {
+      q: "An identical SimpleRNN scored 0.5856 with pre-padding and 0.5036 with post-padding. Why?",
+      options: [
+        "Post-padding corrupts the embedding matrix",
+        "A recurrent layer's output is its last hidden state — with post-padding that state is the one after all the zeros, so the review's contribution has decayed away",
+        "pad_sequences reverses the sequence when padding='post'",
+        "The loss function cannot handle trailing zeros",
+      ],
+      answer: 1,
+      explain: "0.5036 on a balanced binary task is chance, and nothing in the code or the loss curve indicates a problem.",
+    },
+    {
+      q: "What does mask_zero=True actually do to the padded positions?",
+      options: [
+        "Sets their embedding vectors to zero",
+        "Nothing to the values — the measured padded vector still had sum|v| = 0.1477. It attaches a boolean mask tensor that downstream layers may consult",
+        "Removes those timesteps from the tensor",
+        "Replaces them with the mean embedding",
+      ],
+      answer: 1,
+      explain: "Which is why a Dense or Conv1D layer after the embedding happily consumes padding as data.",
+    },
+    {
+      q: "On this corpus, maxlen=800 keeps 0.9887 of the real tokens. What does it cost?",
+      options: [
+        "Nothing — longer is always better",
+        "0.6987 of every batch becomes padding, and a recurrent layer runs all 800 timesteps sequentially, so most of the compute processes zeros",
+        "The embedding matrix grows by 4x",
+        "Truncation of 20% of rows",
+      ],
+      answer: 1,
+      explain: "The 1,851-token maximum dictates that setting for the sake of a handful of rows; the p95 was 633 and bucketing avoids the choice entirely.",
+    },
+    {
+      q: "An unmasked GlobalAveragePooling1D over pre-padded reviews gave the real tokens a mean weight of 0.8098, and 0.0800 for the shortest review. What is the risk?",
+      options: [
+        "Numerical overflow in the sum",
+        "Every review is scaled by its own length/maxlen ratio, which injects a length signal the model can use instead of the content — and short reviews are mostly the padding embedding",
+        "The gradient becomes zero",
+        "The pooling output is no longer differentiable",
+      ],
+      answer: 1,
+      explain: "Masking bought only +0.0088 here because the trained embedding partly cancels the dilution itself, but the fix is one keyword and it removes the shortcut.",
+    },
+    {
+      q: "Which of these layers will silently treat padded positions as real data?",
+      options: [
+        "LSTM with mask_zero=True upstream",
+        "Conv1D and Dense — neither consults the mask, and Flatten destroys it",
+        "Bidirectional(LSTM)",
+        "GlobalAveragePooling1D in current TensorFlow",
+      ],
+      answer: 1,
+      explain: "Recurrent layers, Bidirectional and modern GlobalAveragePooling1D honour the mask; convolutional and dense layers process every position identically.",
+    },
+  ]}
+/>
+
+## 🧪 Try It Yourself
+
+<DataCampExercise
+  lang="python"
+  hint={`For each candidate maxlen, the padding count per row is max(candidate - length, 0) and the kept token count is min(length, candidate).`}
+  code={`# Task: Exercise 1 - What every maxlen costs
+import numpy as np
+from tensorflow import keras
+
+(x_train, y_train), _ = keras.datasets.imdb.load_data(num_words=10000)
+x_train = x_train[:5000]
+lengths = np.array([len(row) for row in x_train])
+print(f"{len(lengths):,} reviews")
+print(f"length: min {lengths.min()}  median {int(np.median(lengths))}  "
+      f"mean {lengths.mean():.1f}  p95 {int(np.percentile(lengths, 95))}  "
+      f"max {lengths.max()}")
+print(f"{'maxlen':>7} {'padding share':>14} {'tokens kept':>12} "
+      f"{'rows truncated':>15}")
+for candidate in (50, 100, 200, 400, 800):
+    padded = np.clip(candidate - lengths, 0, ___).sum()   # replace ___ with None
+    print(f"{candidate:7d} "
+          f"{float(padded / (len(lengths) * candidate)):14.4f} "
+          f"{float(np.minimum(lengths, candidate).sum() / lengths.sum()):12.4f} "
+          f"{float((lengths > candidate).mean()):15.4f}")
+print("there is no setting that is both cheap and complete: the distribution")
+print("has a long tail and a 16-token floor")
+
+# -- Expected Output -------------------------------------------
+# 5,000 reviews
+# length: min 16  median 182  mean 243.8  p95 633  max 1851
+#  maxlen  padding share  tokens kept  rows truncated
+#      50         0.0030       0.2045          0.9802
+#     100         0.0332       0.3965          0.8944
+#     200         0.1902       0.6642          0.4386
+#     400         0.4642       0.8790          0.1506
+#     800         0.6987       0.9887          0.0206
+# there is no setting that is both cheap and complete: the distribution
+# has a long tail and a 16-token floor
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`compute_mask returns the boolean tensor. Compare it against the padded input to see that the mask is metadata, not a change to the values.`}
+  code={`# Task: Exercise 2 - mask_zero attaches a mask, it does not zero anything
+import numpy as np
+from tensorflow import keras
+
+keras.utils.set_random_seed(0)
+embedding = keras.layers.Embedding(10000, 4, mask_zero=True)
+sample = np.array([[0, 0, 7, 9],
+                   [4, 5, 6, 8]])
+embedded = embedding(sample)
+mask = embedding.compute_mask(___).numpy()        # replace ___ with sample
+print(f"input\\n{sample}")
+print(f"mask\\n{mask}")
+print(f"embedded shape {tuple(int(v) for v in embedded.shape)}")
+print(f"the padded position still has a vector: "
+      f"sum|v| = {float(np.abs(embedded.numpy()[0, 0]).sum()):.4f}")
+print(f"masked positions: {int((~mask).sum())} of {mask.size}")
+plain = keras.layers.Embedding(10000, 4, mask_zero=False)
+print(f"without mask_zero, compute_mask returns "
+      f"{plain.compute_mask(sample)}")
+print("the mask travels beside the tensor; a layer that ignores it sees the")
+print("padded vectors as ordinary data")
+
+# -- Expected Output -------------------------------------------
+# input
+# [[0 0 7 9]
+#  [4 5 6 8]]
+# mask
+# [[False False  True  True]
+#  [ True  True  True  True]]
+# embedded shape (2, 4, 4)
+# the padded position still has a vector: sum|v| = 0.0939
+# masked positions: 2 of 8
+# without mask_zero, compute_mask returns None
+# the mask travels beside the tensor; a layer that ignores it sees the
+# padded vectors as ordinary data
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Feed the same batch through a recurrent layer twice, once with a masking embedding and once without, and compare the outputs for the padded rows only.`}
+  code={`# Task: Exercise 3 - What the mask changes inside an RNN
+import numpy as np
+from tensorflow import keras
+
+keras.utils.set_random_seed(0)
+sample = np.array([[0, 0, 0, 7, 9],        # 2 real tokens, pre-padded
+                   [0, 4, 5, 6, 8]])       # 4 real tokens
+weights = None
+outputs = {}
+for mask in (False, True):
+    keras.utils.set_random_seed(0)
+    model = keras.Sequential([
+        keras.layers.Input((5,)),
+        keras.layers.Embedding(100, 8, mask_zero=mask),
+        keras.layers.SimpleRNN(4, return_sequences=___),
+        # replace ___ with True
+    ])
+    outputs[mask] = model.predict(sample, verbose=0)
+unmasked, masked = outputs[False], outputs[True]
+print(f"states shape {unmasked.shape} (rows, timesteps, units)")
+print(f"row 0 has 3 padded steps, row 1 has 1")
+print(f"{'':10s} {'|state| at step 0':>18} {'|state| at final step':>22}")
+for label, states in (("no mask", unmasked), ("masked", masked)):
+    print(f"{label:10s} {float(np.abs(states[0, 0]).mean()):18.4f} "
+          f"{float(np.abs(states[0, -1]).mean()):22.4f}")
+print(f"max |h[0,0]| under masking = {float(np.abs(masked[0, 0]).max()):.4f}")
+print(f"the masked final state is the state right after the last real token: "
+      f"{float(np.abs(masked[0, -1] - masked[0, 4]).max()):.2e}")
+print("the recurrent layer skips masked steps entirely and carries the last")
+print("real state forward unchanged")
+
+# -- Expected Output -------------------------------------------
+# states shape (2, 5, 4) (rows, timesteps, units)
+# row 0 has 3 padded steps, row 1 has 1
+#            |state| at step 0  |state| at final step
+# no mask                0.0248                 0.0773
+# masked                 0.0000                 0.0319
+# max |h[0,0]| under masking = 0.0000
+# the masked final state is the state right after the last real token: 0.00e+00
+# the recurrent layer skips masked steps entirely and carries the last
+# real state forward unchanged
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`The weight an unmasked average gives the real tokens is min(length, maxlen) / maxlen. Compute it per review and summarise.`}
+  code={`# Task: Exercise 4 - The dilution an unmasked average applies
+import numpy as np
+from tensorflow import keras
+
+(x_train, _), _ = keras.datasets.imdb.load_data(num_words=10000)
+lengths = np.array([len(row) for row in x_train[:5000]])
+MAXLEN = 200
+
+weight = np.minimum(lengths, MAXLEN) / ___        # replace ___ with MAXLEN
+print(f"maxlen {MAXLEN}, {len(lengths):,} reviews")
+print(f"weight on the real tokens: min {weight.min():.4f}  "
+      f"median {float(np.median(weight)):.4f}  mean {weight.mean():.4f}")
+print(f"reviews with no padding at all (truncated): "
+      f"{float((lengths >= MAXLEN).mean()):.4f}")
+print(f"{'percentile':>11} {'weight':>8}")
+for percentile in (1, 5, 25, 50):
+    print(f"{percentile:11d} {float(np.percentile(weight, percentile)):8.4f}")
+print(f"the shortest review keeps only {weight.min():.4f} of the average, so")
+print(f"{1 - weight.min():.0%} of its pooled vector is the padding embedding")
+
+# -- Expected Output -------------------------------------------
+# maxlen 200, 5,000 reviews
+# weight on the real tokens: min 0.0800  median 0.9100  mean 0.8098
+# reviews with no padding at all (truncated): 0.4410
+#  percentile   weight
+#           1   0.2250
+#           5   0.3350
+#          25   0.6500
+#          50   0.9100
+# the shortest review keeps only 0.0800 of the average, so
+# 92% of its pooled vector is the padding embedding
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Train the same architecture four times: padding pre/post crossed with mask_zero False/True. Everything else must be identical, including the seed.`}
+  code={`# Task: Exercise 5 - Reproduce the bug
+import numpy as np
+from tensorflow import keras
+
+VOCAB, MAXLEN, LIMIT = 10000, 200, 5000
+(x_train, y_train), (x_test, y_test) = keras.datasets.imdb.load_data(
+    num_words=VOCAB)
+y_train, y_test = y_train[:LIMIT], y_test[:LIMIT // 2]
+pad = keras.preprocessing.sequence.pad_sequences
+
+print(f"{'padding':>8} {'mask':>6} {'best val acc':>13} {'verdict':>12}")
+for padding in ("pre", "post"):
+    xa = pad(x_train[:LIMIT], maxlen=MAXLEN, padding=padding,
+             truncating=padding)
+    xb = pad(x_test[:LIMIT // 2], maxlen=MAXLEN, padding=padding,
+             truncating=padding)
+    for mask in (False, True):
+        keras.utils.set_random_seed(0)
+        model = keras.Sequential([
+            keras.layers.Input((MAXLEN,)),
+            keras.layers.Embedding(VOCAB, 32, mask_zero=___),
+            # replace ___ with mask
+            keras.layers.SimpleRNN(32),
+            keras.layers.Dense(1, activation="sigmoid"),
+        ])
+        model.compile(keras.optimizers.Adam(1e-3), "binary_crossentropy",
+                      metrics=["accuracy"])
+        history = model.fit(xa, y_train, epochs=5, batch_size=64, verbose=0,
+                            validation_data=(xb, y_test))
+        best = max(history.history["val_accuracy"])
+        verdict = "chance" if best < 0.52 else "learning"
+        print(f"{padding:>8} {str(mask):>6} {best:13.4f} {verdict:>12}")
+print("one of these four is a silent bug: no exception, no warning, and a")
+print("loss curve that goes down the whole way")
+
+# -- Expected Output -------------------------------------------
+#  padding   mask  best val acc      verdict
+#      pre  False        0.5856     learning
+#      pre   True        0.5868     learning
+#     post  False        0.5036       chance
+#     post   True        0.5272     learning
+# one of these four is a silent bug: no exception, no warning, and a
+# loss curve that goes down the whole way
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Sort the lengths, split them into buckets at the boundaries, and compare the padding each bucket needs against one global maxlen.`}
+  code={`# Task: Exercise 6 - Why bucketing wins on a long tail
+import numpy as np
+from tensorflow import keras
+
+(x_train, _), _ = keras.datasets.imdb.load_data(num_words=10000)
+lengths = np.array([len(row) for row in x_train[:5000]])
+BOUNDARIES = (100, 200, 400, 800, 2000)
+
+global_max = int(lengths.max())
+global_padding = (global_max * len(lengths) - lengths.sum()) / (global_max
+                                                               * len(lengths))
+print(f"one global maxlen of {global_max}: "
+      f"{global_padding:.4f} of the batch is padding")
+
+total_cells, total_real = 0, 0
+print(f"{'bucket':>14} {'rows':>6} {'padded to':>10} {'padding share':>14}")
+lower = 0
+for upper in BOUNDARIES:
+    rows = lengths[(lengths > lower) & (lengths <= upper)]
+    if len(rows) == 0:
+        lower = upper
+        continue
+    padded_to = int(rows.___())                    # replace ___ with max
+    cells = padded_to * len(rows)
+    total_cells += cells
+    total_real += int(rows.sum())
+    print(f"{f'{lower + 1}-{upper}':>14} {len(rows):6d} {padded_to:10d} "
+          f"{1 - rows.sum() / cells:14.4f}")
+    lower = upper
+print(f"bucketed overall: {1 - total_real / total_cells:.4f} of the batch is "
+      f"padding")
+print(f"bucketing removes {global_padding - (1 - total_real / total_cells):.4f}"
+      f" of the wasted compute, with no change to the model")
+
+# -- Expected Output -------------------------------------------
+# one global maxlen of 1851: 0.8683 of the batch is padding
+#         bucket   rows  padded to  padding share
+#          1-100    528        100         0.3142
+#        101-200   2279        200         0.2651
+#        201-400   1440        400         0.3070
+#        401-800    650        799         0.3212
+#       801-2000    103       1851         0.4953
+# bucketed overall: 0.3207 of the batch is padding
+# bucketing removes 0.5476 of the wasted compute, with no change to the model
+# --------------------------------------------------------------`}
+/>

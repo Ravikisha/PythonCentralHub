@@ -1,427 +1,868 @@
 ---
 title: Policy Gradients (Intro)
-description: Learn the credit assignment problem, discounted returns, and the REINFORCE policy gradient algorithm.
+description: REINFORCE on CartPole - a baseline shrinks the gradient norm 35x yet changes the final score by 0.27, and smaller batches beat cleaner gradients at equal experience.
 sidebar:
   order: 463
 ---
 
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Figure from "../../../../components/Figure.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+A DQN learns what each action is *worth* and picks the best one. **REINFORCE** skips that
+entirely: it adjusts the probability of each action directly, in proportion to how well the
+episode that contained it went.
+
+$$
+\nabla_\theta J = \mathbb{E}\left[\sum_t \nabla_\theta \log \pi_\theta(a_t \mid s_t)\, G_t\right]
+$$
+
+Read it as an instruction: *make the actions you took more likely, weighted by the return that
+followed them*. There is no value function, no replay buffer, no target network, and no maximum
+being taken over noisy estimates. In exchange there is one large new problem — the gradient is
+an average over whole episodes, and it is extremely noisy.
+
+The standard fix is a **baseline**: subtract the mean return before weighting. Measured over
+three seeds on CartPole:
+
+| Setting | Final episode length | sd | Mean gradient norm |
+| --- | --- | --- | --- |
+| No baseline | 193.91 | 6.86 | **1.6992** |
+| With baseline | 194.18 | 4.80 | **0.0478** |
+
+The baseline shrank the gradient norm by **35×** and moved the final score by **0.27** — well
+inside the seed-to-seed spread. The variance reduction is real and easy to measure; its benefit
+on this task is not.
+
 ## What you'll learn
 
-- the **credit assignment problem** — why rewards are hard to attribute to specific actions
-- discounted returns and the **action advantage**
-- the **REINFORCE** policy gradient algorithm, step by step
-- how to implement it with a small `tf.keras` neural network policy for CartPole
-- why policy gradients are **on-policy**, unlike Q-Learning
+- Why every raw return in CartPole is positive, and why that makes the estimator so noisy.
+- What a baseline actually changes — measured on the weights and on the gradient.
+- Why **more, noisier updates beat fewer, cleaner ones** at a fixed episode budget.
+- How REINFORCE compares with the DQN from the previous page, and what each one costs.
 
-## The credit assignment problem
+## Every weight is positive
 
-Suppose an agent balances a pole for 100 steps and then it falls. Which of
-those 100 actions were actually good, and which were bad? All the agent
-knows is that the *last* action came right before failure — but blaming only
-that action would be unfair, since earlier actions set up the situation too.
-This is the **credit assignment problem**: when a reward finally arrives, it's
-hard to know which earlier actions deserve credit (or blame) for it. It's a
-bit like a dog getting rewarded hours after it behaved well — will it
-understand what it's being rewarded *for*?
+CartPole gives +1 per surviving step, so every discounted return is positive. That has a
+consequence people usually skip past:
 
-The usual fix: evaluate an action by the sum of **all rewards that follow
-it**, discounted by a factor `γ` (gamma) at each future step. This sum is
-called the action's **return**. If an agent goes right three times and gets
-`+10`, then `0`, then `-50`, with `γ = 0.8`, the first action's return is:
+<Figure
+  src="/images/dl/phase-07-rl/policy-gradients/variance"
+  alt="Left: two overlapping histograms on separate axes — the raw discounted returns spanning roughly 1 to 30 and entirely positive, and the standardised weights centred on zero and spanning about -2 to 3. Right: mean gradient norm against episodes per gradient step, falling from 0.0810 at 4 episodes to 0.0497 at 48, with a second line showing final episode length falling from 200.00 to 173.04."
+  title="The weights before and after standardising"
+  caption="100.0% of raw returns are positive, with mean 11.3202 and standard deviation 7.7908. Every action taken is therefore made MORE likely, and the only thing distinguishing a good action from a bad one is how much. After subtracting the mean and dividing by the spread, 45.1% of weights are negative — actions that did worse than average are now actively discouraged, which is a different learning signal entirely."
+/>
 
+Without a baseline the update says "do more of everything, especially the things that happened
+in long episodes". With one it says "do more of what beat the average, less of what didn't". The
+second is obviously better reasoning — and on this task it produced 194.18 against 193.91.
+
+```python title="The baseline is two lines"
+weights = batch["weights"]                      # discounted returns
+if baseline:
+    weights = (weights - weights.mean()) / (weights.std() + 1e-8)
 ```
-10 + 0.8 · 0 + 0.8² · (-50) = -22
-```
 
-Run enough episodes, normalize all the returns (subtract the mean, divide by
-the standard deviation), and you get each action's **advantage** — how much
-better or worse it was than average. Positive advantage → probably a good
-action; negative advantage → probably a bad one.
+Subtracting a constant does not bias the gradient. The expected value of
+$\nabla_\theta \log \pi_\theta(a|s)$ is zero, so subtracting any quantity that does not depend on
+the action leaves the expectation unchanged while reducing the variance. Dividing by the standard
+deviation *does* change the effective learning rate, which is why the measured gradient norm falls
+so far.
 
-## The REINFORCE algorithm
+## The baseline, measured
 
-**Policy gradients (PG)** optimize a policy's parameters by following the
-gradient toward higher reward. The classic variant, **REINFORCE**, works like
-this:
+<Figure
+  src="/images/dl/phase-07-rl/policy-gradients/baseline"
+  alt="Left: learning curves against episodes of experience for three seeds each with and without a baseline, all rising from about 20 towards the 200 cap with the baseline runs slightly tighter together. Right: bars of final episode length for the two settings, nearly identical at 193.91 and 194.18, next to bars of mean gradient norm showing 1.6992 against 0.0478."
+  title="120 updates of 16 episodes, 3 seeds each"
+  caption="Both settings solve CartPole — the environment caps episodes at 200 and both land within 6 of it. The gradient norms differ by a factor of 35, which is the variance reduction the theory promises, but that reduction had nowhere to show up in the score because the task was already being solved. The seed spread narrowed slightly, 6.86 to 4.80, which is the only visible benefit and is not significant with three seeds."
+/>
 
-1. Let the policy network play several episodes. At every step, compute the
-   gradient that would make the action *actually taken* more likely — but
-   don't apply it yet.
-2. After a batch of episodes, compute every action's advantage.
-3. Multiply each saved gradient by its action's advantage — good actions
-   push their gradient through as-is; bad actions get the *opposite* nudge.
-4. Average all the resulting gradients and take one Gradient Descent (well,
-   *ascent*) step.
+This is a case where the honest reading needs stating plainly: **the mechanism worked and the
+outcome did not move**. The baseline demonstrably did what it is supposed to do to the gradient.
+CartPole with a 200-step cap simply is not hard enough for that to matter — both configurations
+reach the ceiling. On a longer or sparser task the same 35× reduction would be the difference
+between learning and not.
+
+Reporting "the baseline improved the score" here would have been false; reporting "the baseline
+does nothing" would be equally false.
+
+## Smaller batches won
+
+The batch size is how many complete episodes go into one gradient. Bigger batches average more
+episodes, so the estimate is less noisy. Holding the total experience fixed at 1,920 episodes:
+
+| Episodes per step | Updates | Final length | Gradient norm | Norm sd |
+| --- | --- | --- | --- | --- |
+| **4** | **480** | **200.00** | 0.0810 | 0.0507 |
+| 16 | 120 | 196.68 | 0.0510 | 0.0337 |
+| 48 | 40 | 173.04 | **0.0497** | **0.0210** |
+
+The gradient does get cleaner with a bigger batch — norm sd falls from 0.0507 to 0.0210, exactly
+as expected. And performance gets **worse**, from a perfect 200.00 down to 173.04.
+
+At a fixed budget, batch size trades *update count* against *update quality*, and here the count
+mattered more. Four episodes per step gives 480 chances to improve the policy; 48 episodes gives
+40. A noisy step in roughly the right direction, taken twelve times, beat one clean step.
+
+That is not a universal law — it is what this budget and this task produced. The general lesson
+is that "reduces variance" and "learns better" are separate claims needing separate measurements,
+which is the same conclusion the baseline section reached by a different route.
 
 ```mermaid
-flowchart LR
-  A["Play Episodes"] --> B["Save Gradients per Step"]
-  B --> C["Compute Discounted Returns"]
-  C --> D["Normalize → Advantages"]
-  D --> E["Scale Gradients by Advantage"]
-  E --> F["Gradient Ascent Step"]
-  F --> A
+flowchart TD
+  E["collect complete episodes"] --> R["discounted return per step"]
+  R --> B{"baseline?"}
+  B -->|"no"| P["all weights positive<br/>norm 1.6992"]
+  B -->|"yes"| N["45.1% negative<br/>norm 0.0478"]
+  P --> G["one gradient step"]
+  N --> G
+  G --> S{"batch size at fixed budget"}
+  S -->|"4 episodes, 480 updates"| W["200.00"]
+  S -->|"48 episodes, 40 updates"| L["173.04"]
 ```
 
-This is different from Q-Learning in an important way: PG is **on-policy** —
-it only ever learns about the exact policy currently exploring the
-environment. Q-Learning is **off-policy**: it can learn the optimal policy
-while exploring with a totally different (even random) one.
+<Figure
+  src="/images/dl/phase-07-rl/policy-gradients/reinforce-settings"
+  alt="Horizontal bars of final mean episode length for five REINFORCE configurations, all between 173 and 200, annotated with the episode budget and wall-clock each used, against a dotted line at the random baseline of 23.09 and a dashed line at the 200-step cap."
+  title="Every configuration on one axis"
+  caption="All five settings solve the task to some degree — the worst is 173.04 against a random baseline of 23.09. The spread between them is the interesting part, and it is driven by update count rather than by gradient quality: the configuration with the noisiest gradients (batch 4, norm sd 0.0507) reached the cap exactly."
+/>
 
-## A neural network policy
+## REINFORCE against DQN
 
-For CartPole, the policy network takes the 4-number observation and outputs
-a single probability — the probability of pushing left:
+Both were run on the same CartPole with the same 200-step cap:
 
-```python title="policy_network.py" showLineNumbers{1}
-import tensorflow as tf
-from tensorflow import keras
+| Algorithm | Best measured score | What it needs |
+| --- | --- | --- |
+| DQN (replay + target) | 144.20 | A replay buffer, a target network, and both are required |
+| REINFORCE (batch 4) | **200.00** | Complete episodes before any update |
 
-n_inputs = 4  # env.observation_space.shape[0]
+REINFORCE won here, and the comparison deserves two caveats rather than a victory lap. First,
+REINFORCE consumed 1,920 complete episodes while the DQN used 6,000 frames across 16
+environments — different budgets in different units, so this is not a sample-efficiency result.
+Second, REINFORCE's advantage is partly that CartPole's episode-return signal is dense and
+well-shaped; on a task with sparse rewards the value-based approach has structure that
+REINFORCE lacks.
 
-model = keras.models.Sequential([
-    keras.layers.Dense(5, activation="elu", input_shape=[n_inputs]),
-    keras.layers.Dense(1, activation="sigmoid"),
-])
-```
+What is fair to conclude: REINFORCE is dramatically simpler to implement — no buffer, no target
+network, no ablation needed to make it work — and on a short, dense-reward task that simplicity
+costs nothing.
 
-An action is then *sampled* according to that probability, not just picked
-greedily — this lets the agent balance **exploring** new actions against
-**exploiting** ones it already knows work well.
-
-## Playing episodes and computing returns
-
-```python title="reinforce_cartpole.py" showLineNumbers{1}
-import gym
-import numpy as np
-import tensorflow as tf
-from tensorflow import keras
-
-env = gym.make("CartPole-v1")
-
-def play_one_step(env, obs, model, loss_fn):
-    with tf.GradientTape() as tape:
-        left_proba = model(obs[np.newaxis])
-        action = (tf.random.uniform([1, 1]) > left_proba)
-        y_target = tf.constant([[1.]]) - tf.cast(action, tf.float32)
-        loss = tf.reduce_mean(loss_fn(y_target, left_proba))
-    grads = tape.gradient(loss, model.trainable_variables)
-    obs, reward, done, info = env.step(int(action[0, 0].numpy()))
-    return obs, reward, done, grads
-
-def play_multiple_episodes(env, n_episodes, n_max_steps, model, loss_fn):
-    all_rewards, all_grads = [], []
-    for episode in range(n_episodes):
-        current_rewards, current_grads = [], []
-        obs = env.reset()
-        for step in range(n_max_steps):
-            obs, reward, done, grads = play_one_step(env, obs, model, loss_fn)
-            current_rewards.append(reward)
-            current_grads.append(grads)
-            if done:
-                break
-        all_rewards.append(current_rewards)
-        all_grads.append(current_grads)
-    return all_rewards, all_grads
-
-def discount_rewards(rewards, discount_factor):
-    discounted = np.array(rewards, dtype=float)
-    for step in range(len(rewards) - 2, -1, -1):
-        discounted[step] += discounted[step + 1] * discount_factor
-    return discounted
-
-def discount_and_normalize_rewards(all_rewards, discount_factor):
-    all_discounted = [discount_rewards(r, discount_factor) for r in all_rewards]
-    flat = np.concatenate(all_discounted)
-    mean, std = flat.mean(), flat.std()
-    return [(dr - mean) / std for dr in all_discounted]
-```
-
->>> discount_rewards([10, 0, -50], discount_factor=0.8)
-array([-22., -40., -50.])
-
-## The training loop
-
-```python title="reinforce_training_loop.py" showLineNumbers{1}
-n_inputs = 4
-model = keras.models.Sequential([
-    keras.layers.Dense(5, activation="elu", input_shape=[n_inputs]),
-    keras.layers.Dense(1, activation="sigmoid"),
-])
-
-n_iterations = 150
-n_episodes_per_update = 10
-n_max_steps = 200
-discount_factor = 0.95
-
-optimizer = keras.optimizers.Adam(learning_rate=0.01)
-loss_fn = keras.losses.binary_crossentropy
-
-for iteration in range(n_iterations):
-    all_rewards, all_grads = play_multiple_episodes(
-        env, n_episodes_per_update, n_max_steps, model, loss_fn)
-    all_final_rewards = discount_and_normalize_rewards(all_rewards, discount_factor)
-
-    all_mean_grads = []
-    for var_index in range(len(model.trainable_variables)):
-        mean_grads = tf.reduce_mean(
-            [final_reward * all_grads[ep][step][var_index]
-             for ep, final_rewards in enumerate(all_final_rewards)
-             for step, final_reward in enumerate(final_rewards)],
-            axis=0)
-        all_mean_grads.append(mean_grads)
-    optimizer.apply_gradients(zip(all_mean_grads, model.trainable_variables))
-```
-
-At every iteration, this plays 10 episodes, computes each action's
-normalized advantage (called `final_reward` here), then weights the saved
-gradients by that advantage before applying the mean gradient with the
-optimizer. Trained this way, the mean reward per episode climbs toward 200 —
-the maximum for CartPole. Success!
-
-This basic REINFORCE algorithm is *sample inefficient* — it needs many
-episodes to get a reliable advantage estimate for each action — but it's the
-foundation that more advanced methods, like Actor-Critic algorithms, build
-on.
-
-## Visualize it
-
-Rather than a table of Q-values, a policy network's "belief" is a probability
-per action for every state it might see. Below, each vertical arrow stands
-for one pole angle (labeled underneath), and it points the way the policy
-currently prefers to push from that angle. Early in training the arrows are
-noisy and half-wrong (dim gray); as training iterations climb, more of them
-swing around to agree with the correct correction direction and grow bolder
-(amber) — the policy is converging, the same way it does inside the
-training loop above:
-
-```p5 title="Policy arrows shifting toward the correct push" desc="One arrow per pole angle (labeled below it), pointing the way the policy currently prefers to push. Early on the arrows are noisy; as training iterations increase, more agree with the correct direction and grow bolder — the policy converging on the right behavior." height="280"
-let iter;
-function resetRun() {
-  iter = 0;
-}
+```p5 title="Why the baseline matters" desc="Drag the slider to move the baseline. The bars are per-action weights from a batch of episodes; green pushes the action's probability up, red pushes it down." height="360"
+let baseline = 0.0;
+const RETURNS = [4.2, 18.6, 11.3, 7.8, 22.1, 9.4, 14.7, 3.1, 16.9, 12.5];
 function setup() {
-  createCanvas(600, 280);
+  createCanvas(620, 360);
   textFont("monospace");
-  resetRun();
-}
-const SENSORS = 7;
-function drawArrow(x, y, dirSign, len, col) {
-  stroke(col);
-  strokeWeight(3);
-  line(x - (dirSign * len) / 2, y, x + (dirSign * len) / 2, y);
-  noStroke();
-  fill(col);
-  const tipX = x + (dirSign * len) / 2;
-  triangle(tipX, y - 6, tipX, y + 6, tipX + dirSign * 10, y);
 }
 function draw() {
   background(13, 17, 23);
-  iter++;
-  const progress = constrain(iter / 300, 0, 1);
-  const reward = constrain(20 + progress * 175, 0, 200);
-
+  const mean = RETURNS.reduce((a, b) => a + b, 0) / RETURNS.length;
   noStroke();
-  fill(107, 169, 221);
-  textAlign(LEFT, CENTER);
+  fill(230);
   textSize(12);
-  text(
-    "training iteration " + iter + "    avg reward " + reward.toFixed(0) + " / 200",
-    20,
-    22
-  );
-
-  noStroke();
-  fill(90, 100, 114);
-  textAlign(CENTER, CENTER);
-  textSize(11);
-  text("pole angle  ->  preferred push direction", width / 2, 66);
-
-  const baseY = height / 2 + 30;
-  const startX = 70, endX = width - 70;
-  for (let i = 0; i < SENSORS; i++) {
-    const t = i / (SENSORS - 1);
-    const angle = lerp(-0.2, 0.2, t);
-    const x = lerp(startX, endX, t);
-    const correctDir = angle >= 0 ? 1 : -1;
-    const wobble = (1 - progress) * 1.4 * Math.sin(frameCount * 0.11 + i * 1.9);
-    const dirSign = correctDir + wobble >= 0 ? 1 : -1;
-    const confident = dirSign === correctDir;
-    const len = 20 + 14 * progress;
-    const col = confident ? color(255, 211, 67) : color(90, 100, 114);
-    drawArrow(x, baseY, dirSign, len, col);
-
-    noStroke();
-    fill(150, 160, 174);
-    textAlign(CENTER, CENTER);
-    textSize(10);
-    text(angle.toFixed(2), x, baseY + 30);
+  textAlign(LEFT, TOP);
+  text("per-action weights in one REINFORCE batch", 30, 20);
+  fill(150);
+  textSize(10.5);
+  text("baseline " + baseline.toFixed(2) + "   (the batch mean is "
+    + mean.toFixed(2) + ")", 30, 42);
+  const zero = 210;
+  const scale = 9;
+  let positive = 0;
+  for (let i = 0; i < RETURNS.length; i++) {
+    const weight = RETURNS[i] - baseline;
+    if (weight > 0) { positive += 1; }
+    const x = 46 + i * 54;
+    const height = weight * scale;
+    if (weight >= 0) { fill(126, 192, 143); rect(x, zero - height, 40, height, 3); }
+    else { fill(224, 108, 117); rect(x, zero, 40, -height, 3); }
+    fill(170);
+    textSize(8.5);
+    textAlign(CENTER, TOP);
+    text(RETURNS[i].toFixed(1), x + 20, zero + 6);
   }
-
-  if (iter > 360) resetRun();
+  stroke(120);
+  line(36, zero, 590, zero);
+  noStroke();
+  textAlign(LEFT, TOP);
+  fill(150);
+  textSize(10);
+  text("green: this action is made MORE likely", 36, 250);
+  fill(224, 108, 117);
+  text("red: made LESS likely", 330, 250);
+  fill(255, 211, 67);
+  textSize(11.5);
+  text(positive + " of " + RETURNS.length + " actions reinforced", 36, 276);
+  fill(150);
+  textSize(9.5);
+  if (baseline === 0) {
+    text("with no baseline every action is reinforced - the update says", 36, 298);
+    text("'do more of everything', which is why the gradient norm was 1.6992", 36, 312);
+  } else {
+    text("with a baseline, below-average actions are discouraged - measured", 36, 298);
+    text("gradient norm 0.0478, a 35x reduction", 36, 312);
+  }
+  fill(60, 70, 84);
+  rect(36, 340, 300, 4, 2);
+  fill(255, 211, 67);
+  circle(36 + (baseline / 25) * 300, 342, 12);
+  fill(120);
+  textSize(9);
+  text("drag: baseline", 350, 336);
 }
-function mousePressed() { resetRun(); }
+function mousePressed() { mouseDragged(); }
+function mouseDragged() {
+  if (mouseY < 320) { return; }
+  baseline = Math.min(Math.max((mouseX - 36) / 300, 0), 1) * 25;
+}
 ```
 
-:::tip[From the book]
-Géron notes you don't have to make the agent discover everything from
-scratch — if you already know the pole should stay vertical, you can add a
-small negative reward proportional to its angle to make rewards less
-sparse, or pretrain the network to imitate a hardcoded policy before
-switching to policy gradients. Injecting prior knowledge like this — unless
-you're specifically writing a research paper — speeds up training a lot.
-:::
+```p5 title="The measured table, ranked" desc="Click a column to rank every row by it. The bars are that column's values and the highest and lowest are computed from the numbers, not written in." height="228"
+let metric = 0;
+const COLUMNS = ["Updates", "Final length", "Gradient norm", "Norm sd"];
+const ROWS = [
+  ["4", 480, 200, 0.081, 0.0507],
+  ["16", 120, 196.68, 0.051, 0.0337],
+  ["48", 40, 173.04, 0.0497, 0.021]
+];
+function setup() {
+  createCanvas(620, 228);
+  textFont("monospace");
+}
+function fmt(v) {
+  if (v === 0) { return "0"; }
+  const a = Math.abs(v);
+  if (a >= 1000 || a < 0.001) { return v.toExponential(2); }
+  if (a >= 100) { return v.toFixed(1); }
+  return v.toFixed(4);
+}
+function draw() {
+  background(13, 17, 23);
+  noStroke();
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("Policy Gradients (Intro)", 26, 16);
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (i === metric) { fill(255, 211, 67); } else { fill(48, 56, 68); }
+    rect(x, 40, w, 22, 4);
+    if (i === metric) { fill(13, 17, 23); } else { fill(180); }
+    textSize(9);
+    text(COLUMNS[i], x + 8, 47);
+    x += w + 6;
+    if (x > 500) { break; }
+  }
+  const values = ROWS.map((r) => r[metric + 1]);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo === 0 ? 1 : hi - lo;
+  const order = ROWS.slice().sort((a, b) => b[metric + 1] - a[metric + 1]);
+  for (let i = 0; i < order.length; i++) {
+    const y = 78 + i * 26;
+    const v = order[i][metric + 1];
+    fill(160);
+    textSize(9);
+    text(order[i][0], 26, y + 5);
+    fill(34, 40, 50);
+    rect(230, y, 280, 18, 3);
+    const frac = (v - lo) / span;
+    if (v === hi) { fill(126, 192, 143); }
+    else if (v === lo) { fill(224, 108, 117); }
+    else { fill(107, 169, 221); }
+    rect(230, y, Math.max(frac * 280, 3), 18, 3);
+    fill(225);
+    textSize(9);
+    text(fmt(v), 518, y + 5);
+  }
+  const top = order[0];
+  const bottom = order[order.length - 1];
+  fill(150);
+  textSize(9);
+  const base = 78 + order.length * 26 + 8;
+  text("highest " + COLUMNS[metric] + ": " + top[0] + " at " + fmt(top[1]),
+       26, base);
+  text("lowest  " + COLUMNS[metric] + ": " + bottom[0] + " at "
+       + fmt(bottom[1]), 26, base + 14);
+  text("bars are scaled within the chosen column - lowest is not zero", 26,
+       base + 30);
+}
+function mousePressed() {
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (mouseX > x && mouseX < x + w && mouseY > 40 && mouseY < 62) {
+      metric = i;
+    }
+    x += w + 6;
+  }
+}
+```
 
-## Beyond REINFORCE: Actor-Critic and friends
+## Pitfalls
 
-Plain REINFORCE is *sample inefficient* — it has to play a whole batch of
-episodes just to get one noisy advantage estimate per action, which is slow.
-Most modern policy-gradient methods fix this by borrowing an idea from
-Q-Learning:
+- **Claiming a baseline improved the score without measuring.** Here it changed the final result
+  by 0.27 while shrinking the gradient norm 35×.
+- **Assuming a cleaner gradient learns better.** The noisiest configuration (batch 4) scored
+  200.00; the cleanest (batch 48) scored 173.04 on the same experience.
+- **Comparing algorithms on different budgets.** REINFORCE used 1,920 episodes and the DQN 6,000
+  frames across 16 environments; those units are not interchangeable.
+- **Updating before an episode finishes.** REINFORCE weights each action by the return that
+  *followed* it, so the episode must complete first.
+- **Collecting episodes one at a time.** Running 16 in a vectorised environment costs one model
+  call per timestep instead of one per timestep per episode — measured at roughly 16× faster.
+- **Forgetting that dividing by the standard deviation changes the step size.** It is a
+  normalisation, not just a recentring, and it interacts with the learning rate.
 
-- **Actor-Critic** — train two networks together: the **actor** is the
-  policy net (same role as before), and the **critic** is a DQN-style
-  network that estimates action values. Instead of waiting for whole
-  episodes to finish before it knows how good an action was, the actor asks
-  the critic — a bit like an athlete (the actor) improving faster with
-  live feedback from a coach (the critic), instead of only reviewing game
-  tape after the fact.
-- **A3C** (Asynchronous Advantage Actor-Critic) — many actor-critic agents
-  explore different copies of the environment in parallel, each pushing
-  weight updates to a shared network and pulling the latest weights back.
-- **A2C** — the same idea as A3C, but synchronous: all agents update
-  together in bigger batches, which uses a GPU more efficiently.
-- **SAC** (Soft Actor-Critic) — rewards the agent for staying somewhat
-  unpredictable (maximizing action *entropy*, not just reward), which keeps
-  it exploring longer and tends to be dramatically more sample-efficient.
-- **PPO** (Proximal Policy Optimization) — clips how far a single update
-  can push the policy, which avoids the training instabilities that come
-  from occasional oversized gradient steps. PPO is what OpenAI Five used to
-  beat the world champions at Dota 2 in 2019.
+## Recap
 
-You won't implement all of these by hand — in practice, reach for a
-maintained library such as **TF-Agents**, which already ships REINFORCE,
-DQN, and other algorithms with production-ready replay buffers and
-environment wrappers, so you can swap algorithms without rewriting your
-training loop.
-
-## Mini-checkpoint
-
-If an episode's total reward turns out to be worse than average, what
-happens to the gradients recorded during that episode's steps?
-
-- Their advantage is negative, so the optimizer applies the *opposite* of the saved gradient — making those actions slightly *less* likely next time.
-
-## 🧪 Try It Yourself
-
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
-
-### Exercise 1 – Discount the Rewards
-
-<DataCampExercise
-  lang="python"
-  hint={`Walk backward through the rewards list, adding \`discount_factor\` times the next discounted value to each step.`}
-  code={`# Task: Exercise 1 - Discount the Rewards
-import numpy as np
-
-def discount_rewards(rewards, discount_factor):
-    discounted = np.array(rewards, dtype=float)
-    for step in range(len(rewards) - 2, -1, -1):
-        discounted[step] += discounted[step + 1] * ___   # replace ___ with discount_factor
-    return discounted
-
-result = discount_rewards([10, 0, -50], discount_factor=0.8)
-print(result)
-
-# ── Expected Output ───────────────────────────────────────────
-# [-22. -40. -50.]
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import numpy as np
-
-def discount_rewards(rewards, discount_factor):
-    discounted = np.array(rewards, dtype=float)
-    for step in range(len(rewards) - 2, -1, -1):
-        discounted[step] += discounted[step + 1] * discount_factor
-    return discounted
-
-result = discount_rewards([10, 0, -50], discount_factor=0.8)
-print(result)`}
-  sct={`test_output_contains("-22")
-test_output_contains("-50")
-success_msg("Rewards discounted correctly!")`}
-  height={168}
-/>
-
-### Exercise 2 – Normalize the Advantages
-
-<DataCampExercise
-  lang="python"
-  hint={`Subtract the mean and divide by the standard deviation: \`(x - mean) / std\`.`}
-  code={`# Task: Exercise 2 - Normalize the Advantages
-import numpy as np
-
-discounted_rewards = np.array([-22.0, -40.0, -50.0, 10.0, 20.0])
-
-mean = discounted_rewards.mean()
-std = discounted_rewards.std()
-advantages = (discounted_rewards - mean) / ___   # replace ___ with std
-
-print("Mean of advantages ~", round(advantages.mean(), 4))
-
-# ── Expected Output ───────────────────────────────────────────
-# Mean of advantages ~ 0.0 or -0.0
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import numpy as np
-
-discounted_rewards = np.array([-22.0, -40.0, -50.0, 10.0, 20.0])
-
-mean = discounted_rewards.mean()
-std = discounted_rewards.std()
-advantages = (discounted_rewards - mean) / std
-
-print("Mean of advantages ~", round(advantages.mean(), 4))`}
-  sct={`test_output_contains("Mean of advantages")
-success_msg("Advantages normalized correctly!")`}
-  height={168}
-/>
-
-### Exercise 3 – Build the Policy Network
-
-<DataCampExercise
-  lang="python"
-  hint={`The output layer needs exactly 1 unit with a \`"sigmoid"\` activation, since we only need P(go left).`}
-  code={`# Task: Exercise 3 - Build the Policy Network
-from tensorflow import keras
-
-n_inputs = 4
-
-model = keras.models.Sequential([
-    keras.layers.Dense(5, activation="elu", input_shape=[n_inputs]),
-    keras.layers.Dense(___, activation="sigmoid"),   # replace ___ with 1
-])
-
-print("Output units:", model.layers[-1].units)
-
-# ── Expected Output ───────────────────────────────────────────
-# Output units: 1
-# ──────────────────────────────────────────────────────────────`}
-  solution={`from tensorflow import keras
-
-n_inputs = 4
-
-model = keras.models.Sequential([
-    keras.layers.Dense(5, activation="elu", input_shape=[n_inputs]),
-    keras.layers.Dense(1, activation="sigmoid"),
-])
-
-print("Output units:", model.layers[-1].units)`}
-  sct={`test_output_contains("Output units: 1")
-success_msg("Policy network built correctly!")`}
-  height={168}
-/>
+- REINFORCE adjusts action probabilities directly, weighted by the return that followed each
+  action — no value function, no replay, no target network.
+- Every CartPole return is positive (100.0% of them), so without a baseline every action taken is
+  reinforced and only the magnitude differs.
+- A baseline made 45.1% of weights negative and cut the gradient norm from 1.6992 to 0.0478, a
+  35× reduction, with no measurable change in final score on this task.
+- At a fixed 1,920-episode budget, 4 episodes per update scored 200.00 and 48 scored 173.04 —
+  update count beat update quality.
+- REINFORCE's best (200.00) exceeded the DQN's best (144.20) here, on a different budget and a
+  task that suits it.
+- "Reduces variance" and "learns better" are separate claims and need separate measurements.
 
 ## Next
 
-That wraps up the Reinforcement Learning phase. Continue to **Phase 8 -
-Scaling & Deploying Deep Models** to learn how to take trained models like
-these out of a notebook and into production.
+A baseline that cut the gradient norm 35x and moved the score by 0.27 is an odd place to stop.
+The next page replaces it with a learned critic, then attacks a different axis entirely and gets a
+3.2x sample-efficiency win out of it:
+[Actor-Critic and PPO (Intro)](/deep-learning/phase-07---reinforcement-learning/actor-critic-and-ppo-intro/).
+
+<Quiz
+  questions={[
+    {
+      q: "In CartPole, 100% of the raw discounted returns are positive. What does that imply for REINFORCE without a baseline?",
+      options: [
+        "Learning is impossible",
+        "Every action taken is made more likely, and the only thing separating good from bad actions is how much — which is a much weaker and noisier signal than pushing bad actions down",
+        "The returns must be computed incorrectly",
+        "The policy will converge to a uniform distribution",
+      ],
+      answer: 1,
+      explain: "Subtracting the batch mean made 45.1% of the weights negative, turning 'do more of everything' into 'do more of what beat the average'.",
+    },
+    {
+      q: "A baseline reduced the mean gradient norm from 1.6992 to 0.0478 but changed the final score from 193.91 to 194.18. What is the honest conclusion?",
+      options: [
+        "The baseline does not work",
+        "The variance reduction is real and measurable, but this task was already being solved to the 200-step cap, so there was no room for it to show up in the score",
+        "The baseline made performance worse",
+        "The gradient norm is not a meaningful measurement",
+      ],
+      answer: 1,
+      explain: "Both readings — 'it improved the score' and 'it does nothing' — would be false. The mechanism worked; the outcome had no headroom.",
+    },
+    {
+      q: "At a fixed budget of 1,920 episodes, 4 episodes per update scored 200.00 and 48 per update scored 173.04, while the gradient noise fell with batch size. Why?",
+      options: [
+        "Large batches overfit",
+        "Batch size trades update count against update quality at a fixed budget — 4 episodes bought 480 updates against 40, and many roughly-right steps beat a few precise ones here",
+        "The larger batch had a bug",
+        "Gradient noise helps escape local minima",
+      ],
+      answer: 1,
+      explain: "The measured gradient norm sd did fall from 0.0507 to 0.0210, confirming the cleaner estimate. It simply was not what limited learning.",
+    },
+    {
+      q: "Why must REINFORCE wait for an episode to finish before updating?",
+      options: [
+        "To keep the batch size constant",
+        "Because each action is weighted by the discounted return that followed it, which is not known until the episode ends",
+        "Because the policy network needs a full batch",
+        "It does not have to; that is only a convention",
+      ],
+      answer: 1,
+      explain: "This is the structural difference from Q-learning, which bootstraps from its own estimate of the next state and can update after a single transition.",
+    },
+    {
+      q: "REINFORCE reached 200.00 while the DQN reached 144.20 on the same environment. What can be concluded?",
+      options: [
+        "Policy gradients are strictly better than value methods",
+        "Not much beyond this setup — the two used different budgets in different units, and CartPole's dense episode-return signal happens to suit REINFORCE",
+        "The DQN implementation was broken",
+        "Value methods cannot solve CartPole",
+      ],
+      answer: 1,
+      explain: "REINFORCE consumed 1,920 complete episodes while the DQN used 6,000 frames across 16 environments; the fair claim is about implementation simplicity, not sample efficiency.",
+    },
+  ]}
+/>
+
+## 🧪 Try It Yourself
+
+<DataCampExercise
+  lang="python"
+  hint={`Work backwards from the end of the episode, multiplying the running total by gamma before adding the current reward.`}
+  code={`# Task: Exercise 1 - Discounted return, from the back
+def discounted_returns(rewards, gamma=0.99):
+    """Reward-to-go: what follows each step, discounted."""
+    out = [0.0] * len(rewards)
+    running = 0.0
+    for index in reversed(range(len(rewards))):
+        running = rewards[index] + gamma * ___    # replace ___ with running
+        out[index] = running
+    return out
+
+
+EPISODES = {
+    "survived 5 steps": [1.0] * 5,
+    "survived 20 steps": [1.0] * 20,
+    "survived 200 steps": [1.0] * 200,
+}
+
+for name, rewards in EPISODES.items():
+    returns = discounted_returns(rewards)
+    print(f"{name:20s} first {returns[0]:8.4f}   last {returns[-1]:6.4f}   "
+          f"mean {sum(returns) / len(returns):8.4f}")
+
+print("\\nevery weight is positive, and a long episode gives every one of its")
+print("actions a bigger weight than a short episode gives any of its own")`}
+  solution={`def discounted_returns(rewards, gamma=0.99):
+    """Reward-to-go: what follows each step, discounted."""
+    out = [0.0] * len(rewards)
+    running = 0.0
+    for index in reversed(range(len(rewards))):
+        running = rewards[index] + gamma * running
+        out[index] = running
+    return out
+
+
+EPISODES = {
+    "survived 5 steps": [1.0] * 5,
+    "survived 20 steps": [1.0] * 20,
+    "survived 200 steps": [1.0] * 200,
+}
+
+for name, rewards in EPISODES.items():
+    returns = discounted_returns(rewards)
+    print(f"{name:20s} first {returns[0]:8.4f}   last {returns[-1]:6.4f}   "
+          f"mean {sum(returns) / len(returns):8.4f}")
+
+print("\\nevery weight is positive, and a long episode gives every one of its")
+print("actions a bigger weight than a short episode gives any of its own")`}
+  expectedOutput={`survived 5 steps     first   4.9010   last 1.0000   mean   2.9603
+survived 20 steps    first  18.2093   last 1.0000   mean   9.8639
+survived 200 steps   first  86.6020   last 1.0000   mean  57.1320
+
+every weight is positive, and a long episode gives every one of its
+actions a bigger weight than a short episode gives any of its own`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Subtract the mean and divide by the standard deviation, then count how many weights ended up below zero.`}
+  code={`# Task: Exercise 2 - What the baseline does to the weights
+import numpy as np
+
+rng = np.random.default_rng(0)
+# Returns from a batch of episodes of differing lengths.
+returns = np.concatenate([np.linspace(length, 1, length)
+                          for length in (6, 14, 9, 21, 11)])
+
+
+def standardise(weights):
+    """Centre and scale - the classic REINFORCE baseline."""
+    return (weights - weights.mean()) / (weights.___() + 1e-8)   # replace with std
+
+
+centred = standardise(returns)
+print(f"raw:          mean {returns.mean():7.4f}  sd {returns.std():7.4f}  "
+      f"{100 * (returns > 0).mean():5.1f}% positive")
+print(f"standardised: mean {centred.mean():7.4f}  sd {centred.std():7.4f}  "
+      f"{100 * (centred > 0).mean():5.1f}% positive")
+print(f"\\nmeasured on the page: 100.0% positive before, 45.1% after")`}
+  solution={`import numpy as np
+
+rng = np.random.default_rng(0)
+# Returns from a batch of episodes of differing lengths.
+returns = np.concatenate([np.linspace(length, 1, length)
+                          for length in (6, 14, 9, 21, 11)])
+
+
+def standardise(weights):
+    """Centre and scale - the classic REINFORCE baseline."""
+    return (weights - weights.mean()) / (weights.std() + 1e-8)
+
+
+centred = standardise(returns)
+print(f"raw:          mean {returns.mean():7.4f}  sd {returns.std():7.4f}  "
+      f"{100 * (returns > 0).mean():5.1f}% positive")
+print(f"standardised: mean {centred.mean():7.4f}  sd {centred.std():7.4f}  "
+      f"{100 * (centred > 0).mean():5.1f}% positive")
+print(f"\\nmeasured on the page: 100.0% positive before, 45.1% after")`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Averaging n independent samples divides the standard error by the square root of n, so the gradient noise falls as 1/sqrt(batch).`}
+  code={`# Task: Exercise 3 - Batch size against update count
+import numpy as np
+
+BUDGET = 1920           # total episodes available
+MEASURED = {4: 200.00, 16: 196.68, 48: 173.04}
+NOISE_SD = {4: 0.0507, 16: 0.0337, 48: 0.0210}
+
+
+def plan(batch):
+    """Updates available, and the expected noise reduction from averaging."""
+    updates = BUDGET // batch
+    reduction = np.sqrt(___)                      # replace ___ with batch
+    return updates, reduction
+
+
+print(f"{'batch':>6} {'updates':>8} {'sqrt(batch)':>12} "
+      f"{'measured norm sd':>17} {'final length':>13}")
+for batch in MEASURED:
+    updates, reduction = plan(batch)
+    print(f"{batch:6d} {updates:8d} {reduction:12.2f} "
+          f"{NOISE_SD[batch]:17.4f} {MEASURED[batch]:13.2f}")
+
+print("\\nnoise falls roughly as predicted, and performance falls with it -")
+print("at a fixed budget the number of updates mattered more")`}
+  solution={`import numpy as np
+
+BUDGET = 1920           # total episodes available
+MEASURED = {4: 200.00, 16: 196.68, 48: 173.04}
+NOISE_SD = {4: 0.0507, 16: 0.0337, 48: 0.0210}
+
+
+def plan(batch):
+    """Updates available, and the expected noise reduction from averaging."""
+    updates = BUDGET // batch
+    reduction = np.sqrt(batch)
+    return updates, reduction
+
+
+print(f"{'batch':>6} {'updates':>8} {'sqrt(batch)':>12} "
+      f"{'measured norm sd':>17} {'final length':>13}")
+for batch in MEASURED:
+    updates, reduction = plan(batch)
+    print(f"{batch:6d} {updates:8d} {reduction:12.2f} "
+          f"{NOISE_SD[batch]:17.4f} {MEASURED[batch]:13.2f}")
+
+print("\\nnoise falls roughly as predicted, and performance falls with it -")
+print("at a fixed budget the number of updates mattered more")`}
+  expectedOutput={` batch  updates  sqrt(batch)  measured norm sd  final length
+     4      480         2.00            0.0507        200.00
+    16      120         4.00            0.0337        196.68
+    48       40         6.93            0.0210        173.04
+
+noise falls roughly as predicted, and performance falls with it -
+at a fixed budget the number of updates mattered more`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`The gradient of log pi for the chosen action is (1 - p) for that action and -p for the others, scaled by the weight.`}
+  code={`# Task: Exercise 4 - One REINFORCE step, by hand
+import numpy as np
+
+
+def policy_gradient(probabilities, action, weight):
+    """d/dlogits of weight * log pi(action), for a softmax policy."""
+    onehot = np.zeros_like(probabilities)
+    onehot[action] = 1.0
+    return weight * (onehot - ___)               # replace ___ with probabilities
+
+
+CASES = (
+    ("good outcome, likely action", [0.8, 0.2], 0, +2.0),
+    ("good outcome, unlikely action", [0.2, 0.8], 0, +2.0),
+    ("bad outcome, likely action", [0.8, 0.2], 0, -2.0),
+    ("no baseline: weak signal", [0.8, 0.2], 0, +0.1),
+)
+
+print(f"{'case':32s} {'gradient on logits':>26}")
+for name, probabilities, action, weight in CASES:
+    gradient = policy_gradient(np.array(probabilities), action, weight)
+    print(f"{name:32s} {str(np.round(gradient, 4)):>26}")
+
+print("\\nan unlikely action that worked gets the biggest push - which is how")
+print("the policy discovers actions it was not already taking")`}
+  solution={`import numpy as np
+
+
+def policy_gradient(probabilities, action, weight):
+    """d/dlogits of weight * log pi(action), for a softmax policy."""
+    onehot = np.zeros_like(probabilities)
+    onehot[action] = 1.0
+    return weight * (onehot - probabilities)
+
+
+CASES = (
+    ("good outcome, likely action", [0.8, 0.2], 0, +2.0),
+    ("good outcome, unlikely action", [0.2, 0.8], 0, +2.0),
+    ("bad outcome, likely action", [0.8, 0.2], 0, -2.0),
+    ("no baseline: weak signal", [0.8, 0.2], 0, +0.1),
+)
+
+print(f"{'case':32s} {'gradient on logits':>26}")
+for name, probabilities, action, weight in CASES:
+    gradient = policy_gradient(np.array(probabilities), action, weight)
+    print(f"{name:32s} {str(np.round(gradient, 4)):>26}")
+
+print("\\nan unlikely action that worked gets the biggest push - which is how")
+print("the policy discovers actions it was not already taking")`}
+  expectedOutput={`case                                     gradient on logits
+good outcome, likely action                     [ 0.4 -0.4]
+good outcome, unlikely action                   [ 1.6 -1.6]
+bad outcome, likely action                      [-0.4  0.4]
+no baseline: weak signal                      [ 0.02 -0.02]`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Collect all episodes in one vectorised environment so each timestep is a single model call for the whole batch.`}
+  code={`# Task: Exercise 5 - Why episodes must be collected in parallel
+FORWARD_PASS_MS = 2.0
+MEAN_EPISODE_LENGTH = 120
+
+
+def serial_seconds(episodes):
+    """One episode at a time: a model call per step, per episode."""
+    return episodes * MEAN_EPISODE_LENGTH * FORWARD_PASS_MS / 1000.0
+
+
+def parallel_seconds(episodes):
+    """All episodes stepped together: one call per timestep for the batch."""
+    del episodes
+    return MEAN_EPISODE_LENGTH * ___ / 1000.0    # replace with FORWARD_PASS_MS
+
+
+print(f"{'episodes':>9} {'serial (s)':>12} {'parallel (s)':>14} {'speed-up':>10}")
+for episodes in (4, 16, 48):
+    serial = serial_seconds(episodes)
+    parallel = parallel_seconds(episodes)
+    print(f"{episodes:9d} {serial:12.2f} {parallel:14.2f} "
+          f"{serial / parallel:10.1f}x")
+
+print("\\nat 120 updates of 16 episodes, the serial version would spend an")
+print("extra 40 minutes per run in interpreter overhead alone")`}
+  solution={`FORWARD_PASS_MS = 2.0
+MEAN_EPISODE_LENGTH = 120
+
+
+def serial_seconds(episodes):
+    """One episode at a time: a model call per step, per episode."""
+    return episodes * MEAN_EPISODE_LENGTH * FORWARD_PASS_MS / 1000.0
+
+
+def parallel_seconds(episodes):
+    """All episodes stepped together: one call per timestep for the batch."""
+    del episodes
+    return MEAN_EPISODE_LENGTH * FORWARD_PASS_MS / 1000.0
+
+
+print(f"{'episodes':>9} {'serial (s)':>12} {'parallel (s)':>14} {'speed-up':>10}")
+for episodes in (4, 16, 48):
+    serial = serial_seconds(episodes)
+    parallel = parallel_seconds(episodes)
+    print(f"{episodes:9d} {serial:12.2f} {parallel:14.2f} "
+          f"{serial / parallel:10.1f}x")
+
+print("\\nat 120 updates of 16 episodes, the serial version would spend an")
+print("extra 40 minutes per run in interpreter overhead alone")`}
+  expectedOutput={` episodes   serial (s)   parallel (s)   speed-up
+        4         0.96           0.24        4.0x
+       16         3.84           0.24       16.0x
+       48        11.52           0.24       48.0x
+
+at 120 updates of 16 episodes, the serial version would spend an
+extra 40 minutes per run in interpreter overhead alone`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Weight each action's log-probability by its standardised return, then take a gradient step on the negative of that.`}
+  code={`# Task: Exercise 6 - REINFORCE, end to end
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+
+keras.utils.set_random_seed(0)
+GAMMA, EPISODES, UPDATES = 0.99, 8, 40
+
+
+class CartPole:
+    """The classic dynamics, vectorised over several environments at once."""
+
+    def __init__(self, count, seed=0):
+        self.count = count
+        self.rng = np.random.default_rng(seed)
+        self.state = self.rng.uniform(-0.05, 0.05, (count, 4)).astype("float32")
+        self.steps = np.zeros(count, "int32")
+
+    def reset(self):
+        self.state = self.rng.uniform(-0.05, 0.05,
+                                      (self.count, 4)).astype("float32")
+        self.steps[:] = 0
+
+    def step(self, actions):
+        x, x_dot, theta, theta_dot = self.state.T
+        force = np.where(actions == 1, 10.0, -10.0)
+        cos, sin = np.cos(theta), np.sin(theta)
+        temp = (force + 0.05 * theta_dot ** 2 * sin) / 1.1
+        theta_acc = ((9.8 * sin - cos * temp)
+                     / (0.5 * (4.0 / 3.0 - 0.1 * cos ** 2 / 1.1)))
+        x_acc = temp - 0.05 * theta_acc * cos / 1.1
+        self.state = np.stack([x + 0.02 * x_dot, x_dot + 0.02 * x_acc,
+                               theta + 0.02 * theta_dot,
+                               theta_dot + 0.02 * theta_acc], 1).astype("float32")
+        self.steps += 1
+        done = ((np.abs(self.state[:, 0]) > 2.4)
+                | (np.abs(self.state[:, 2]) > 0.2095) | (self.steps >= 200))
+        return self.state.copy(), done
+
+
+model = keras.Sequential([keras.layers.Input((4,)),
+                          keras.layers.Dense(64, activation="relu"),
+                          keras.layers.Dense(2, activation="softmax")])
+optimizer = keras.optimizers.Adam(5e-3)
+forward = tf.function(lambda x: model(x, training=False))
+
+
+@tf.function
+def train_step(states, actions, weights):
+    with tf.GradientTape() as tape:
+        probabilities = model(states, training=True)
+        chosen = tf.reduce_sum(probabilities * tf.one_hot(actions, 2), axis=1)
+        loss = -tf.reduce_mean(tf.math.log(chosen + 1e-8) * weights)
+    optimizer.apply_gradients(zip(tape.gradient(loss, model.trainable_variables),
+                                  model.trainable_variables))
+
+
+env = CartPole(EPISODES, seed=0)
+rng = np.random.default_rng(0)
+for update in range(1, UPDATES + 1):
+    env.reset()
+    alive = np.ones(EPISODES, bool)
+    per_env = [[] for _ in range(EPISODES)]
+    for _ in range(200):
+        state = env.state.copy()
+        probabilities = np.array(forward(tf.constant(state)))
+        chosen = (rng.random(EPISODES) < probabilities[:, 1]).astype("int32")
+        _, done = env.step(chosen)
+        for i in np.flatnonzero(alive):
+            per_env[i].append((state[i], chosen[i]))
+        alive &= ~done
+        if not alive.any():
+            break
+    states, actions, weights, lengths = [], [], [], []
+    for episode in per_env:
+        running = 0.0
+        returns = []
+        for _ in episode:
+            running = 1.0 + GAMMA * running
+            returns.append(running)
+        returns = returns[::-1]
+        states.extend(s for s, _ in episode)
+        actions.extend(a for _, a in episode)
+        weights.extend(returns)
+        lengths.append(len(episode))
+    weights = np.array(weights, "float32")
+    weights = (weights - weights.mean()) / (weights.std() + 1e-8)
+    train_step(np.array(states, "float32"), np.array(actions, "int32"),
+               ___)                              # replace ___ with weights
+    if update % 10 == 0:
+        print(f"update {update:3d}: mean episode length {np.mean(lengths):6.1f}")`}
+  solution={`import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+
+keras.utils.set_random_seed(0)
+GAMMA, EPISODES, UPDATES = 0.99, 8, 40
+
+
+class CartPole:
+    """The classic dynamics, vectorised over several environments at once."""
+
+    def __init__(self, count, seed=0):
+        self.count = count
+        self.rng = np.random.default_rng(seed)
+        self.state = self.rng.uniform(-0.05, 0.05, (count, 4)).astype("float32")
+        self.steps = np.zeros(count, "int32")
+
+    def reset(self):
+        self.state = self.rng.uniform(-0.05, 0.05,
+                                      (self.count, 4)).astype("float32")
+        self.steps[:] = 0
+
+    def step(self, actions):
+        x, x_dot, theta, theta_dot = self.state.T
+        force = np.where(actions == 1, 10.0, -10.0)
+        cos, sin = np.cos(theta), np.sin(theta)
+        temp = (force + 0.05 * theta_dot ** 2 * sin) / 1.1
+        theta_acc = ((9.8 * sin - cos * temp)
+                     / (0.5 * (4.0 / 3.0 - 0.1 * cos ** 2 / 1.1)))
+        x_acc = temp - 0.05 * theta_acc * cos / 1.1
+        self.state = np.stack([x + 0.02 * x_dot, x_dot + 0.02 * x_acc,
+                               theta + 0.02 * theta_dot,
+                               theta_dot + 0.02 * theta_acc], 1).astype("float32")
+        self.steps += 1
+        done = ((np.abs(self.state[:, 0]) > 2.4)
+                | (np.abs(self.state[:, 2]) > 0.2095) | (self.steps >= 200))
+        return self.state.copy(), done
+
+
+model = keras.Sequential([keras.layers.Input((4,)),
+                          keras.layers.Dense(64, activation="relu"),
+                          keras.layers.Dense(2, activation="softmax")])
+optimizer = keras.optimizers.Adam(5e-3)
+forward = tf.function(lambda x: model(x, training=False))
+
+
+@tf.function
+def train_step(states, actions, weights):
+    with tf.GradientTape() as tape:
+        probabilities = model(states, training=True)
+        chosen = tf.reduce_sum(probabilities * tf.one_hot(actions, 2), axis=1)
+        loss = -tf.reduce_mean(tf.math.log(chosen + 1e-8) * weights)
+    optimizer.apply_gradients(zip(tape.gradient(loss, model.trainable_variables),
+                                  model.trainable_variables))
+
+
+env = CartPole(EPISODES, seed=0)
+rng = np.random.default_rng(0)
+for update in range(1, UPDATES + 1):
+    env.reset()
+    alive = np.ones(EPISODES, bool)
+    per_env = [[] for _ in range(EPISODES)]
+    for _ in range(200):
+        state = env.state.copy()
+        probabilities = np.array(forward(tf.constant(state)))
+        chosen = (rng.random(EPISODES) < probabilities[:, 1]).astype("int32")
+        _, done = env.step(chosen)
+        for i in np.flatnonzero(alive):
+            per_env[i].append((state[i], chosen[i]))
+        alive &= ~done
+        if not alive.any():
+            break
+    states, actions, weights, lengths = [], [], [], []
+    for episode in per_env:
+        running = 0.0
+        returns = []
+        for _ in episode:
+            running = 1.0 + GAMMA * running
+            returns.append(running)
+        returns = returns[::-1]
+        states.extend(s for s, _ in episode)
+        actions.extend(a for _, a in episode)
+        weights.extend(returns)
+        lengths.append(len(episode))
+    weights = np.array(weights, "float32")
+    weights = (weights - weights.mean()) / (weights.std() + 1e-8)
+    train_step(np.array(states, "float32"), np.array(actions, "int32"),
+               weights)
+    if update % 10 == 0:
+        print(f"update {update:3d}: mean episode length {np.mean(lengths):6.1f}")`}
+/>

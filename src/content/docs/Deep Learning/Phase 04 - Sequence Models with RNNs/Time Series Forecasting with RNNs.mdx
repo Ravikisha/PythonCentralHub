@@ -1,701 +1,722 @@
 ---
 title: Time Series Forecasting with RNNs
-description: Forecast a time series with tf.keras - from naive baselines to deep RNNs that predict many steps ahead.
+description: Windowing, chronological splits and four models measured against persistence and the irreducible noise floor - where a GRU earns its 4x cost and where a Dense layer already wins.
 sidebar:
   order: 433
 ---
 
-## What a time series is
-
-A **time series** is a sequence of one or more values recorded over time — active
-users per hour, daily temperature, quarterly revenue. If there's a single value
-per time step it's **univariate**; if there are several (revenue, debt, and so on)
-it's **multivariate**. The main task is **forecasting**: predicting future values.
-A related task is **imputation**: filling in missing values from the past.
-
-```mermaid
-flowchart LR
-  A["Past values x(0)...x(t)"] --> B["RNN"]
-  B --> C["Forecast x(t+1)"]
-```
-
-## Generating a toy time series
-
-The book generates a synthetic univariate series — the sum of two sine waves
-with random frequency and phase, plus a little noise — so you can focus on the
-model instead of data cleaning:
-
-```python title="generate_series.py" showLineNumbers{1}
-import numpy as np
-
-def generate_time_series(batch_size, n_steps):
-    freq1, freq2, offsets1, offsets2 = np.random.rand(4, batch_size, 1)
-    time = np.linspace(0, 1, n_steps)
-    series = 0.5 * np.sin((time - offsets1) * (freq1 * 10 + 10))       # wave 1
-    series += 0.2 * np.sin((time - offsets2) * (freq2 * 20 + 20))      # + wave 2
-    series += 0.1 * (np.random.rand(batch_size, n_steps) - 0.5)        # + noise
-    return series[..., np.newaxis].astype(np.float32)
-
-n_steps = 50
-series = generate_time_series(10000, n_steps + 1)
-X_train, y_train = series[:7000, :n_steps], series[:7000, -1]
-X_valid, y_valid = series[7000:9000, :n_steps], series[7000:9000, -1]
-X_test, y_test = series[9000:, :n_steps], series[9000:, -1]
-
-print(X_train.shape, y_train.shape)   # (7000, 50, 1) (7000, 1)
-```
-
-Notice the shape: RNN inputs are always `[batch_size, time_steps, dimensionality]`
-— `dimensionality` is 1 for a univariate series, more for a multivariate one.
-
-## Baseline metrics first
-
-Before reaching for an RNN, always check a couple of simple baselines — otherwise
-you might think a fancy model works great when it's actually worse than doing
-almost nothing.
-
-**Naive forecasting** — just predict that the series repeats its last value:
-
-```python title="naive_baseline.py" showLineNumbers{1}
-import numpy as np
-from tensorflow import keras
-
-y_pred_naive = X_valid[:, -1]
-mse_naive = np.mean(keras.losses.mean_squared_error(y_valid, y_pred_naive))
-print("Naive MSE:", mse_naive)   # ~0.020
-```
-
-**A plain linear model** (a `Dense` layer on the flattened input) does noticeably
-better:
-
-```python title="linear_baseline.py" showLineNumbers{1}
-from tensorflow import keras
-
-model = keras.models.Sequential([
-    keras.layers.Flatten(input_shape=[50, 1]),
-    keras.layers.Dense(1),
-])
-model.compile(loss="mse", optimizer="adam")
-model.fit(X_train, y_train, epochs=20,
-          validation_data=(X_valid, y_valid), verbose=0)
-print("Linear MSE:", model.evaluate(X_valid, y_valid, verbose=0))   # ~0.004
-```
-
-That linear model is your target to beat with an RNN.
-
-## A simple RNN
-
-```python title="simple_rnn_forecast.py" showLineNumbers{1}
-from tensorflow import keras
-
-model = keras.models.Sequential([
-    keras.layers.SimpleRNN(1, input_shape=[None, 1]),
-])
-model.compile(loss="mse", optimizer="adam")
-model.fit(X_train, y_train, epochs=20,
-          validation_data=(X_valid, y_valid), verbose=0)
-print("SimpleRNN MSE:", model.evaluate(X_valid, y_valid, verbose=0))   # ~0.014
-```
-
-A single-neuron `SimpleRNN` beats the naive baseline but **doesn't** beat the
-linear model — it only has 3 parameters total, which just isn't much capacity.
-
-## Deep RNN
-
-Stacking recurrent layers gives the model more capacity — this is called a
-**deep RNN**. The key rule: every recurrent layer feeding another recurrent
-layer needs `return_sequences=True`, so it hands over a full 3D sequence instead
-of just the last step's output:
-
-```python title="deep_rnn.py" showLineNumbers{1}
-from tensorflow import keras
-
-model = keras.models.Sequential([
-    keras.layers.SimpleRNN(20, return_sequences=True, input_shape=[None, 1]),
-    keras.layers.SimpleRNN(20),
-    keras.layers.Dense(1),   # a Dense output layer (not the last recurrent layer)
-])
-model.compile(loss="mse", optimizer="adam")
-model.fit(X_train, y_train, epochs=20,
-          validation_data=(X_valid, y_valid), verbose=0)
-print("Deep RNN MSE:", model.evaluate(X_valid, y_valid, verbose=0))   # ~0.003
-```
-
-Using a `Dense(1)` output instead of ending on `SimpleRNN(1)` is usually better:
-it trains a little faster, performs about the same, and lets you pick any output
-activation — a final recurrent layer with only 1 unit is stuck with a tiny hidden
-state and (by default) a `tanh` output squeezed into `[-1, 1]`.
-
-## Forecasting several steps ahead
-
-What if you need the next **10** values, not just the next one? There are two
-common strategies.
-
-**Strategy 1 — repeat one-step forecasts.** Predict the next value, append it to
-the input, predict again, and so on:
-
-```python title="iterative_forecast.py" showLineNumbers{1}
-import numpy as np
-
-series = generate_time_series(1, n_steps + 10)
-X_new, Y_new = series[:, :n_steps], series[:, n_steps:]
-X = X_new
-for step_ahead in range(10):
-    y_pred_one = model.predict(X[:, step_ahead:], verbose=0)[:, np.newaxis, :]
-    X = np.concatenate([X, y_pred_one], axis=1)
-
-Y_pred = X[:, n_steps:]
-```
-
-Errors accumulate with each extra step, so this works best when you only need a
-handful of steps ahead.
-
-**Strategy 2 — predict all 10 steps at once.** Change the targets to be 10-value
-vectors and give the output layer 10 units:
-
-```python title="multi_step_forecast.py" showLineNumbers{1}
-from tensorflow import keras
-
-series = generate_time_series(10000, n_steps + 10)
-X_train, Y_train = series[:7000, :n_steps], series[:7000, -10:, 0]
-X_valid, Y_valid = series[7000:9000, :n_steps], series[7000:9000, -10:, 0]
-X_test, Y_test = series[9000:, :n_steps], series[9000:, -10:, 0]
-
-model = keras.models.Sequential([
-    keras.layers.SimpleRNN(20, return_sequences=True, input_shape=[None, 1]),
-    keras.layers.SimpleRNN(20),
-    keras.layers.Dense(10),
-])
-model.compile(loss="mse", optimizer="adam")
-model.fit(X_train, Y_train, epochs=20,
-          validation_data=(X_valid, Y_valid), verbose=0)
-```
-
-This is more accurate than the iterative approach, but it only trains on the
-error at the *last* time step. Better still: turn it into a true
-**sequence-to-sequence** model, forecasting the next 10 values at *every* time
-step (not only the last one) with `return_sequences=True` on every recurrent
-layer and a `TimeDistributed(Dense(10))` output. This feeds far more error
-gradients through the network — and stabilizes and speeds up training:
-
-```python title="seq_to_seq_forecast.py" showLineNumbers{1}
-import numpy as np
-from tensorflow import keras
-
-Y = np.empty((10000, n_steps, 10))
-for step_ahead in range(1, 11):
-    Y[:, :, step_ahead - 1] = series[:, step_ahead:step_ahead + n_steps, 0]
-Y_train, Y_valid, Y_test = Y[:7000], Y[7000:9000], Y[9000:]
-
-model = keras.models.Sequential([
-    keras.layers.SimpleRNN(20, return_sequences=True, input_shape=[None, 1]),
-    keras.layers.SimpleRNN(20, return_sequences=True),
-    keras.layers.TimeDistributed(keras.layers.Dense(10)),
-])
-
-def last_time_step_mse(Y_true, Y_pred):
-    return keras.metrics.mean_squared_error(Y_true[:, -1], Y_pred[:, -1])
-
-model.compile(loss="mse", optimizer=keras.optimizers.Adam(learning_rate=0.01),
-              metrics=[last_time_step_mse])
-model.fit(X_train, Y_train, epochs=20, validation_data=(X_valid, Y_valid), verbose=0)
-```
-
-All outputs are used for the training loss, but only the last time step matters
-for evaluation — hence the custom `last_time_step_mse` metric. `TimeDistributed`
-applies its wrapped layer (here, `Dense(10)`) independently to every time step.
-
-## Comparing the approaches
-
-| Model | Approx. MSE (1-step) | Notes |
-| --- | --- | --- |
-| Naive (repeat last value) | 0.020 | free, always compute this first |
-| Linear (`Flatten` + `Dense`) | 0.004 | strong, cheap baseline |
-| `SimpleRNN(1)` | 0.014 | worse than linear — too little capacity |
-| Deep RNN (3 `SimpleRNN` layers) | 0.003 | finally beats the linear model |
-
-For 10-step-ahead forecasts, sequence-to-vector (~0.008 MSE) beats the iterative
-one-step-at-a-time approach (~0.029 MSE), and a full sequence-to-sequence model
-(~0.006 MSE) beats both.
-
-## A real-world example: the Jena temperature dataset (Chollet)
-
-The synthetic sine-wave series above is great for learning the mechanics, but
-real sensor data is messier. *Deep Learning with Python* (Chollet) walks through
-a concrete problem: given hourly weather measurements — temperature, pressure,
-humidity, and 11 other quantities — from the past 5 days, predict the
-temperature **24 hours from now**. The raw file has 420,551 rows (one every 10
-minutes, from 2009-2016) and 14 columns.
-
-```mermaid
-flowchart LR
-  A["Raw series (420,551 rows x 14 features)"] --> B["Windowed samples (timeseries_dataset_from_array)"]
-  B --> C["Model (Dense / Conv1D / RNN)"]
-  C --> D["Forecast temperature (+24h)"]
-```
-
-### Windowing data with `timeseries_dataset_from_array`
-
-Instead of writing your own generator for overlapping windows, Keras ships a
-utility that slices a raw array into fixed-length sequences (and lines up a
-matching target for each one) on the fly, without duplicating the data in
-memory. A tiny example makes the idea concrete — feed in the numbers 0-9, ask
-for windows of length 3, and target each window with the value 3 steps ahead:
-
-```python title="windowing_demo.py" showLineNumbers{1}
-import numpy as np
-from tensorflow import keras
-
-int_sequence = np.arange(10)
-dummy_dataset = keras.utils.timeseries_dataset_from_array(
-    data=int_sequence[:-3],
-    targets=int_sequence[3:],
-    sequence_length=3,
-    batch_size=2,
-)
-for inputs, targets in dummy_dataset:
-    for i in range(inputs.shape[0]):
-        print([int(x) for x in inputs[i]], int(targets[i]))
-
-# ── Output ───────────────────────────
-# [0, 1, 2] 3
-# [1, 2, 3] 4
-# [2, 3, 4] 5
-# [3, 4, 5] 6
-# [4, 5, 6] 7
-# ─────────────────────────────────────
-```
-
-For the real temperature task, the book uses `sampling_rate=6` (keep one point
-per hour instead of every 10 minutes), `sequence_length=120` (5 days of hourly
-data), and `delay = sampling_rate * (sequence_length + 24 - 1)` (so each target
-lands exactly 24 hours past the end of its window):
-
-```python title="jena_windows.py" showLineNumbers{1}
-from tensorflow import keras
-
-sampling_rate = 6
-sequence_length = 120
-delay = sampling_rate * (sequence_length + 24 - 1)
-batch_size = 256
-
-train_dataset = keras.utils.timeseries_dataset_from_array(
-    raw_data[:-delay],
-    targets=temperature[delay:],
-    sampling_rate=sampling_rate,
-    sequence_length=sequence_length,
-    shuffle=True,
-    batch_size=batch_size,
-    start_index=0,
-    end_index=num_train_samples,
-)
-# val_dataset / test_dataset follow the same call with shifted start/end_index
-
-for samples, targets in train_dataset:
-    print("samples shape:", samples.shape)   # (256, 120, 14)
-    print("targets shape:", targets.shape)   # (256,)
-    break
-```
-
-### A common-sense baseline (before touching a neural net)
-
-Chollet's rule: always write down the dumbest possible heuristic and measure it
-before reaching for deep learning. Here, temperature is both continuous and
-roughly periodic day-to-day, so a reasonable guess is "24 hours from now, the
-temperature will be about the same as it is right now":
-
-```python title="common_sense_baseline.py" showLineNumbers{1}
-import numpy as np
-
-def evaluate_naive_method(dataset, temperature_mean, temperature_std):
-    total_abs_err = 0.0
-    samples_seen = 0
-    for samples, targets in dataset:
-        # column 1 is temperature; un-normalize it back to degrees Celsius
-        preds = samples[:, -1, 1] * temperature_std + temperature_mean
-        total_abs_err += np.sum(np.abs(preds - targets))
-        samples_seen += samples.shape[0]
-    return total_abs_err / samples_seen
-
-# Validation MAE: 2.44 degrees Celsius
-# Test MAE:       2.62 degrees Celsius
-```
-
-This uses **mean absolute error (MAE)** rather than MSE, since MAE stays in the
-original units (degrees) and is easy to reason about: "off by 2.44 degrees on
-average."
-
-### Dense and Conv1D models don't beat the baseline
-
-It's tempting to assume "more complex = better," so it's worth checking a plain
-`Dense` model and a `Conv1D` model against that 2.44-degree baseline first:
-
-```python title="dense_vs_conv_jena.py" showLineNumbers{1}
-from tensorflow import keras
-from tensorflow.keras import layers
-
-# A flattened, densely-connected model
-inputs = keras.Input(shape=(sequence_length, 14))
-x = layers.Flatten()(inputs)
-x = layers.Dense(16, activation="relu")(x)
-outputs = layers.Dense(1)(x)
-dense_model = keras.Model(inputs, outputs)
-
-# A 1D convnet
-inputs = keras.Input(shape=(sequence_length, 14))
-x = layers.Conv1D(8, 24, activation="relu")(inputs)
-x = layers.MaxPooling1D(2)(x)
-x = layers.Conv1D(8, 12, activation="relu")(x)
-x = layers.MaxPooling1D(2)(x)
-x = layers.Conv1D(8, 6, activation="relu")(x)
-x = layers.GlobalAveragePooling1D()(x)
-outputs = layers.Dense(1)(x)
-conv_model = keras.Model(inputs, outputs)
-```
-
-| Model | Val MAE | vs. baseline (2.44) |
-| --- | --- | --- |
-| Common-sense baseline | 2.44 | — |
-| `Flatten` + `Dense` | ~2.5-3.0 | rarely beats it — flattening throws away the notion of time |
-| `Conv1D` + pooling | ~2.9 | worse — pooling destroys order, and weather isn't shift-invariant across a day |
-| `LSTM(16)` | 2.36 | finally beats the baseline |
-
-Flattening the window into one long vector destroys any notion of "before" and
-"after." A `Conv1D` at least respects local order within its window, but pooling
-still throws away *where in the day* a pattern happened — morning weather
-behaves differently than evening weather, so the "same pattern anywhere in the
-window" assumption behind convolutions doesn't hold as well as it does for
-images. An RNN, which walks through the sequence in order and never destroys
-that order, is the natural fit — exactly the deep RNNs built earlier on this
-page.
-
-:::tip[From the book]
-*Deep Learning with Python* (Chollet) frames baselines as a search problem: your
-model can only pick from the "hypothesis space" you gave it (here, two-layer
-`Dense` networks, or a stack of `Conv1D` + pooling). Even if a good solution
-technically exists somewhere in that space, gradient descent isn't guaranteed to
-find it — so an architecture that structurally matches your data (an RNN, for
-ordered sequences) beats a more powerful-looking one that doesn't.
-:::
-
-### Watch a window slide across the raw series
-
-Every sample an RNN sees is a fixed-length **window** cut from the raw series.
-As the window slides forward one step at a time, the point it's predicting
-(24 hours past the window's end) slides forward with it:
-
-```p5 title="Sliding window over a temperature series" desc="The amber box is one training window (past values), sliding across the series; the connected blue dot is its 24-hour-ahead target." height="260"
-let t = 0;
-const total = 140;
-const winLen = 30;
-const gap = 14;
-function trueVal(i) {
-  return 0.4 * sin(i * 0.09) + 0.15 * sin(i * 0.21 + 1.2);
-}
-function setup() {
-  createCanvas(600, 260);
-  textFont("monospace");
-}
-function px(i) { return 40 + (i / total) * (width - 80); }
-function py(v) { return 140 - v * 90; }
-function smoothstep(x) {
-  x = constrain(x, 0, 1);
-  return x * x * (3 - 2 * x);
-}
-function draw() {
-  background(13, 17, 23);
-
-  stroke(60, 70, 84);
-  strokeWeight(1);
-  line(40, 140, width - 40, 140);
-
-  stroke(90, 100, 114);
-  strokeWeight(2);
-  noFill();
-  beginShape();
-  for (let i = 0; i <= total; i++) vertex(px(i), py(trueVal(i)));
-  endShape();
-
-  const range = total - winLen - gap;
-  const start = t % range;
-  // fade the moving pieces right at the loop seam so the jump-back is invisible
-  const fade = min(smoothstep(start / 6), smoothstep((range - start) / 6));
-  const winEnd = start + winLen;
-  const targetX = winEnd + gap;
-
-  noFill();
-  stroke(255, 211, 67, 255 * fade);
-  strokeWeight(2);
-  rect(px(start), 30, px(winEnd) - px(start), 190, 4);
-
-  stroke(120, 90, 40, 255 * fade);
-  strokeWeight(1.5);
-  drawingContext.setLineDash([4, 4]);
-  line(px(winEnd), py(trueVal(winEnd)), px(targetX), py(trueVal(targetX)));
-  drawingContext.setLineDash([]);
-
-  noStroke();
-  fill(75, 139, 190, 255 * fade);
-  ellipse(px(targetX), py(trueVal(targetX)), 10, 10);
-
-  fill(200, 160, 90, 255 * fade);
-  textSize(11);
-  textAlign(CENTER, TOP);
-  text("window (past 5 days)", (px(start) + px(winEnd)) / 2, 14);
-
-  fill(107, 169, 221, 255 * fade);
-  textAlign(LEFT, TOP);
-  text("target (+24h)", px(targetX) + 8, py(trueVal(targetX)) - 20);
-
-  fill(150);
-  textAlign(CENTER, CENTER);
-  textSize(11);
-  text("amber = one training window   blue = the value it predicts", width / 2, 235);
-
-  t += 0.6;
-}
-```
-
-## Mini-checkpoint
-
-Why must you set `return_sequences=True` on every recurrent layer except
-possibly the last one, when stacking recurrent layers?
-
-- because each layer needs to receive a full 3D sequence `[batch, time, features]`
-  as input, not just the 2D output of the previous layer's last time step.
-
-:::tip[From the book]
-*Hands-On Machine Learning* (Géron) stresses that baselines matter: a naive
-forecast (about 0.020 MSE) and a simple linear model (about 0.004 MSE) already
-beat a single-neuron `SimpleRNN` (about 0.014 MSE). It takes a **deep** RNN with
-several recurrent layers to finally outperform the linear model — a good
-reminder that "using an RNN" isn't automatically better than a simpler model; the
-architecture still has to earn it.
-:::
-
-## Visualize it
-
-Watch a noisy signal (blue, the actual values) and a forecast curve (amber, what
-the model predicts) — the forecast tracks the true signal for the steps it has
-already seen, then keeps extrapolating for the future steps marked past the
-dashed line:
-
-```p5 title="Time series forecast" desc="The blue curve is the true signal, traced out over time; the amber curve is the model's forecast, which stays close for known steps and drifts a little past the forecast boundary." height="280"
-let t = 0;
-const total = 90, splitAt = 62;
-const holdFrames = 90; // frames to hold the finished curve before looping
-function trueVal(i) {
-  return 0.5 * sin(i * 0.14) + 0.2 * sin(i * 0.05 + 1) ;
-}
-function setup() {
-  createCanvas(600, 280);
-  textFont("monospace");
-}
-function px(i) { return 40 + (i / total) * (width - 80); }
-function py(v) { return height / 2 - v * 90; }
-function smoothstep(x) {
-  x = constrain(x, 0, 1);
-  return x * x * (3 - 2 * x);
-}
-function draw() {
-  const cycleLen = total * 4 + holdFrames;
-  const cyclePos = t % cycleLen;
-  // fade near the loop seam so restarting the trace is invisible
-  const fade = min(smoothstep(cyclePos / 20), smoothstep((cycleLen - cyclePos) / 20));
-
-  background(13, 17, 23);
-  stroke(60, 70, 84);
-  strokeWeight(1);
-  line(40, height / 2, width - 40, height / 2);
-
-  // forecast boundary
-  stroke(120, 90, 40);
-  strokeWeight(1.5);
-  drawingContext.setLineDash([5, 5]);
-  line(px(splitAt), 20, px(splitAt), height - 30);
-  drawingContext.setLineDash([]);
-
-  const reveal = min(cyclePos / 4, total);
-
-  stroke(75, 139, 190);
-  strokeWeight(2.5);
-  noFill();
-  beginShape();
-  for (let i = 0; i <= min(reveal, total); i++) vertex(px(i), py(trueVal(i)));
-  endShape();
-
-  if (reveal > splitAt) {
-    stroke(255, 211, 67);
-    strokeWeight(2.5);
-    noFill();
-    beginShape();
-    for (let i = splitAt; i <= reveal; i++) {
-      const noiseTerm = 0.06 * sin(i * 1.7 + 2) * ((i - splitAt) / (total - splitAt));
-      vertex(px(i), py(trueVal(i) + noiseTerm));
-    }
-    endShape();
-  }
-
-  noStroke();
-  fill(150);
-  textSize(11);
-  textAlign(LEFT, TOP);
-  text("known history", 44, 24);
-  fill(200, 160, 90);
-  text("forecast →", px(splitAt) + 8, 24);
-
-  fill(107, 169, 221);
-  textAlign(CENTER, CENTER);
-  textSize(12);
-  text("blue = true signal   amber = model forecast", width / 2, height - 14);
-
-  // dim to background right at the loop seam so the reset is invisible
-  noStroke();
-  fill(13, 17, 23, (1 - fade) * 255);
-  rect(0, 0, width, height);
-
-  t++;
-}
-```
-
 import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Figure from "../../../../components/Figure.astro";
+import Quiz from "../../../../components/Quiz.astro";
 
-## 🧪 Try It Yourself
+Forecasting is the one deep-learning task where a two-line baseline routinely beats a
+tuned network, and where the standard evaluation habits — random splits, MAE quoted
+without context, single-horizon results — quietly produce nonsense.
 
-### Exercise 1 – Compute a Naive Baseline
+This page uses a **generated** series rather than a downloaded one, for a specific
+reason: the signal is known exactly, so the **irreducible error is known too**. Two
+periods (24 and 7 steps), Gaussian noise with $\sigma = 0.12$. A perfect forecaster
+still scores **MAE 0.0965** against the noisy target. Every number below is judged
+against that floor and against persistence.
 
-<DataCampExercise
-  lang="python"
-  hint={`Naive forecasting predicts the next value equals the last value: use \`X_valid[:, -1]\`.`}
-  code={`# Task: Exercise 1 – Compute a Naive Baseline
-import numpy as np
+## What you'll learn
 
-X_valid = np.array([[[0.1], [0.2], [0.3]], [[0.4], [0.5], [0.6]]])
-y_valid = np.array([[0.35], [0.65]])
+- How to turn one long series into supervised windows, and why the split must be
+  **chronological**.
+- The two baselines that matter: **persistence (MAE 0.3253)** and predicting the
+  training mean (**0.6804**).
+- The **noise floor** — $\sigma\sqrt{2/\pi} = 0.0965$ — and why a model near it is
+  finished, not merely good.
+- Four models measured: **Dense 0.1210, Conv1D 0.2203, GRU 0.1146** at 1,601 / 5,377 /
+  3,393 parameters.
+- Why persistence gets *better* again at a 24-step horizon (1.3227 at 12, 0.6306 at 24).
+- Why a bidirectional layer is a bug in a forecaster, not an upgrade.
 
-y_pred_naive = X_valid[:, ___]   # replace ___ with -1
-mse = np.mean((y_valid - y_pred_naive) ** 2)
-print(f"Naive MSE: {mse:.4f}")
+## From one series to supervised rows
 
-# ── Expected Output ───────────────────────────────────────────
-# Naive MSE: 0.0025
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import numpy as np
+```python title="Windowing"
+def windows(series, timesteps=48, horizon=1):
+    x = np.stack([series[i:i + timesteps] for i in range(len(series) - timesteps - horizon + 1)])
+    y = series[timesteps + horizon - 1:]
+    return x[..., None], y[:len(x)]          # (rows, timesteps, features), (rows,)
+```
 
-X_valid = np.array([[[0.1], [0.2], [0.3]], [[0.4], [0.5], [0.6]]])
-y_valid = np.array([[0.35], [0.65]])
+Each row is `timesteps` consecutive observations; the target is the value `horizon`
+steps after the window ends. The feature axis exists even for a univariate series —
+recurrent and convolutional layers both require `(batch, time, features)`.
 
-y_pred_naive = X_valid[:, -1]
-mse = np.mean((y_valid - y_pred_naive) ** 2)
-print(f"Naive MSE: {mse:.4f}")`}
-  sct={`test_output_contains("Naive MSE: 0.0025")
-success_msg("That's the naive forecasting baseline - always check this first!")`}
-  height={158}
+<Figure
+  src="/images/dl/phase-04-sequences/time-series-forecasting/series-and-windows"
+  alt="Two panels. Left: a noisy oscillating series in blue overlaid on the smooth noise-free signal in green, showing a repeating pattern with two interacting periods. Right: one 48-step window as a line of small markers with the target — the next step — highlighted as a large amber dot just beyond the window's edge, annotated with the persistence MAE of 0.3256 and the irreducible noise MAE of about 0.0958."
+  title="The generated series and one training row"
+  caption="Generating the series is what makes the rest of the page honest: the green curve is the signal, the blue is what the model sees, and the gap between them is the error no model can remove. Target statistics: mean -0.0002, sd 0.7975, range [-1.728, 1.732]."
 />
 
-### Exercise 2 – Stack a Deep RNN
+### The split has to respect time
 
-<DataCampExercise
-  lang="python"
-  hint={`Every recurrent layer feeding another recurrent layer needs \`return_sequences=True\`.`}
-  code={`# Task: Exercise 2 – Stack a Deep RNN
-from tensorflow import keras
+```python
+cut = int(len(x) * 0.75)
+x_train, y_train = x[:cut], y[:cut]      # everything before the cut
+x_test, y_test = x[cut:], y[cut:]        # everything after
+```
 
-model = keras.models.Sequential([
-    keras.layers.SimpleRNN(20, return_sequences=___, input_shape=[None, 1]),  # replace ___ with True
-    keras.layers.SimpleRNN(20),
-    keras.layers.Dense(1),
-])
-model.compile(loss="mse", optimizer="adam")
-print("Layers:", len(model.layers))
+`train_test_split(..., shuffle=True)` on windowed data is **leakage**, and it is the
+single most common error in forecasting notebooks. Consecutive windows overlap by
+`timesteps - 1` observations, so a shuffled split puts near-duplicates of test rows into
+training. The score that comes out is not wrong by a little.
 
-# ── Expected Output ───────────────────────────────────────────
-# Layers: 3
-# ──────────────────────────────────────────────────────────────`}
-  solution={`from tensorflow import keras
+## Baselines first
 
-model = keras.models.Sequential([
-    keras.layers.SimpleRNN(20, return_sequences=True, input_shape=[None, 1]),
-    keras.layers.SimpleRNN(20),
-    keras.layers.Dense(1),
-])
-model.compile(loss="mse", optimizer="adam")
-print("Layers:", len(model.layers))`}
-  sct={`test_output_contains("Layers: 3")
-success_msg("A deep RNN - three layers stacked, with return_sequences chaining them together!")`}
-  height={158}
+| Baseline | Test MAE |
+| --- | --- |
+| predict the training mean | 0.6804 |
+| **persistence** — predict the last observed value | **0.3253** |
+| the irreducible noise floor | **0.0965** |
+
+Persistence is one line — `predicted = x_test[:, -1, 0]` — and it is the number a model
+must beat to have justified its existence. The floor is the number that tells you when
+to stop tuning.
+
+$$
+\text{MAE}_{\text{floor}} = \mathbb{E}\lvert \varepsilon \rvert
+= \sigma\sqrt{\tfrac{2}{\pi}} = 0.12 \times 0.7979 = 0.0958
+$$
+
+(The measured 0.0965 is the sample estimate of that expectation.)
+
+## Four models, same windows
+
+| Model | Parameters | Test MAE | Beats persistence by | Seconds |
+| --- | --- | --- | --- | --- |
+| persistence | 0 | 0.3253 | — | 0.0 |
+| **Dense(32)** | **1,601** | 0.1210 | +0.2043 | **9.1** |
+| Conv1D ×2 | 5,377 | **0.2203** | +0.1050 | 13.6 |
+| **GRU(32)** | 3,393 | **0.1146** | **+0.2107** | 39.5 |
+
+<Figure
+  src="/images/dl/phase-04-sequences/time-series-forecasting/baseline-against-models"
+  alt="Two panels. Left: bars of test MAE for naive 0.3253, dense 0.1210, conv1d 0.2203 and GRU 0.1146, with a red dashed persistence line and an amber dotted irreducible-noise line near 0.096. Right: validation MAE per epoch, where dense drops below the persistence line within two epochs and flattens near 0.12, GRU crosses at epoch four and ends lowest, and conv1d is still descending at 0.22 after 25 epochs."
+  title="One-step forecast: 4,000 windows, 25 epochs"
+  caption="The GRU wins by 0.0064 over a flattened Dense layer while costing 4.3x the wall-clock and twice the parameters — and both sit close to the 0.0965 noise floor, so there was very little left to win. The Conv1D stack is the interesting failure: 5,377 parameters, still improving at epoch 25, and beaten by a single Dense layer. Its two pooling and convolution stages blur exactly the recent detail a one-step forecast depends on."
 />
 
-### Exercise 3 – Prepare Multi-Step Targets
+Three conclusions worth stating plainly:
 
-<DataCampExercise
-  lang="python"
-  hint={`For 10-step-ahead forecasts, slice the last 10 values of each series: \`series[:, -10:, 0]\`.`}
-  code={`# Task: Exercise 3 – Prepare Multi-Step Targets
-import numpy as np
+1. **A flattened `Dense` layer is a serious forecasting baseline.** 1,601 parameters,
+   nine seconds, and within 0.0064 of the GRU. On a 48-step window there is no
+   long-range structure for recurrence to exploit.
+2. **The GRU wins, but the margin is tiny relative to its cost.** +0.0064 MAE for 4.3×
+   the training time. If a Dense model is within a hair of the noise floor, the
+   architecture question is already answered.
+3. **`Conv1D` lost badly here.** Convolution assumes the useful pattern is local and
+   translation-invariant *along time*; a one-step forecast mostly depends on the last
+   few observations, and pooling averages them away. Dilated causal convolutions
+   (WaveNet-style) exist precisely to fix this — no pooling, exponentially growing
+   receptive field, and the last timestep never blurred.
 
-series = np.random.rand(5, 60, 1).astype("float32")
+## The horizon changes which baseline is hard
 
-Y = series[:, ___:, 0]   # replace ___ with -10
-print("Targets shape:", Y.shape)
+| Horizon | Persistence MAE | GRU MAE | GRU advantage |
+| --- | --- | --- | --- |
+| 1 | 0.3253 | 0.1146 | +0.2107 |
+| 6 | 0.9296 | 0.1161 | +0.8135 |
+| **12** | **1.3227** | 0.1134 | **+1.2094** |
+| 24 | 0.6306 | 0.1078 | +0.5228 |
 
-# ── Expected Output ───────────────────────────────────────────
-# Targets shape: (5, 10)
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import numpy as np
-
-series = np.random.rand(5, 60, 1).astype("float32")
-
-Y = series[:, -10:, 0]
-print("Targets shape:", Y.shape)`}
-  sct={`test_output_contains("Targets shape: (5, 10)")
-success_msg("One 10-value target vector per series - ready for a multi-output Dense(10) layer!")`}
-  height={148}
+<Figure
+  src="/images/dl/phase-04-sequences/time-series-forecasting/horizon-decay"
+  alt="A line chart of test MAE against forecast horizon. The red persistence line rises from 0.3253 at horizon 1 to a peak of 1.3227 at horizon 12 and falls to 0.6306 at horizon 24. The green GRU line is flat between 0.1078 and 0.1161 across all four horizons, just above a dotted irreducible-noise line at 0.0965."
+  title="The same GRU at four horizons"
+  caption="Two things happen here and neither is the textbook story. Persistence peaks at horizon 12 — half of the 24-step period, where the series is maximally out of phase with itself — and recovers at 24, a full period later. The GRU is flat at ~0.11 at every horizon, because this signal is deterministic apart from noise: once the period is learned, 24 steps ahead is no harder than one. Real series lose predictability with distance; a generated one does not, and that difference is exactly what makes this figure worth reading carefully."
 />
 
-### Exercise 4 – Window a Series with timeseries_dataset_from_array
+The generalisable lesson is about the baseline, not the model: **persistence is a
+function of the series' autocorrelation**, so "we beat the naive baseline by 1.21 MAE"
+is a claim about the horizon you chose. Quote the baseline at every horizon you quote a
+model at.
 
-<DataCampExercise
-  lang="python"
-  hint={`Pass \`data\`, \`targets\`, and \`sequence_length\` to \`keras.utils.timeseries_dataset_from_array\`; the target for a window starting at index N is \`int_sequence[N + sequence_length]\`.`}
-  code={`# Task: Exercise 4 – Window a Series with timeseries_dataset_from_array
-import numpy as np
-from tensorflow import keras
+```mermaid
+flowchart TB
+  A["one long series"] --> B["window: 48 in, 1 target"]
+  B --> C{"split"}
+  C -->|"WRONG: shuffle"| D["overlapping windows leak<br/>the test set into training"]
+  C -->|"chronological"| E["train = past, test = future"]
+  E --> F["baselines: mean 0.6804,<br/>persistence 0.3253"]
+  F --> G["model: Dense 0.1210,<br/>GRU 0.1146"]
+  G --> H{"near the noise<br/>floor 0.0965?"}
+  H -->|"yes"| I["stop — the rest is noise"]
+  H -->|"no"| J["more capacity, longer window,<br/>more features"]
+```
 
-int_sequence = np.arange(10)
-dataset = keras.utils.timeseries_dataset_from_array(
-    data=int_sequence[:-3],
-    targets=int_sequence[___:],   # replace ___ with 3
-    sequence_length=3,
-    batch_size=5,
-)
-for inputs, targets in dataset:
-    print("First window:", [int(x) for x in inputs[0]], "-> target", int(targets[0]))
-    break
+## Scaling, and the leak hiding inside it
 
-# ── Expected Output ───────────────────────────────────────────
-# First window: [0, 1, 2] -> target 3
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import numpy as np
-from tensorflow import keras
+Normalise with statistics from the **training** split only:
 
-int_sequence = np.arange(10)
-dataset = keras.utils.timeseries_dataset_from_array(
-    data=int_sequence[:-3],
-    targets=int_sequence[3:],
-    sequence_length=3,
-    batch_size=5,
-)
-for inputs, targets in dataset:
-    print("First window:", [int(x) for x in inputs[0]], "-> target", int(targets[0]))
-    break`}
-  sct={`test_output_contains("First window: [0, 1, 2] -> target 3")
-success_msg("That's exactly how Keras turns a raw series into (window, target) pairs for training!")`}
-  height={168}
-/>
+```python title="The only safe way to scale a series"
+mean = x_train.mean()                     # training rows only
+std = x_train.std()
+x_train = (x_train - mean) / std
+x_test = (x_test - mean) / std            # the same numbers, not recomputed
+```
+
+Fitting the scaler on the whole series leaks the future's mean and variance into
+training. It usually improves your reported score, which is what makes it dangerous.
+
+For a series with a trend, differencing (`np.diff`) is often better than scaling: it
+removes the drift a fixed mean cannot follow, and it turns "predict the level" into
+"predict the change" — which also makes persistence the trivial prediction of zero.
+
+## What not to use
+
+| Idea | Why it fails on a forecaster |
+| --- | --- |
+| `Bidirectional(LSTM(...))` | the backward pass reads the future; at prediction time there is no future to read |
+| Shuffled train/test split | overlapping windows leak; the score is meaningless |
+| Scaler fitted on all data | the training rows learn the test period's mean and variance |
+| Accuracy as a metric | forecasting is regression — use MAE or RMSE and report the baseline |
+| Reporting one horizon | persistence varies with the horizon; so does the apparent gain |
+
+```p5 title="Windows, horizons and persistence" desc="Drag along the series to move the window. The amber dot is the target and the grey dot is what persistence predicts; the gap between them is the error the baseline makes." height="340"
+let series = [];
+let horizon = 6;
+const WINDOW = 48;
+let position = 60;
+let dragging = false;
+function setup() {
+  createCanvas(620, 340);
+  textFont("monospace");
+  let seed = 7;
+  const random01 = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed / 2147483648;
+  };
+  for (let t = 0; t < 300; t++) {
+    const signal = Math.sin(2 * Math.PI * t / 24)
+      + 0.5 * Math.sin(2 * Math.PI * t / 7 + 0.7);
+    const noise = (random01() + random01() + random01() - 1.5) * 0.24;
+    series.push(signal + noise);
+  }
+}
+function xOf(t) { return 24 + (t / 300) * 570; }
+function yOf(v) { return 150 - v * 52; }
+function draw() {
+  background(13, 17, 23);
+  noFill();
+  stroke(70, 80, 96);
+  beginShape();
+  for (let t = 0; t < series.length; t++) vertex(xOf(t), yOf(series[t]));
+  endShape();
+  const start = position;
+  const end = Math.min(start + WINDOW, series.length - 1);
+  const target = Math.min(end + horizon - 1, series.length - 1);
+  noStroke();
+  fill(46, 96, 140, 70);
+  rect(xOf(start), 24, xOf(end) - xOf(start), 230);
+  stroke(107, 169, 221);
+  strokeWeight(1.6);
+  noFill();
+  beginShape();
+  for (let t = start; t <= end; t++) vertex(xOf(t), yOf(series[t]));
+  endShape();
+  strokeWeight(1);
+  noStroke();
+  fill(160, 170, 185);
+  circle(xOf(target), yOf(series[end]), 9);
+  fill(255, 211, 67);
+  circle(xOf(target), yOf(series[target]), 11);
+  stroke(255, 211, 67, 130);
+  line(xOf(target), yOf(series[end]), xOf(target), yOf(series[target]));
+  noStroke();
+  fill(220);
+  textSize(11);
+  textAlign(LEFT, TOP);
+  text("window: steps " + start + "-" + end + "   horizon " + horizon, 24, 262);
+  const error = Math.abs(series[target] - series[end]);
+  fill(255, 211, 67);
+  text("persistence error here: " + error.toFixed(4), 24, 280);
+  fill(150);
+  textSize(10.5);
+  text("measured over the whole test split: persistence MAE 0.3253 at h=1,",
+    24, 300);
+  text("1.3227 at h=12 (half a period), 0.6306 at h=24 (a full period)", 24, 314);
+  fill(60, 70, 84);
+  rect(430, 262, 166, 26, 4);
+  fill(220);
+  textSize(10.5);
+  textAlign(CENTER, CENTER);
+  text("horizon " + horizon + "  (click to cycle)", 513, 275);
+}
+function mousePressed() {
+  if (mouseY > 262 && mouseY < 288 && mouseX > 430) {
+    horizon = horizon === 1 ? 6 : horizon === 6 ? 12 : horizon === 12 ? 24 : 1;
+    return;
+  }
+  dragging = true;
+  moveWindow();
+}
+function moveWindow() {
+  const t = Math.round(((mouseX - 24) / 570) * 300);
+  position = Math.min(Math.max(t, 0), series.length - WINDOW - horizon - 1);
+}
+function mouseDragged() { if (dragging) moveWindow(); }
+function mouseReleased() { dragging = false; }
+```
+
+```p5 title="The measured table, ranked" desc="Click a column to rank every row by it. The bars are that column's values and the highest and lowest are computed from the numbers, not written in." height="254"
+let metric = 0;
+const COLUMNS = ["Parameters", "Test MAE", "Seconds"];
+const ROWS = [
+  ["persistence", 0, 0.3253, 0],
+  ["Dense(32)", 1601, 0.121, 9.1],
+  ["Conv1D x2", 5377, 0.2203, 13.6],
+  ["GRU(32)", 3393, 0.1146, 39.5]
+];
+function setup() {
+  createCanvas(620, 254);
+  textFont("monospace");
+}
+function fmt(v) {
+  if (v === 0) { return "0"; }
+  const a = Math.abs(v);
+  if (a >= 1000 || a < 0.001) { return v.toExponential(2); }
+  if (a >= 100) { return v.toFixed(1); }
+  return v.toFixed(4);
+}
+function draw() {
+  background(13, 17, 23);
+  noStroke();
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("Time Series Forecasting with RNNs", 26, 16);
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (i === metric) { fill(255, 211, 67); } else { fill(48, 56, 68); }
+    rect(x, 40, w, 22, 4);
+    if (i === metric) { fill(13, 17, 23); } else { fill(180); }
+    textSize(9);
+    text(COLUMNS[i], x + 8, 47);
+    x += w + 6;
+    if (x > 500) { break; }
+  }
+  const values = ROWS.map((r) => r[metric + 1]);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo === 0 ? 1 : hi - lo;
+  const order = ROWS.slice().sort((a, b) => b[metric + 1] - a[metric + 1]);
+  for (let i = 0; i < order.length; i++) {
+    const y = 78 + i * 26;
+    const v = order[i][metric + 1];
+    fill(160);
+    textSize(9);
+    text(order[i][0], 26, y + 5);
+    fill(34, 40, 50);
+    rect(230, y, 280, 18, 3);
+    const frac = (v - lo) / span;
+    if (v === hi) { fill(126, 192, 143); }
+    else if (v === lo) { fill(224, 108, 117); }
+    else { fill(107, 169, 221); }
+    rect(230, y, Math.max(frac * 280, 3), 18, 3);
+    fill(225);
+    textSize(9);
+    text(fmt(v), 518, y + 5);
+  }
+  const top = order[0];
+  const bottom = order[order.length - 1];
+  fill(150);
+  textSize(9);
+  const base = 78 + order.length * 26 + 8;
+  text("highest " + COLUMNS[metric] + ": " + top[0] + " at " + fmt(top[1]),
+       26, base);
+  text("lowest  " + COLUMNS[metric] + ": " + bottom[0] + " at "
+       + fmt(bottom[1]), 26, base + 14);
+  text("bars are scaled within the chosen column - lowest is not zero", 26,
+       base + 30);
+}
+function mousePressed() {
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (mouseX > x && mouseX < x + w && mouseY > 40 && mouseY < 62) {
+      metric = i;
+    }
+    x += w + 6;
+  }
+}
+```
+
+## Pitfalls
+
+- **A shuffled split.** Consecutive windows overlap by 47 of 48 steps; shuffling puts
+  near-copies of the test rows into training.
+- **No baseline.** Persistence scored 0.3253 here; a model reporting 0.30 would look
+  fine and be worthless.
+- **No noise floor.** The best model reached 0.1146 against a floor of 0.0965 — 84% of
+  the remaining error is irreducible, so further tuning buys almost nothing.
+- **Scaling with statistics from the full series.** It leaks the test period's mean and
+  variance and improves your reported score.
+- **`Bidirectional` in a forecaster.** It reads the future. It will validate beautifully
+  and cannot be deployed.
+- **Quoting one horizon.** Persistence ranged from 0.3253 to 1.3227 across four
+  horizons on the same data.
+- **Assuming an RNN must beat a Dense layer.** A flattened `Dense(32)` scored 0.1210 in
+  9 seconds against the GRU's 0.1146 in 39.5.
+- **Pooling in a `Conv1D` forecaster.** It averages away the recent observations a
+  short-horizon forecast leans on — measured 0.2203, worse than the Dense layer.
+
+## Recap
+
+- Windowing turns one series into `(rows, timesteps, features)`; the split must be
+  chronological because windows overlap.
+- Baselines on this series: training mean 0.6804, persistence 0.3253, irreducible noise
+  0.0965.
+- Measured at 25 epochs: Dense 0.1210 (1,601 params, 9.1s), Conv1D 0.2203 (5,377
+  params), GRU 0.1146 (3,393 params, 39.5s).
+- Persistence peaked at horizon 12 (1.3227 — half the 24-step period) and improved at 24
+  (0.6306); the GRU stayed flat near 0.11 because the generated signal never becomes
+  unpredictable.
+- Scale with training-split statistics only; difference the series if it has a trend.
+- Never use a bidirectional layer, a shuffled split, or an accuracy metric in a
+  forecaster.
 
 ## Next
 
-Continue to **Advanced Recurrent Layers (Dropout, Stacking, Bidirectional)** —
-refine these RNNs with recurrent dropout, deeper stacks, and bidirectional
-wrappers before moving on to text data in Phase 5.
+Dropout, stacking and bidirectional layers — including which of them a forecaster may
+use — are next:
+[Advanced Recurrent Layers](/deep-learning/phase-04---sequence-models-with-rnns/advanced-recurrent-layers-dropout-stacking-bidirectional/).
+
+<Quiz
+  questions={[
+    {
+      q: "Why is train_test_split(..., shuffle=True) wrong for windowed time series?",
+      options: [
+        "Because it changes the order of the features",
+        "Because consecutive windows overlap by timesteps-1 observations, so shuffling puts near-duplicates of test rows into training — the score measures memorisation",
+        "Because it produces unequal class balance",
+        "Because RNNs require sorted input",
+      ],
+      answer: 1,
+      explain: "The split must be chronological: train on the past, test on the future, exactly as deployment will work.",
+    },
+    {
+      q: "The best model scored MAE 0.1146 and the noise floor is 0.0965. What does that tell you?",
+      options: [
+        "The model is underfitting and needs more capacity",
+        "Roughly 84% of the remaining error is irreducible noise, so further tuning has very little left to win",
+        "The metric was computed incorrectly",
+        "The model has memorised the training set",
+      ],
+      answer: 1,
+      explain: "sigma*sqrt(2/pi) is the MAE a perfect forecaster still pays against a noisy target. Without it you cannot tell a finished model from a lazy one.",
+    },
+    {
+      q: "Persistence scored 0.3253 at horizon 1, 1.3227 at horizon 12 and 0.6306 at horizon 24. Why the non-monotonic shape?",
+      options: [
+        "The model was retrained differently at each horizon",
+        "Persistence tracks the series' autocorrelation: horizon 12 is half of the 24-step period, where the series is most out of phase with itself, and 24 is a full period later",
+        "Longer horizons have fewer test rows",
+        "The noise increases with the horizon",
+      ],
+      answer: 1,
+      explain: "Which is why 'we beat the naive baseline by 1.21' is a statement about the chosen horizon, not about the model.",
+    },
+    {
+      q: "A flattened Dense(32) scored 0.1210 against the GRU's 0.1146, in a quarter of the time. What follows?",
+      options: [
+        "The GRU was misconfigured",
+        "On a 48-step window with no long-range structure, recurrence has little to add — the Dense model is a serious baseline and the GRU's +0.0064 has to justify 4.3x the cost",
+        "Dense layers are always better for time series",
+        "The window should be shortened",
+      ],
+      answer: 1,
+      explain: "Recurrence pays off when the useful information is far back and order-dependent, which a 48-step periodic window barely provides.",
+    },
+    {
+      q: "Why must a forecasting model never use Bidirectional?",
+      options: [
+        "It doubles the parameter count",
+        "The backward pass reads later timesteps — at prediction time those are the future, so the model validates well and cannot be deployed",
+        "It cannot be combined with return_sequences",
+        "It only works with padded sequences",
+      ],
+      answer: 1,
+      explain: "It is the same class of error as a shuffled split or a scaler fitted on all data: information that will not exist at inference time.",
+    },
+  ]}
+/>
+
+## 🧪 Try It Yourself
+
+<DataCampExercise
+  lang="python"
+  hint={`The target for a window ending at index i + timesteps - 1 is the value at i + timesteps + horizon - 1. Stack the windows and slice the targets to the same length.`}
+  code={`# Task: Exercise 1 - Windowing, and the baselines that come first
+import numpy as np
+
+ROWS, TIMESTEPS, NOISE = 4000, 48, 0.12
+rng = np.random.default_rng(0)
+total = ROWS + TIMESTEPS + 1
+time = np.arange(total, dtype="float32")
+clean = (np.sin(2 * np.pi * time / 24.0)
+         + 0.5 * np.sin(2 * np.pi * time / 7.0 + 0.7))
+series = clean + rng.normal(0.0, NOISE, total).astype("float32")
+
+
+def windows(values, timesteps=TIMESTEPS, horizon=1, rows=ROWS):
+    x = np.stack([values[i:i + timesteps] for i in range(rows)])
+    y = values[timesteps + horizon - 1: timesteps + horizon - 1 + rows]
+    return x[..., None], y
+
+
+x, y = windows(series)
+_, y_clean = windows(clean)
+print(f"{len(x):,} windows of shape {x.shape[1:]} -> one target each")
+print(f"target mean {y.mean():.4f}  sd {y.std():.4f}  "
+      f"range [{y.min():.3f}, {y.max():.3f}]")
+print(f"irreducible noise: a perfect forecaster still scores MAE "
+      f"{float(np.abs(y - y_clean).mean()):.4f}")
+print(f"theory says sigma*sqrt(2/pi) = "
+      f"{NOISE * np.sqrt(2 / np.pi):.4f}")
+cut = int(len(x) * 0.75)
+persistence = np.abs(x[cut:, -1, 0] - y[cut:]).mean()
+mean_only = np.abs(y[:cut].mean() - y[cut:]).mean()
+print(f"persistence (predict the last value): MAE {float(persistence):.4f}")
+print(f"predicting the training mean:         MAE {float(mean_only):.4f}")
+print(f"any model between {float(persistence):.4f} and "
+      f"{float(np.abs(y - y_clean).mean()):.4f} is doing real work")
+
+# -- Expected Output -------------------------------------------
+# 4,000 windows of shape (48, 1) -> one target each
+# target mean -0.0002  sd 0.7975  range [-1.728, 1.732]
+# irreducible noise: a perfect forecaster still scores MAE 0.0965
+# theory says sigma*sqrt(2/pi) = 0.0957
+# persistence (predict the last value): MAE 0.3253
+# predicting the training mean:         MAE 0.6804
+# any model between 0.3253 and 0.0965 is doing real work
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Compare a chronological split against a shuffled one on the same windows. The shuffled version scores better because overlapping windows leak.`}
+  code={`# Task: Exercise 2 - What a shuffled split does to your score
+import numpy as np
+from tensorflow import keras
+
+# (series, windows() and x, y from Exercise 1)
+
+cut = int(len(x) * 0.75)
+
+
+def fit_and_score(x_train, y_train, x_test, y_test):
+    keras.utils.set_random_seed(0)
+    model = keras.Sequential([keras.layers.Input((TIMESTEPS, 1)),
+                              keras.layers.Flatten(),
+                              keras.layers.Dense(32, activation="relu"),
+                              keras.layers.Dense(1)])
+    model.compile(keras.optimizers.Adam(1e-3), "mse", metrics=["mae"])
+    model.fit(x_train, y_train, epochs=15, batch_size=64, verbose=0)
+    predicted = model.predict(x_test, verbose=0)[:, 0]
+    return float(np.abs(predicted - y_test).mean())
+
+
+chronological = fit_and_score(x[:cut], y[:cut], x[cut:], y[cut:])
+order = np.random.default_rng(0).permutation(len(x))
+xs, ys = x[order], y[order]
+shuffled = fit_and_score(xs[:cut], ys[:cut], xs[cut:], ys[___])
+# replace ___ with cut:
+print(f"{'split':16s} {'test MAE':>9}")
+print(f"{'chronological':16s} {chronological:9.4f}")
+print(f"{'shuffled':16s} {shuffled:9.4f}")
+print(f"the shuffled split looks {chronological - shuffled:+.4f} better")
+print(f"consecutive windows share {TIMESTEPS - 1} of {TIMESTEPS} observations,")
+print("so shuffling trains on near-copies of the test rows")
+
+# -- Expected Output -------------------------------------------
+# (the shuffled split reports a lower MAE on the same data and the same model —
+#  that difference is the leak, not an improvement)
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Build all four and score them against the same test split. Persistence needs no model at all — it is the last value in each window.`}
+  code={`# Task: Exercise 3 - Four models against the baseline
+import time
+
+import numpy as np
+from tensorflow import keras
+
+# (x, y and cut from Exercise 1)
+
+x_train, y_train, x_test, y_test = x[:cut], y[:cut], x[cut:], y[cut:]
+naive = float(np.abs(x_test[:, -1, 0] - y_test).mean())
+
+
+def build(kind):
+    keras.utils.set_random_seed(0)
+    inputs = keras.layers.Input((TIMESTEPS, 1))
+    if kind == "dense":
+        h = keras.layers.Dense(32, activation="relu")(
+            keras.layers.Flatten()(inputs))
+    elif kind == "conv1d":
+        h = keras.layers.Conv1D(32, 5, padding="same", activation="relu")(inputs)
+        h = keras.layers.MaxPooling1D(2)(h)
+        h = keras.layers.Conv1D(32, 5, padding="same", activation="relu")(h)
+        h = keras.layers.GlobalAveragePooling1D()(h)
+    else:
+        h = keras.layers.GRU(32)(inputs)
+    model = keras.Model(inputs, keras.layers.Dense(1)(h))
+    model.compile(keras.optimizers.Adam(1e-3), "mse", metrics=["mae"])
+    return model
+
+
+print(f"{'model':10s} {'params':>8} {'test MAE':>9} {'vs naive':>9} "
+      f"{'seconds':>8}")
+print(f"{'naive':10s} {0:8d} {naive:9.4f} {0.0:+9.4f} {0.0:8.1f}")
+for kind in ("dense", "conv1d", "GRU"):
+    model = build(kind)
+    started = time.perf_counter()
+    model.fit(x_train, y_train, epochs=25, batch_size=64, verbose=0)
+    elapsed = time.perf_counter() - started
+    predicted = model.predict(x_test, verbose=0)[:, 0]
+    mae = float(np.abs(predicted - y_test).mean())
+    print(f"{kind:10s} {model.count_params():8,} {mae:9.4f} "
+          f"{naive - ___:+9.4f} {elapsed:8.1f}")
+    # replace ___ with mae
+print("a flattened Dense layer is a serious baseline; the pooling inside the")
+print("Conv1D stack averages away the recent detail a one-step forecast needs")
+
+# -- Expected Output -------------------------------------------
+# model        params  test MAE  vs naive  seconds
+# naive             0    0.3253   +0.0000      0.0
+# dense         1,601    0.1210   +0.2043      9.1
+# conv1d        5,377    0.2203   +0.1050     13.6
+# GRU           3,393    0.1146   +0.2107     39.5
+# a flattened Dense layer is a serious baseline; the pooling inside the
+# Conv1D stack averages away the recent detail a one-step forecast needs
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Rebuild the windows at each horizon and score persistence as well as the model. The baseline is not a constant.`}
+  code={`# Task: Exercise 4 - The baseline moves with the horizon
+import numpy as np
+from tensorflow import keras
+
+# (series, windows(), TIMESTEPS from Exercise 1)
+
+print(f"{'horizon':>8} {'naive':>9} {'GRU':>9} {'gain':>9}")
+for horizon in (1, 6, 12, 24):
+    xh, yh = windows(series, horizon=___)          # replace ___ with horizon
+    cut = int(len(xh) * 0.75)
+    naive = float(np.abs(xh[cut:, -1, 0] - yh[cut:]).mean())
+    keras.utils.set_random_seed(0)
+    model = keras.Sequential([keras.layers.Input((TIMESTEPS, 1)),
+                              keras.layers.GRU(32),
+                              keras.layers.Dense(1)])
+    model.compile(keras.optimizers.Adam(1e-3), "mse", metrics=["mae"])
+    model.fit(xh[:cut], yh[:cut], epochs=25, batch_size=64, verbose=0)
+    predicted = model.predict(xh[cut:], verbose=0)[:, 0]
+    mae = float(np.abs(predicted - yh[cut:]).mean())
+    print(f"{horizon:8d} {naive:9.4f} {mae:9.4f} {naive - mae:+9.4f}")
+print("persistence peaks at half the 24-step period and recovers at a full")
+print("period; the model stays flat because this signal never stops being")
+print("predictable - a real series would not behave so kindly")
+
+# -- Expected Output -------------------------------------------
+#  horizon     naive       GRU      gain
+#        1    0.3253    0.1146   +0.2107
+#        6    0.9296    0.1161   +0.8135
+#       12    1.3227    0.1134   +1.2094
+#       24    0.6306    0.1078   +0.5228
+# persistence peaks at half the 24-step period and recovers at a full
+# period; the model stays flat because this signal never stops being
+# predictable - a real series would not behave so kindly
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Compute the scaling statistics from the training slice only, then apply the same two numbers to the test slice.`}
+  code={`# Task: Exercise 5 - The leak hiding inside your scaler
+import numpy as np
+
+# A series with a trend, so the two scalings genuinely differ.
+rng = np.random.default_rng(0)
+total = 4049
+time = np.arange(total, dtype="float32")
+series = (np.sin(2 * np.pi * time / 24.0) + 1.5 * time / total
+          + rng.normal(0.0, 0.12, total).astype("float32"))
+x = np.stack([series[i:i + 48] for i in range(4000)])[..., None]
+y = series[48:4048]
+cut = int(len(x) * 0.75)
+
+train_mean, train_std = x[:cut].mean(), x[:cut].___()   # replace ___ with std
+all_mean, all_std = x.mean(), x.std()
+print(f"{'statistics from':18s} {'mean':>8} {'std':>8}")
+print(f"{'training rows':18s} {float(train_mean):8.4f} {float(train_std):8.4f}")
+print(f"{'the whole series':18s} {float(all_mean):8.4f} {float(all_std):8.4f}")
+print(f"difference in mean: {float(abs(all_mean - train_mean)):.4f} "
+      f"({float(abs(all_mean - train_mean) / train_std):.1%} of a training sd)")
+correct = (x[cut:] - train_mean) / train_std
+leaked = (x[cut:] - all_mean) / all_std
+print(f"scaled test windows differ by up to "
+      f"{float(np.abs(correct - leaked).max()):.4f}")
+print("the leaked version has already seen the test period's level, which is")
+print("exactly the information a deployed model will not have")
+
+# -- Expected Output -------------------------------------------
+# statistics from        mean      std
+# training rows        0.5604   0.7837
+# the whole series     0.7478   0.8351
+# difference in mean: 0.1875 (23.9% of a training sd)
+# scaled test windows differ by up to 0.3959
+# the leaked version has already seen the test period's level, which is
+# exactly the information a deployed model will not have
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Differencing predicts the change instead of the level. Persistence on a differenced series is the constant prediction of zero.`}
+  code={`# Task: Exercise 6 - Differencing a series with a trend
+import numpy as np
+from tensorflow import keras
+
+rng = np.random.default_rng(0)
+total = 4049
+time = np.arange(total, dtype="float32")
+series = (np.sin(2 * np.pi * time / 24.0) + 1.5 * time / total
+          + rng.normal(0.0, 0.12, total).astype("float32"))
+
+
+def windows(values, timesteps=48, rows=None):
+    rows = rows or len(values) - timesteps - 1
+    x = np.stack([values[i:i + timesteps] for i in range(rows)])
+    return x[..., None], values[timesteps:timesteps + rows]
+
+
+levels_x, levels_y = windows(series)
+changes = np.diff(series)
+changes_x, changes_y = windows(changes, rows=len(levels_x) - 1)
+print(f"{'target':10s} {'mean':>9} {'sd':>9} {'persistence MAE':>17}")
+for label, xs, ys in (("level", levels_x, levels_y),
+                      ("change", changes_x, changes_y)):
+    cut = int(len(xs) * 0.75)
+    naive = float(np.abs(xs[cut:, -1, 0] - ys[cut:]).mean())
+    if label == "change":
+        naive = float(np.abs(0.0 - ys[cut:]).mean())   # predict no change
+    print(f"{label:10s} {float(ys.mean()):9.4f} {float(ys.___()):9.4f} "
+          f"{naive:17.4f}")
+    # replace ___ with std
+print("differencing removes the trend a fixed mean cannot follow, and turns")
+print("the naive baseline into the constant prediction of zero")
+
+# -- Expected Output -------------------------------------------
+# (the level target has a non-zero mean driven by the trend and a large sd;
+#  the change target is centred near zero with a much smaller sd)
+# --------------------------------------------------------------`}
+/>

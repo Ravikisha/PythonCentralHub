@@ -1,462 +1,824 @@
 ---
 title: Loading & Preprocessing Data with tf.data
-description: Build efficient input pipelines with tf.data - chaining transforms, shuffling, batching, TFRecord, and prefetching.
+description: Every pipeline option timed - caching gave 81x, parallel mapping 3.93x, and tf.data already applies most of that rewrite for you before you ask.
 sidebar:
   order: 471
 ---
 
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Figure from "../../../../components/Figure.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+Input-pipeline advice usually arrives as a list of methods to chain in a particular order:
+`map`, `cache`, `shuffle`, `batch`, `prefetch`. Every item on that list is a throughput claim,
+and throughput is measurable, so this page times each one instead of repeating the list.
+
+The measurements use a **deliberately slow** map function — four average-pooling passes plus
+noise per image. That choice matters: on a pipeline whose per-sample work is trivial, every
+option looks identical and the page would teach nothing.
+
+| Pipeline | Rewrites **off** | Speed-up | Rewrites **on** (default) | Speed-up |
+| --- | --- | --- | --- | --- |
+| `map`, `batch` | 4,302/s | 1.00× | **15,177/s** | **3.53×** |
+| `+ num_parallel_calls` | 16,895/s | 3.93× | 16,703/s | 3.88× |
+| `+ prefetch` | 18,121/s | 4.21× | 17,904/s | 4.16× |
+| `+ cache` (2nd epoch) | **348,547/s** | **81.01×** | 359,874/s | 83.64× |
+
+The second column pair is the surprise. **tf.data already rewrote the plain `map` into a parallel
+one** before being asked, which is why adding `num_parallel_calls` measures 3.88× against a
+default that was already at 3.53×. The advice is not wrong — it is mostly already applied.
+
 ## What you'll learn
 
-- what a `tf.data.Dataset` is, and how transformation methods chain together
-- how to shuffle, repeat, batch, and preprocess data on the fly with `map()`
-- why reading from many files and interleaving them beats reading one file at a time
-- how to store large datasets efficiently using the **TFRecord** format
-- why `prefetch()` is the one line that keeps your GPU from sitting idle
+- What each pipeline option is worth on this machine, and which ones tf.data applies for you.
+- Why `cache` is in a completely different league (81×) from everything else.
+- What `prefetch` actually fixes, measured as time spent waiting rather than as throughput.
+- Why the batch-size sweep came out **flat**, against the usual expectation.
 
-## Why not just load a NumPy array?
+## The graph rewrites you did not ask for
 
-Every dataset so far in this module fit comfortably in RAM. Real datasets — millions
-of images, gigabytes of logs — don't. The **Data API** (`tf.data`) solves this by
-letting you describe a pipeline instead of a fixed array: "read from these files, skip
-the header, parse each line, shuffle, batch, and get the next batch ready while the
-GPU is still busy with the current one." TensorFlow handles the multithreading,
-queuing, and memory management for you.
-
-## The core idea: chaining transformations
-
-A `tf.data.Dataset` represents a sequence of items. Every transformation method
-(`.map()`, `.batch()`, `.shuffle()`, `.filter()`, `.repeat()`, ...) returns a **new**
-dataset — it never modifies the original — so you chain them together:
-
-```python title="Chaining dataset transformations" showLineNumbers{1}
-import tensorflow as tf
-
-X = tf.range(10)
-dataset = tf.data.Dataset.from_tensor_slices(X)
-
-# repeat the 10 items 3 times, then group them into batches of 7
-dataset = dataset.repeat(3).batch(7)
-
-for item in dataset:
-    print(item.numpy())
-
-# [0 1 2 3 4 5 6]
-# [7 8 9 0 1 2 3]
-# [4 5 6 7 8 9 0]
-# [1 2 3 4 5 6 7]
-# [8 9]
+```python title="Turning the automatic optimisations off, to see what they were doing"
+options = tf.data.Options()
+options.experimental_optimization.map_parallelization = False
+options.experimental_optimization.map_and_batch_fusion = False
+options.autotune.enabled = False
+pipeline = pipeline.with_options(options)
 ```
 
-`repeat()` with no argument repeats forever — the code that iterates decides when to
-stop. `batch()` outputs a smaller final batch unless you pass `drop_remainder=True`.
+tf.data compiles your pipeline into a graph and rewrites it. A stateless `map` becomes a parallel
+map; a `map` followed by a `batch` may be fused into one operation. Those rewrites are on by
+default, and they account for the jump from 4,302/s to 15,177/s in the table above without a
+single line of user code.
 
-Use `.map()` to apply preprocessing to every item (pass `num_parallel_calls` to
-spawn multiple threads for CPU-heavy work like resizing images), and `.filter()` to
-drop items you don't want:
+This has a practical consequence: **benchmarking a pipeline option on modern tf.data usually
+measures nothing**, because the runtime already did it. To find out what an option is worth you
+have to switch the rewrites off, which is what the first column pair does.
 
-```python title="map() and filter()" showLineNumbers{1}
-dataset = tf.data.Dataset.range(10)
-dataset = dataset.map(lambda x: x * 2, num_parallel_calls=tf.data.AUTOTUNE)
-dataset = dataset.filter(lambda x: x < 10)
+<Figure
+  src="/images/dl/phase-08-scaling/tf-data/options"
+  alt="Left: paired horizontal bars on a log axis comparing samples per second with graph rewrites off and on, for four pipelines. The plain map differs hugely (4,302 against 15,177) while the later pipelines nearly coincide. Right: speed-up against the unoptimised baseline for both settings, with the two lines converging after the parallel map is added and both jumping to roughly 80x at cache."
+  title="4,000 MNIST images through a deliberately expensive map"
+  caption="The two lines converge as soon as num_parallel_calls is set explicitly, because at that point the user has asked for what the rewrite was already doing. The gap on the first row — 3.53x — is the value tf.data adds silently. The last row dwarfs everything: caching a computed epoch is 81x, because the second pass does no work at all."
+/>
 
-print(list(dataset.as_numpy_iterator()))
-# [0, 2, 4, 6, 8]
+## Cache is not in the same category
+
+Everything except `cache` is about **overlapping** work. Caching removes the work entirely: on the
+second epoch the expensive map has already run, and the pipeline is only replaying arrays from
+memory. 348,547 samples per second is not a faster pipeline; it is the absence of a pipeline.
+
+Two conditions make it safe, and both are easy to get wrong:
+
+- **The data must fit.** `cache()` with no argument holds everything in RAM. `cache("path")`
+  spills to disk, which is slower but survives a dataset larger than memory.
+- **The cached step must be deterministic.** Caching *after* random augmentation freezes one
+  augmentation per sample forever — the model then sees the same "random" crops every epoch,
+  which quietly removes the regularisation you were paying for.
+
+```python title="Where cache goes relative to augmentation"
+# Right: deterministic work cached, randomness applied fresh each epoch.
+pipeline = (raw.map(decode_and_resize, num_parallel_calls=AUTOTUNE)
+               .cache()
+               .map(random_augment, num_parallel_calls=AUTOTUNE)
+               .batch(64).prefetch(AUTOTUNE))
 ```
 
-## Shuffling
+That the numbers here were timed on the **second** pass is also deliberate. The first pass has to
+do the work before there is anything to cache, so timing it would report the cost and hide the
+benefit.
 
-Gradient Descent works best when training instances are independent and identically
-distributed, so `shuffle()` fills a buffer with items from the source dataset and
-pulls out a random one every time it's asked for an item, refilling from the source
-as it goes:
+## Prefetch, measured properly
 
-```python title="Shuffling with a buffer" showLineNumbers{1}
-dataset = tf.data.Dataset.range(10).repeat(3)
-dataset = dataset.shuffle(buffer_size=5, seed=42).batch(7)
+Throughput is the wrong test for `prefetch`. In the table above it contributes 4.21× against the
+parallel map's 3.93× — barely anything — because when nothing is consuming the data there is
+nothing to overlap with.
 
-for item in dataset:
-    print(item.numpy())
-```
+The right test simulates a training step and measures how long the consumer spends **waiting**:
 
-The buffer must be large enough to shuffle effectively — but it doesn't need to
-exceed your dataset's size. For datasets too big to shuffle well in memory, split the
-data across many files, read several of them at once with `interleave()`, and layer a
-`shuffle()` buffer on top of that.
+<Figure
+  src="/images/dl/phase-08-scaling/tf-data/starvation"
+  alt="Two stacked horizontal bars, one per pipeline. Each shows time spent in the training step in green and time waiting for the next batch in red. Without prefetch, 24.8% of the epoch is spent waiting; with prefetch it falls to 18.3%, with the total dropping slightly from 0.25s to 0.24s."
+  title="A 3 ms busy-wait standing in for the training step"
+  caption="The step is a busy-wait rather than a sleep, so it cannot overlap by accident the way a sleeping thread would. Prefetch cut waiting from 24.8% of the epoch to 18.3% — real, and much smaller than the usual telling suggests, because the parallel map was already running ahead of the consumer. The remaining wait is the first batch, which nothing can overlap."
+/>
 
-## Reading and interleaving many files
-
-Real pipelines usually read from **many files at once**, cycling through them so
-records from different files get interleaved instead of arriving in file order:
-
-```python title="Interleaving multiple CSV files" showLineNumbers{1}
-train_filepaths = ["data/housing_00.csv", "data/housing_01.csv", "data/housing_02.csv"]
-
-filepath_dataset = tf.data.Dataset.list_files(train_filepaths, seed=42)
-
-n_readers = 5
-dataset = filepath_dataset.interleave(
-    lambda filepath: tf.data.TextLineDataset(filepath).skip(1),  # skip header row
-    cycle_length=n_readers,
-    num_parallel_calls=tf.data.AUTOTUNE,
-)
-```
-
-## Putting it together: a reusable CSV pipeline
-
-```python title="A full csv_reader_dataset() pipeline" showLineNumbers{1}
-import tensorflow as tf
-
-n_inputs = 8  # number of feature columns
-
-def preprocess(line, X_mean, X_std):
-    defs = [0.0] * n_inputs + [tf.constant([], dtype=tf.float32)]
-    fields = tf.io.decode_csv(line, record_defaults=defs)
-    x = tf.stack(fields[:-1])
-    y = tf.stack(fields[-1:])
-    return (x - X_mean) / X_std, y
-
-def csv_reader_dataset(
-    filepaths, X_mean, X_std, repeat=1, n_readers=5,
-    shuffle_buffer_size=10_000, n_parse_threads=5, batch_size=32,
-):
-    dataset = tf.data.Dataset.list_files(filepaths)
-    dataset = dataset.interleave(
-        lambda fp: tf.data.TextLineDataset(fp).skip(1),
-        cycle_length=n_readers,
-        num_parallel_calls=tf.data.AUTOTUNE,
-    )
-    dataset = dataset.map(
-        lambda line: preprocess(line, X_mean, X_std),
-        num_parallel_calls=n_parse_threads,
-    )
-    dataset = dataset.shuffle(shuffle_buffer_size).repeat(repeat)
-    return dataset.batch(batch_size).prefetch(1)
-
-# train_set = csv_reader_dataset(train_filepaths, X_mean, X_std)
-# model.fit(train_set, epochs=10, validation_data=valid_set)
-```
-
-Notice the pipeline order: read → preprocess → shuffle → repeat → **batch** →
-**prefetch**. If the whole preprocessed dataset fits in RAM, insert `.cache()` right
-after preprocessing (before shuffling) so each instance is only parsed once per run,
-not once per epoch.
-
-## The TFRecord format
-
-CSV is simple but not very efficient, and it doesn't handle complex data like images
-well. **TFRecord** is TensorFlow's own binary format: a flat sequence of records,
-usually serialized `Example` protocol buffers.
-
-```python title="Writing and reading a TFRecord file" showLineNumbers{1}
-import tensorflow as tf
-
-# Write a couple of raw records
-with tf.io.TFRecordWriter("my_data.tfrecord") as f:
-    f.write(b"This is the first record")
-    f.write(b"And this is the second record")
-
-# Read them back
-dataset = tf.data.TFRecordDataset(["my_data.tfrecord"])
-for item in dataset:
-    print(item.numpy())
-```
-
-In practice you serialize structured data using the `Example` protobuf, one per
-instance, with named `float`, `int64`, or `bytes` features:
-
-```python title="Serializing an Example protobuf" showLineNumbers{1}
-from tensorflow.train import BytesList, FloatList, Int64List
-from tensorflow.train import Feature, Features, Example
-import tensorflow as tf
-
-person_example = Example(
-    features=Features(
-        feature={
-            "name": Feature(bytes_list=BytesList(value=[b"Alice"])),
-            "id": Feature(int64_list=Int64List(value=[123])),
-            "emails": Feature(bytes_list=BytesList(value=[b"a@b.com", b"c@d.com"])),
-        }
-    )
-)
-
-with tf.io.TFRecordWriter("my_contacts.tfrecord") as f:
-    f.write(person_example.SerializeToString())
-
-# Parsing it back requires a feature description
-feature_description = {
-    "name": tf.io.FixedLenFeature([], tf.string, default_value=""),
-    "id": tf.io.FixedLenFeature([], tf.int64, default_value=0),
-    "emails": tf.io.VarLenFeature(tf.string),
-}
-
-for serialized in tf.data.TFRecordDataset(["my_contacts.tfrecord"]):
-    parsed = tf.io.parse_single_example(serialized, feature_description)
-    print(parsed["name"].numpy(), tf.sparse.to_dense(parsed["emails"]).numpy())
-```
-
-Set `compression_type="GZIP"` on both `TFRecordOptions` (when writing) and
-`TFRecordDataset` (when reading) if the files travel over a slow network.
-
-## Prefetching: the one line that matters most
+`prefetch` does not make loading faster. It makes loading happen **while the previous batch is
+being trained on**. The measurement to watch is the share of wall-clock the consumer spends
+blocked, and here that share was already low before prefetch was added.
 
 ```mermaid
 flowchart LR
-  subgraph "Without prefetch"
-    A1["CPU: load batch 1"] --> A2["GPU: train batch 1"] --> A3["CPU: load batch 2"] --> A4["GPU: train batch 2"]
-  end
+  R["raw samples"] --> M["map: the expensive part"]
+  M --> C["cache: skip it entirely<br/>on later epochs (81x)"]
+  C --> S["shuffle"]
+  S --> B["batch"]
+  B --> P["prefetch: overlap with<br/>the training step"]
+  P --> T["training step"]
+  M -.->|"parallel map, 3.93x"| W["8 workers on 8 cores"]
+  T -.->|"24.8% waiting -> 18.3%"| Q["is the consumer starved?"]
 ```
 
-```mermaid
-flowchart LR
-  subgraph "With prefetch(1)"
-    B1["CPU: load batch 1"] --> B2["GPU: train batch 1"]
-    B1 --> C1["CPU: load batch 2 (in parallel)"]
-    B2 --> C2["GPU: train batch 2"]
-    C1 --> C2
-    C1 --> D1["CPU: load batch 3 (in parallel)"]
-  end
-```
+## Parallelism, and where AUTOTUNE landed
 
-Calling `.prefetch(1)` at the end of a pipeline tells `tf.data` to always try to have
-the **next** batch ready before it's needed. While the GPU trains on the current
-batch, the CPU is already loading and preprocessing the next one in a background
-thread — so the GPU (usually the most expensive, most limited resource) is almost
-never idle.
+<Figure
+  src="/images/dl/phase-08-scaling/tf-data/batch-and-parallelism"
+  alt="Left: samples per second against batch size from 16 to 256, essentially flat between 16,448 and 17,197. Right: samples per second against the number of parallel map calls, rising from 4,511 at one worker to 16,701 at eight, with a dashed line marking AUTOTUNE at 14,641."
+  title="This machine has 8 logical cores"
+  caption="The parallelism curve is the clean result: 4,511 samples per second on one worker rising to 16,701 on eight, a 3.7x gain on 8 cores. AUTOTUNE landed at 14,641 — below the best explicit setting in this run, which is worth knowing: it adapts at run time and a short single-epoch measurement does not give it long to converge. The batch-size panel is flat, which is the honest result rather than a broken measurement."
+/>
 
-:::tip[From the book]
-Géron calls out `prefetch(1)` as "important for performance" even though it looks
-like a throwaway last line in `csv_reader_dataset()`. Combined with
-`num_parallel_calls` on `interleave()` and `map()`, it lets the CPU stay one batch
-ahead of the GPU at all times — so, as the book puts it, "the GPU will be almost 100%
-utilized... and training will run much faster." If your dataset fits in RAM, adding
-`.cache()` right after preprocessing (and before shuffling) means each instance is
-read and preprocessed only once total, instead of once per epoch.
-:::
+| Workers | Samples/s |
+| --- | --- |
+| 1 | 4,511 |
+| 2 | 8,050 |
+| 4 | 11,933 |
+| **8** | **16,701** |
+| AUTOTUNE | 14,641 |
 
-## Using a dataset with tf.keras
+Scaling from 1 to 8 workers gave 3.7× on 8 logical cores — close to linear until the last
+doubling, where the cores are also running the main thread and TensorFlow's own thread pools.
 
-Once you have a pipeline, pass it straight to `fit()`, `evaluate()`, or `predict()`
-instead of separate `X`/`y` arrays — `tf.keras` understands `tf.data.Dataset` objects
-natively:
+**AUTOTUNE came in below the best fixed setting here.** That is not a reason to abandon it: it
+tunes at run time across a whole training job, and these measurements are single passes over
+4,000 samples. But it is a reason to distrust "AUTOTUNE is always optimal" and to measure if the
+input pipeline is your bottleneck.
 
-```python title="Training with a tf.data pipeline" showLineNumbers{1}
-# train_set = csv_reader_dataset(train_filepaths, X_mean, X_std)
-# valid_set = csv_reader_dataset(valid_filepaths, X_mean, X_std)
-#
-# model = keras.models.Sequential([...])
-# model.compile(loss="mse", optimizer="adam")
-# history = model.fit(train_set, epochs=10, validation_data=valid_set)
-```
+## The batch-size result
 
-## Letting TensorFlow pick the buffer size
+| Batch size | 16 | 32 | 64 | 128 | 256 |
+| --- | --- | --- | --- | --- | --- |
+| Samples/s | 16,840 | 17,197 | 16,699 | 16,448 | 16,876 |
 
-Every `num_parallel_calls` and `prefetch()` example so far uses a hand-picked number.
-If you're not sure what to pick, pass `tf.data.AUTOTUNE` instead of a fixed integer —
-TensorFlow tunes the value dynamically at runtime, based on the resources actually
-available:
+Flat, within noise, across a 16× range. Batching amortises per-batch overhead, and on this
+pipeline that overhead is negligible next to the map — so there is nothing to amortise.
 
-```python title="Letting TensorFlow tune prefetch and parallelism automatically" showLineNumbers{1}
-dataset = dataset.map(preprocess, num_parallel_calls=tf.data.AUTOTUNE)
-dataset = dataset.prefetch(tf.data.AUTOTUNE)
-```
+This is worth stating because "use a bigger batch for throughput" is common advice. It is about
+the *training step*, where a bigger batch means better hardware utilisation, not about the input
+pipeline. Measuring the two separately is what keeps the claims straight.
 
-:::tip[From the book]
-Chollet's advice applies just as much here as it does when training on multiple GPUs
-or a TPU: always feed `fit()` a `tf.data.Dataset` rather than raw NumPy arrays when
-performance matters, and always call `.prefetch()` as the last step of the pipeline
-— `tf.data.AUTOTUNE` is the one-line way to stop guessing at the right buffer size.
-:::
-
-## Visualize it
-
-Watch the CPU and GPU work in lockstep once prefetching kicks in — the CPU is always
-one batch ahead, so the GPU never has to wait:
-
-```p5 title="Prefetching: CPU stays one batch ahead of the GPU" desc="A queue fills with batches prepared by the CPU while the GPU consumes one batch at a time; with prefetching the GPU rarely stalls." height="260"
-let queue = [];
-let gpuBusyUntil = 0;
-let cpuBusyUntil = 0;
-let t = 0;
-let trained = 0, stalls = 0;
-const CPU_TIME = 55, GPU_TIME = 40, MAX_QUEUE = 3;
-function reset() {
-  queue = [];
-  gpuBusyUntil = 0;
-  cpuBusyUntil = 0;
-  t = 0;
-  trained = 0;
-  stalls = 0;
-}
+```p5 title="Serial against overlapped" desc="Drag the loading time. The top track loads then trains, one after the other; the bottom track loads the next batch while training on the current one." height="360"
+let loadMs = 4.0;
+const STEP_MS = 3.0;
+const BATCHES = 6;
 function setup() {
-  createCanvas(600, 260);
+  createCanvas(620, 360);
   textFont("monospace");
-  textAlign(CENTER, CENTER);
-  reset();
 }
 function draw() {
   background(13, 17, 23);
-  t++;
-
-  if (t >= cpuBusyUntil && queue.length < MAX_QUEUE) {
-    queue.push(t);
-    cpuBusyUntil = t + CPU_TIME;
-  }
-  let stalled = false;
-  if (t >= gpuBusyUntil) {
-    if (queue.length > 0) {
-      queue.shift();
-      gpuBusyUntil = t + GPU_TIME;
-      trained++;
-    } else {
-      stalled = true;
-      stalls++;
-    }
-  }
-
+  const scale = 34;
+  const left = 60;
   noStroke();
-  fill(180);
-  textSize(13);
-  text("CPU (prepares batches)", 150, 30);
-  text("GPU (trains on batches)", 450, 30);
-
-  fill(75, 139, 190);
-  rect(90, 55, 120, 26, 4);
-  fill(255);
-  textSize(11);
-  text(t < cpuBusyUntil ? "preparing batch..." : "idle", 150, 68);
-
-  fill(24, 34, 44);
-  stroke(90);
-  strokeWeight(1);
-  rect(230, 50, 140, 36, 4);
-  noStroke();
-  fill(255, 211, 67);
-  for (let i = 0; i < queue.length; i++) {
-    rect(238 + i * 40, 58, 32, 20, 3);
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("six batches, " + loadMs.toFixed(1) + " ms to load, "
+    + STEP_MS.toFixed(1) + " ms to train", 30, 20);
+  // Serial: load, step, load, step...
+  let x = left;
+  const serialY = 90;
+  for (let i = 0; i < BATCHES; i++) {
+    fill(107, 169, 221);
+    rect(x, serialY, loadMs * scale, 26, 3);
+    x += loadMs * scale;
+    fill(126, 192, 143);
+    rect(x, serialY, STEP_MS * scale, 26, 3);
+    x += STEP_MS * scale;
   }
+  const serialTotal = BATCHES * (loadMs + STEP_MS);
+  // Overlapped: the loader runs ahead.
+  const overY = 190;
+  const slowest = Math.max(loadMs, STEP_MS);
+  for (let i = 0; i < BATCHES; i++) {
+    fill(107, 169, 221, 150);
+    rect(left + i * slowest * scale, overY - 30, loadMs * scale, 26, 3);
+    fill(126, 192, 143);
+    rect(left + min(loadMs, STEP_MS) * scale + i * slowest * scale, overY,
+      STEP_MS * scale, 26, 3);
+  }
+  const overTotal = BATCHES * slowest + Math.min(loadMs, STEP_MS);
   fill(150);
   textSize(10);
-  text("prefetch queue (" + queue.length + "/" + MAX_QUEUE + ")", 300, 100);
-
-  fill(stalled ? color(200, 90, 90) : color(120, 200, 120));
-  rect(410, 55, 120, 26, 4);
-  fill(255);
-  textSize(11);
-  text(stalled ? "STALLED (waiting)" : "training batch...", 470, 68);
-
+  textAlign(RIGHT, CENTER);
+  text("serial", left - 8, serialY + 13);
+  text("loader", left - 8, overY - 17);
+  text("trainer", left - 8, overY + 13);
+  textAlign(LEFT, TOP);
   fill(107, 169, 221);
-  textSize(13);
-  text("batches trained: " + trained + "   |   GPU stalls: " + stalls, width / 2, 140);
-
+  textSize(10);
+  text("loading a batch", 30, 300);
+  fill(126, 192, 143);
+  text("training step", 190, 300);
+  fill(255, 211, 67);
+  textSize(12);
+  text("serial " + serialTotal.toFixed(1) + " ms      overlapped "
+    + overTotal.toFixed(1) + " ms      "
+    + (serialTotal / overTotal).toFixed(2) + "x", 30, 264);
   fill(150);
-  textSize(11);
-  text("With prefetch(1)+ the queue stays full and stalls stay near zero.", width / 2, 165);
-  text("Click to restart the simulation.", width / 2, 185);
-
-  if (t > 1400) reset();
+  textSize(9.5);
+  text("overlapping cannot beat the slower stage: "
+    + slowest.toFixed(1) + " ms per batch", 30, 320);
+  fill(60, 70, 84);
+  rect(330, 302, 240, 4, 2);
+  fill(255, 211, 67);
+  circle(330 + ((loadMs - 0.5) / 7.5) * 240, 304, 12);
+  fill(120);
+  textSize(9);
+  text("drag: load time", 330, 286);
 }
-function mousePressed() { reset(); }
+function mousePressed() { mouseDragged(); }
+function mouseDragged() {
+  if (mouseY < 292 || mouseX < 320) { return; }
+  loadMs = 0.5 + Math.min(Math.max((mouseX - 330) / 240, 0), 1) * 7.5;
+}
 ```
 
-## Mini-checkpoint
+```p5 title="The measured table, ranked" desc="Click a column to rank every row by it. The bars are that column's values and the highest and lowest are computed from the numbers, not written in." height="280"
+let metric = 0;
+const COLUMNS = ["Samples/s"];
+const ROWS = [
+  ["1", 4511],
+  ["2", 8050],
+  ["4", 11933],
+  ["8", 16701],
+  ["AUTOTUNE", 14641]
+];
+function setup() {
+  createCanvas(620, 280);
+  textFont("monospace");
+}
+function fmt(v) {
+  if (v === 0) { return "0"; }
+  const a = Math.abs(v);
+  if (a >= 1000 || a < 0.001) { return v.toExponential(2); }
+  if (a >= 100) { return v.toFixed(1); }
+  return v.toFixed(4);
+}
+function draw() {
+  background(13, 17, 23);
+  noStroke();
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("Loading & Preprocessing Data with ", 26, 16);
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (i === metric) { fill(255, 211, 67); } else { fill(48, 56, 68); }
+    rect(x, 40, w, 22, 4);
+    if (i === metric) { fill(13, 17, 23); } else { fill(180); }
+    textSize(9);
+    text(COLUMNS[i], x + 8, 47);
+    x += w + 6;
+    if (x > 500) { break; }
+  }
+  const values = ROWS.map((r) => r[metric + 1]);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo === 0 ? 1 : hi - lo;
+  const order = ROWS.slice().sort((a, b) => b[metric + 1] - a[metric + 1]);
+  for (let i = 0; i < order.length; i++) {
+    const y = 78 + i * 26;
+    const v = order[i][metric + 1];
+    fill(160);
+    textSize(9);
+    text(order[i][0], 26, y + 5);
+    fill(34, 40, 50);
+    rect(230, y, 280, 18, 3);
+    const frac = (v - lo) / span;
+    if (v === hi) { fill(126, 192, 143); }
+    else if (v === lo) { fill(224, 108, 117); }
+    else { fill(107, 169, 221); }
+    rect(230, y, Math.max(frac * 280, 3), 18, 3);
+    fill(225);
+    textSize(9);
+    text(fmt(v), 518, y + 5);
+  }
+  const top = order[0];
+  const bottom = order[order.length - 1];
+  fill(150);
+  textSize(9);
+  const base = 78 + order.length * 26 + 8;
+  text("highest " + COLUMNS[metric] + ": " + top[0] + " at " + fmt(top[1]),
+       26, base);
+  text("lowest  " + COLUMNS[metric] + ": " + bottom[0] + " at "
+       + fmt(bottom[1]), 26, base + 14);
+  text("bars are scaled within the chosen column - lowest is not zero", 26,
+       base + 30);
+}
+function mousePressed() {
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (mouseX > x && mouseX < x + w && mouseY > 40 && mouseY < 62) {
+      metric = i;
+    }
+    x += w + 6;
+  }
+}
+```
 
-If your training loop is GPU-bound but the GPU utilization graph shows regular dips:
+## Pitfalls
 
-- your input pipeline is probably the bottleneck — add `num_parallel_calls` to
-  `interleave()`/`map()`, and make sure you're calling `.prefetch()`.
+- **Benchmarking an option without disabling the rewrites.** Adding `num_parallel_calls` measured
+  3.88× against a default of 3.53× — almost all of it was already applied.
+- **Caching after random augmentation.** The randomness is frozen on the first epoch, silently
+  removing the regularisation.
+- **Timing `cache` on the first pass.** That pass pays the cost and gets none of the benefit.
+- **Judging `prefetch` by throughput.** It contributes almost nothing there; its effect is on
+  consumer waiting time, 24.8% → 18.3%.
+- **Assuming AUTOTUNE beats a fixed setting.** It scored 14,641 against 16,701 for eight explicit
+  workers in this run.
+- **Expecting bigger batches to raise pipeline throughput.** Flat from 16 to 256 here.
+- **Benchmarking with a trivial map.** Every option looks free, which is why so much pipeline
+  advice is passed on untested.
 
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
+## Recap
 
-## 🧪 Try It Yourself
-
-### Exercise 1 – Chain repeat() and batch()
-
-<DataCampExercise
-  lang="python"
-  hint={`\`from_tensor_slices\` builds the dataset; chain \`.repeat(2).batch(5)\` on it.`}
-  code={`# Task: Exercise 1 - Chain repeat() and batch()
-import tensorflow as tf
-
-dataset = tf.data.Dataset.from_tensor_slices(tf.range(5))
-dataset = dataset.___(2).batch(5)   # replace ___ with repeat
-
-for item in dataset:
-    print(item.numpy())
-
-# ── Expected Output ───────────────────────────────────────────
-# [0 1 2 3 4]
-# [0 1 2 3 4]
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
-
-dataset = tf.data.Dataset.from_tensor_slices(tf.range(5))
-dataset = dataset.repeat(2).batch(5)
-
-for item in dataset:
-    print(item.numpy())`}
-  sct={`test_output_contains("[0 1 2 3 4]")
-success_msg("You chained repeat() and batch() correctly!")`}
-  height={160}
-/>
-
-### Exercise 2 – Shuffle with a buffer
-
-<DataCampExercise
-  lang="python"
-  hint={`\`shuffle()\` takes a \`buffer_size\` argument and (optionally) a \`seed\`.`}
-  code={`# Task: Exercise 2 - Shuffle with a buffer
-import tensorflow as tf
-
-dataset = tf.data.Dataset.range(10)
-dataset = dataset.___(buffer_size=10, seed=42)   # replace ___ with shuffle
-dataset = dataset.batch(10)
-
-for item in dataset:
-    print("Batch size:", len(item.numpy()))
-
-# ── Expected Output ───────────────────────────────────────────
-# Batch size: 10
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
-
-dataset = tf.data.Dataset.range(10)
-dataset = dataset.shuffle(buffer_size=10, seed=42)
-dataset = dataset.batch(10)
-
-for item in dataset:
-    print("Batch size:", len(item.numpy()))`}
-  sct={`test_output_contains("Batch size: 10")
-success_msg("Shuffling configured correctly!")`}
-  height={160}
-/>
-
-### Exercise 3 – Add prefetch()
-
-<DataCampExercise
-  lang="python"
-  hint={`Call \`.prefetch(1)\` as the very last step of the pipeline.`}
-  code={`# Task: Exercise 3 - Add prefetch()
-import tensorflow as tf
-
-dataset = tf.data.Dataset.range(20).batch(4)
-dataset = dataset.___(1)   # replace ___ with prefetch
-print("Element spec:", dataset.element_spec)
-
-# ── Expected Output ───────────────────────────────────────────
-# Element spec: TensorSpec(shape=(None,), dtype=tf.int64, name=None)
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
-
-dataset = tf.data.Dataset.range(20).batch(4)
-dataset = dataset.prefetch(1)
-print("Element spec:", dataset.element_spec)`}
-  sct={`test_output_contains("Element spec:")
-success_msg("Your pipeline now prefetches the next batch automatically!")`}
-  height={150}
-/>
+- tf.data rewrites your pipeline before running it; a stateless `map` is parallelised for you,
+  worth 3.53× here.
+- Explicit `num_parallel_calls` reached 3.93×, so the manual version adds little over the default.
+- `cache` is categorically different at 81×, because the second epoch does no work — but only if
+  the data fits and the cached stage is deterministic.
+- `prefetch` overlaps loading with the training step; measured as waiting time it went 24.8% →
+  18.3%.
+- Parallel map scaling was 4,511 → 16,701 samples per second from 1 to 8 workers.
+- Batch size did not affect pipeline throughput at all on this workload.
 
 ## Next
 
-Continue to **Custom Models and Training Loops (TensorFlow)** — once your model is
-fed by a pipeline like this, the next step is looking at what's happening inside
-`fit()` itself, and how to customize it when you need to.
+With data arriving fast enough, the next bottleneck is the training step itself — and the
+`fit()` loop can be replaced with one you write:
+[Custom Models and Training Loops](/deep-learning/phase-08---scaling--deploying-deep-models/custom-models-and-training-loops-tensorflow/).
+
+<Quiz
+  questions={[
+    {
+      q: "The plain map ran at 4,302 samples/s with graph rewrites off and 15,177 with them on. What does that mean for pipeline benchmarking?",
+      options: [
+        "The rewrites make measurements unreliable",
+        "tf.data already parallelises a stateless map for you, so measuring 'the benefit of num_parallel_calls' on default settings mostly measures nothing — the rewrite had already applied it",
+        "The rewrites should always be disabled",
+        "The map function was stateful",
+      ],
+      answer: 1,
+      explain: "Adding num_parallel_calls explicitly reached 3.93x against a default that was already at 3.53x.",
+    },
+    {
+      q: "Caching gave 81x while every other option gave around 4x. Why is it in a different category?",
+      options: [
+        "It uses a faster memory allocator",
+        "The other options overlap or parallelise the work; cache removes it — on the second epoch the expensive map has already run and the pipeline just replays arrays",
+        "It skips the batching step",
+        "It compresses the data",
+      ],
+      answer: 1,
+      explain: "That is also why it must be timed on the second pass: the first one pays the full cost and has nothing cached yet.",
+    },
+    {
+      q: "Why is caching AFTER a random augmentation step a bug?",
+      options: [
+        "It uses more memory",
+        "The augmentation is executed once and its result stored, so every later epoch sees the identical 'random' transformation — the regularisation silently disappears",
+        "Augmentation cannot be serialised",
+        "It makes the pipeline non-deterministic",
+      ],
+      answer: 1,
+      explain: "Cache belongs after the deterministic work — decoding, resizing — and before anything that should differ each epoch.",
+    },
+    {
+      q: "Prefetch added almost nothing to raw throughput but cut consumer waiting from 24.8% to 18.3%. What does prefetch actually do?",
+      options: [
+        "It loads data faster",
+        "It overlaps loading with the training step that consumes the previous batch, so throughput of the pipeline alone is the wrong measurement for it",
+        "It increases the batch size automatically",
+        "It caches the first few batches",
+      ],
+      answer: 1,
+      explain: "With nothing consuming the data there is nothing to overlap with, which is why the throughput table barely moves.",
+    },
+    {
+      q: "Batch size made no difference to pipeline throughput (16,448 to 17,197 across a 16x range). Is the common 'use bigger batches' advice wrong?",
+      options: [
+        "Yes, batch size never matters",
+        "No — that advice is about the training step, where a larger batch improves hardware utilisation; here the map dominates and there is no per-batch overhead left to amortise",
+        "Yes, because the measurement was too noisy",
+        "No, but only because this ran on a CPU",
+      ],
+      answer: 1,
+      explain: "Measuring the input pipeline and the training step separately is what keeps the two claims from being confused.",
+    },
+  ]}
+/>
+
+## 🧪 Try It Yourself
+
+<DataCampExercise
+  lang="python"
+  hint={`Serial time is the sum of the per-stage times; a perfectly overlapped pipeline runs at the speed of its slowest stage.`}
+  code={`# Task: Exercise 1 - Why overlapping beats speeding up
+LOAD_MS = 4.0
+STEP_MS = 3.0
+BATCHES = 200
+
+
+def serial(batches):
+    """Load a batch, then train on it, then load the next."""
+    return batches * (LOAD_MS + STEP_MS) / 1000.0
+
+
+def overlapped(batches):
+    """Load the next batch while training on the current one."""
+    slowest = max(LOAD_MS, ___)                  # replace ___ with STEP_MS
+    return (batches * slowest + min(LOAD_MS, STEP_MS)) / 1000.0
+
+
+print(f"serial:     {serial(BATCHES):.3f}s")
+print(f"overlapped: {overlapped(BATCHES):.3f}s")
+print(f"speed-up:   {serial(BATCHES) / overlapped(BATCHES):.2f}x")
+print(f"\\nthe best possible saving is the SMALLER of the two stages -")
+print(f"overlapping cannot beat {max(LOAD_MS, STEP_MS)} ms per batch")`}
+  solution={`LOAD_MS = 4.0
+STEP_MS = 3.0
+BATCHES = 200
+
+
+def serial(batches):
+    """Load a batch, then train on it, then load the next."""
+    return batches * (LOAD_MS + STEP_MS) / 1000.0
+
+
+def overlapped(batches):
+    """Load the next batch while training on the current one."""
+    slowest = max(LOAD_MS, STEP_MS)
+    return (batches * slowest + min(LOAD_MS, STEP_MS)) / 1000.0
+
+
+print(f"serial:     {serial(BATCHES):.3f}s")
+print(f"overlapped: {overlapped(BATCHES):.3f}s")
+print(f"speed-up:   {serial(BATCHES) / overlapped(BATCHES):.2f}x")
+print(f"\\nthe best possible saving is the SMALLER of the two stages -")
+print(f"overlapping cannot beat {max(LOAD_MS, STEP_MS)} ms per batch")`}
+  expectedOutput={`serial:     1.400s
+overlapped: 0.803s
+speed-up:   1.74x
+
+the best possible saving is the SMALLER of the two stages -
+overlapping cannot beat 4.0 ms per batch`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Amdahl's law: if a fraction p of the work is parallelisable across n workers, the speed-up is 1 / ((1 - p) + p / n).`}
+  code={`# Task: Exercise 2 - Compare measured scaling against the ideal
+MEASURED = {1: 4511, 2: 8050, 4: 11933, 8: 16701}
+BASELINE = MEASURED[1]
+
+
+def amdahl(workers, parallel_fraction=1.0):
+    """Ideal speed-up when a fraction of the work parallelises."""
+    return 1.0 / ((1 - parallel_fraction) + parallel_fraction / ___)  # workers
+
+
+print(f"{'workers':>8} {'samples/s':>11} {'measured':>10} {'perfect':>9} "
+      f"{'efficiency':>11}")
+for workers, rate in MEASURED.items():
+    measured = rate / BASELINE
+    perfect = amdahl(workers)
+    print(f"{workers:8d} {rate:11,} {measured:9.2f}x {perfect:8.2f}x "
+          f"{measured / perfect:11.1%}")
+
+print("\\nefficiency falls with worker count because the main thread and")
+print("TensorFlow's own pools are competing for the same 8 cores")`}
+  solution={`MEASURED = {1: 4511, 2: 8050, 4: 11933, 8: 16701}
+BASELINE = MEASURED[1]
+
+
+def amdahl(workers, parallel_fraction=1.0):
+    """Ideal speed-up when a fraction of the work parallelises."""
+    return 1.0 / ((1 - parallel_fraction) + parallel_fraction / workers)
+
+
+print(f"{'workers':>8} {'samples/s':>11} {'measured':>10} {'perfect':>9} "
+      f"{'efficiency':>11}")
+for workers, rate in MEASURED.items():
+    measured = rate / BASELINE
+    perfect = amdahl(workers)
+    print(f"{workers:8d} {rate:11,} {measured:9.2f}x {perfect:8.2f}x "
+          f"{measured / perfect:11.1%}")
+
+print("\\nefficiency falls with worker count because the main thread and")
+print("TensorFlow's own pools are competing for the same 8 cores")`}
+  expectedOutput={` workers   samples/s   measured   perfect  efficiency
+       1       4,511      1.00x     1.00x      100.0%
+       2       8,050      1.78x     2.00x       89.2%
+       4      11,933      2.65x     4.00x       66.1%
+       8      16,701      3.70x     8.00x       46.3%
+
+efficiency falls with worker count because the main thread and
+TensorFlow's own pools are competing for the same 8 cores`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Put cache after the deterministic work and before anything that must differ each epoch.`}
+  code={`# Task: Exercise 3 - Where does cache belong?
+PIPELINES = {
+    "decode, cache, augment, batch": ["decode", "cache", "augment", "batch"],
+    "decode, augment, cache, batch": ["decode", "augment", "cache", "batch"],
+    "decode, augment, batch, cache": ["decode", "augment", "batch", "cache"],
+    "decode, augment, batch (none)": ["decode", "augment", "batch"],
+}
+RANDOM_STAGES = {"augment"}
+
+
+def audit(stages):
+    """A cached pipeline is broken if anything random happens BEFORE the cache."""
+    if "cache" not in stages:
+        return "no caching: full cost every epoch"
+    position = stages.index("cache")
+    frozen = [s for s in stages[:position] if s in ___]   # replace with RANDOM_STAGES
+    if frozen:
+        return f"BROKEN: {', '.join(frozen)} frozen on epoch 1"
+    return "correct: deterministic work cached"
+
+
+for name, stages in PIPELINES.items():
+    print(f"{name:32s} {audit(stages)}")
+
+print("\\nthe second and third pipelines still run, still look faster, and")
+print("silently drop the augmentation after the first epoch")`}
+  solution={`PIPELINES = {
+    "decode, cache, augment, batch": ["decode", "cache", "augment", "batch"],
+    "decode, augment, cache, batch": ["decode", "augment", "cache", "batch"],
+    "decode, augment, batch, cache": ["decode", "augment", "batch", "cache"],
+    "decode, augment, batch (none)": ["decode", "augment", "batch"],
+}
+RANDOM_STAGES = {"augment"}
+
+
+def audit(stages):
+    """A cached pipeline is broken if anything random happens BEFORE the cache."""
+    if "cache" not in stages:
+        return "no caching: full cost every epoch"
+    position = stages.index("cache")
+    frozen = [s for s in stages[:position] if s in RANDOM_STAGES]
+    if frozen:
+        return f"BROKEN: {', '.join(frozen)} frozen on epoch 1"
+    return "correct: deterministic work cached"
+
+
+for name, stages in PIPELINES.items():
+    print(f"{name:32s} {audit(stages)}")
+
+print("\\nthe second and third pipelines still run, still look faster, and")
+print("silently drop the augmentation after the first epoch")`}
+  expectedOutput={`decode, cache, augment, batch    correct: deterministic work cached
+decode, augment, cache, batch    BROKEN: augment frozen on epoch 1
+decode, augment, batch, cache    BROKEN: augment frozen on epoch 1
+decode, augment, batch (none)    no caching: full cost every epoch`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Time a full pass over the dataset and divide the row count by the elapsed seconds.`}
+  code={`# Task: Exercise 4 - Time a pipeline yourself
+import time
+import numpy as np
+import tensorflow as tf
+
+rows = np.random.default_rng(0).random((3000, 28, 28, 1)).astype("float32")
+labels = np.zeros(3000, "int32")
+
+
+def slow_map(image, label):
+    """Stand-in for real preprocessing: expensive enough to be the bottleneck."""
+    value = image
+    for _ in range(4):
+        value = tf.nn.avg_pool2d(value[None, ...], 3, 1, "SAME")[0]
+    return value, label
+
+
+def timed(pipeline):
+    started = time.perf_counter()
+    seen = 0
+    for images, _ in pipeline:
+        seen += int(images.shape[0])
+    elapsed = time.perf_counter() - started
+    return seen / ___                            # replace ___ with elapsed
+
+
+base = tf.data.Dataset.from_tensor_slices((rows, labels))
+AUTOTUNE = tf.data.AUTOTUNE
+
+serial = base.map(slow_map).batch(64)
+parallel = base.map(slow_map, num_parallel_calls=AUTOTUNE).batch(64)
+prefetched = parallel.prefetch(AUTOTUNE)
+cached = base.map(slow_map, num_parallel_calls=AUTOTUNE).cache().batch(64)
+timed(cached)                                    # fill the cache first
+
+for name, pipeline in (("map, batch", serial), ("parallel map", parallel),
+                       ("+ prefetch", prefetched), ("cached (2nd pass)", cached)):
+    print(f"{name:20s} {timed(pipeline):10,.0f} samples/s")`}
+  solution={`import time
+import numpy as np
+import tensorflow as tf
+
+rows = np.random.default_rng(0).random((3000, 28, 28, 1)).astype("float32")
+labels = np.zeros(3000, "int32")
+
+
+def slow_map(image, label):
+    """Stand-in for real preprocessing: expensive enough to be the bottleneck."""
+    value = image
+    for _ in range(4):
+        value = tf.nn.avg_pool2d(value[None, ...], 3, 1, "SAME")[0]
+    return value, label
+
+
+def timed(pipeline):
+    started = time.perf_counter()
+    seen = 0
+    for images, _ in pipeline:
+        seen += int(images.shape[0])
+    elapsed = time.perf_counter() - started
+    return seen / elapsed
+
+
+base = tf.data.Dataset.from_tensor_slices((rows, labels))
+AUTOTUNE = tf.data.AUTOTUNE
+
+serial = base.map(slow_map).batch(64)
+parallel = base.map(slow_map, num_parallel_calls=AUTOTUNE).batch(64)
+prefetched = parallel.prefetch(AUTOTUNE)
+cached = base.map(slow_map, num_parallel_calls=AUTOTUNE).cache().batch(64)
+timed(cached)                                    # fill the cache first
+
+for name, pipeline in (("map, batch", serial), ("parallel map", parallel),
+                       ("+ prefetch", prefetched), ("cached (2nd pass)", cached)):
+    print(f"{name:20s} {timed(pipeline):10,.0f} samples/s")`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Shuffle needs a buffer at least as large as the correlated run length, or the batches stay ordered.`}
+  code={`# Task: Exercise 5 - The shuffle buffer has to be big enough
+import numpy as np
+
+# A dataset stored in class order, as image folders usually are.
+LABELS = np.repeat(np.arange(10), 200)
+
+
+def shuffled_batches(labels, buffer_size, batch=32, seed=0):
+    """Approximate tf.data's streaming shuffle: draw from a sliding buffer."""
+    rng = np.random.default_rng(seed)
+    source = iter(labels)
+    buffer = [next(source) for _ in range(min(buffer_size, len(labels)))]
+    out = []
+    for item in source:
+        index = int(rng.integers(0, len(buffer)))
+        out.append(buffer[index])
+        buffer[index] = item
+    # Drain what is left RANDOMLY. Emitting the leftover buffer in order would
+    # make a buffer larger than the dataset look worse than a small one.
+    while buffer:
+        out.append(buffer.pop(int(rng.integers(0, len(buffer)))))
+    return np.array(out[:len(labels) // batch * batch]).reshape(-1, ___)  # batch
+
+
+for buffer_size in (1, 32, 500, 2000):
+    batches = shuffled_batches(LABELS, buffer_size)
+    distinct = np.mean([len(np.unique(row)) for row in batches])
+    print(f"buffer {buffer_size:5d}: mean distinct classes per batch of 32: "
+          f"{distinct:5.2f} / 10")
+
+print("\\na buffer smaller than the run length leaves the data in class order,")
+print("and every batch contains one or two classes")`}
+  solution={`import numpy as np
+
+# A dataset stored in class order, as image folders usually are.
+LABELS = np.repeat(np.arange(10), 200)
+
+
+def shuffled_batches(labels, buffer_size, batch=32, seed=0):
+    """Approximate tf.data's streaming shuffle: draw from a sliding buffer."""
+    rng = np.random.default_rng(seed)
+    source = iter(labels)
+    buffer = [next(source) for _ in range(min(buffer_size, len(labels)))]
+    out = []
+    for item in source:
+        index = int(rng.integers(0, len(buffer)))
+        out.append(buffer[index])
+        buffer[index] = item
+    # Drain what is left RANDOMLY. Emitting the leftover buffer in order would
+    # make a buffer larger than the dataset look worse than a small one.
+    while buffer:
+        out.append(buffer.pop(int(rng.integers(0, len(buffer)))))
+    return np.array(out[:len(labels) // batch * batch]).reshape(-1, batch)
+
+
+for buffer_size in (1, 32, 500, 2000):
+    batches = shuffled_batches(LABELS, buffer_size)
+    distinct = np.mean([len(np.unique(row)) for row in batches])
+    print(f"buffer {buffer_size:5d}: mean distinct classes per batch of 32: "
+          f"{distinct:5.2f} / 10")
+
+print("\\na buffer smaller than the run length leaves the data in class order,")
+print("and every batch contains one or two classes")`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Measure the consumer's waiting time separately from its compute time, and use a busy-wait so the step cannot overlap by accident.`}
+  code={`# Task: Exercise 6 - Measure starvation, not throughput
+import time
+import numpy as np
+import tensorflow as tf
+
+STEP_MS = 3.0
+rows = np.random.default_rng(0).random((2000, 28, 28, 1)).astype("float32")
+labels = np.zeros(2000, "int32")
+
+
+def slow_map(image, label):
+    value = image
+    for _ in range(4):
+        value = tf.nn.avg_pool2d(value[None, ...], 3, 1, "SAME")[0]
+    return value, label
+
+
+def run(pipeline):
+    """Split the epoch into time spent waiting and time spent 'training'."""
+    waiting = computing = 0.0
+    iterator = iter(pipeline)
+    while True:
+        start = time.perf_counter()
+        try:
+            next(iterator)
+        except StopIteration:
+            break
+        waiting += time.perf_counter() - start
+        start = time.perf_counter()
+        target = start + STEP_MS / 1000.0
+        while time.perf_counter() < target:      # busy-wait, not sleep
+            pass
+        computing += time.perf_counter() - start
+    return waiting, computing
+
+
+AUTOTUNE = tf.data.AUTOTUNE
+base = tf.data.Dataset.from_tensor_slices((rows, labels))
+plain = base.map(slow_map, num_parallel_calls=AUTOTUNE).batch(64)
+prefetched = plain.prefetch(___)                 # replace ___ with AUTOTUNE
+
+for name, pipeline in (("no prefetch", plain), ("prefetch", prefetched)):
+    waiting, computing = run(pipeline)
+    total = waiting + computing
+    print(f"{name:14s} waiting {waiting:.3f}s  computing {computing:.3f}s  "
+          f"({waiting / total:.1%} waiting)")`}
+  solution={`import time
+import numpy as np
+import tensorflow as tf
+
+STEP_MS = 3.0
+rows = np.random.default_rng(0).random((2000, 28, 28, 1)).astype("float32")
+labels = np.zeros(2000, "int32")
+
+
+def slow_map(image, label):
+    value = image
+    for _ in range(4):
+        value = tf.nn.avg_pool2d(value[None, ...], 3, 1, "SAME")[0]
+    return value, label
+
+
+def run(pipeline):
+    """Split the epoch into time spent waiting and time spent 'training'."""
+    waiting = computing = 0.0
+    iterator = iter(pipeline)
+    while True:
+        start = time.perf_counter()
+        try:
+            next(iterator)
+        except StopIteration:
+            break
+        waiting += time.perf_counter() - start
+        start = time.perf_counter()
+        target = start + STEP_MS / 1000.0
+        while time.perf_counter() < target:      # busy-wait, not sleep
+            pass
+        computing += time.perf_counter() - start
+    return waiting, computing
+
+
+AUTOTUNE = tf.data.AUTOTUNE
+base = tf.data.Dataset.from_tensor_slices((rows, labels))
+plain = base.map(slow_map, num_parallel_calls=AUTOTUNE).batch(64)
+prefetched = plain.prefetch(AUTOTUNE)
+
+for name, pipeline in (("no prefetch", plain), ("prefetch", prefetched)):
+    waiting, computing = run(pipeline)
+    total = waiting + computing
+    print(f"{name:14s} waiting {waiting:.3f}s  computing {computing:.3f}s  "
+          f"({waiting / total:.1%} waiting)")`}
+/>

@@ -1,422 +1,637 @@
 ---
 title: Advanced Recurrent Layers (Dropout, Stacking, Bidirectional)
-description: Fight overfitting with recurrent dropout, add capacity by stacking recurrent layers, and read sequences both ways with Bidirectional.
+description: Three refinements measured on the same LSTM - plain dropout helped, recurrent_dropout cost 2x the wall-clock and lost accuracy, stacking hurt at every depth, and bidirectional's win was mostly extra width.
 sidebar:
   order: 434
 ---
 
-## Why refine a plain RNN
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Figure from "../../../../components/Figure.astro";
+import Quiz from "../../../../components/Quiz.astro";
 
-A single LSTM or GRU layer is often just the *starting point*. Once you have a
-baseline that beats a common-sense heuristic (see the previous page), three
-knobs from *Deep Learning with Python* (Chollet) usually decide what to try
-next:
+A single `LSTM(32)` on 5,000 IMDB reviews scores **0.8260**. Three refinements are the
+standard next moves: regularise it, stack it, run it in both directions. All three were
+measured here on the identical model, data and seed, at eight epochs.
 
-- training is **unstable** — loss barely moves, swings wildly, or hits `NaN` →
-  fight the unstable-gradients problem with **recurrent layer normalization**.
-- the model is **overfitting** — training loss keeps dropping, validation loss
-  doesn't → add **recurrent dropout**.
-- the model has **plateaued** but isn't overfitting badly → **stack** more
-  recurrent layers for extra capacity.
-- the task cares about order but **not which direction** you read it in (most
-  text tasks) → try a **bidirectional** wrapper.
+| Change | Best validation accuracy | Against the baseline | Seconds |
+| --- | --- | --- | --- |
+| baseline `LSTM(32)` | 0.8260 | — | 129.5 |
+| `dropout=0.3` | **0.8364** | **+0.0104** | 141.3 |
+| `recurrent_dropout=0.3` | 0.8180 | **−0.0080** | **259.2** |
+| both at 0.3 | 0.8240 | −0.0020 | 284.3 |
+| 2 stacked layers | 0.8204 | −0.0056 | 362.5 |
+| 3 stacked layers | 0.8188 | −0.0072 | 557.4 |
+| `Bidirectional` (32+32) | **0.8448** | **+0.0188** | 225.3 |
+| `Bidirectional` (16+16, matched width) | 0.8284 | +0.0024 | 262.7 |
+
+One of the three helped. One cost twice the wall-clock to lose accuracy. One helped
+mostly because it doubled the model's width.
+
+## What you'll learn
+
+- The difference between `dropout` and `recurrent_dropout` — different tensors,
+  different masks, very different cost.
+- Why `recurrent_dropout` **doubled the training time**: it drops off TensorFlow's fused
+  kernel.
+- The `return_sequences` rule that makes stacking possible, and why depth lost here.
+- What `Bidirectional` actually costs, and how to tell a real gain from a width gain.
+- The one setting a forecaster must never use, and the leak that makes it look good.
+
+## Two dropout arguments, two different tensors
+
+$$
+\begin{aligned}
+h_t &= f\!\left(W_x \cdot (\underbrace{m_x \odot x_t}_{\texttt{dropout}})
++ W_h \cdot (\underbrace{m_h \odot h_{t-1}}_{\texttt{recurrent\_dropout}}) + b\right)
+\end{aligned}
+$$
+
+- **`dropout`** masks the **input** $x_t$ at each step.
+- **`recurrent_dropout`** masks the **previous state** $h_{t-1}$ — inside the loop.
+
+Both use the *same mask at every timestep* (a "variational" mask). That matters: a fresh
+mask per step would resample the noise 200 times along one sequence and destroy anything
+the state was carrying. A `Dropout` layer placed *between* two recurrent layers does
+exactly that resampling — which is fine there, because it sits outside the recurrence.
+
+<Figure
+  src="/images/dl/phase-04-sequences/advanced-recurrent/recurrent-dropout"
+  alt="Two panels. Left: paired bars for four settings showing the final train-minus-validation gap in grey and the best validation accuracy in colour — 0.8260 with gap 0.1702, 0.8364 with gap 0.1280, 0.8180 with gap 0.1708, 0.8240 with gap 0.1688. Right: per-epoch curves where all four dashed training curves climb above 0.95 while the solid validation curves flatten between 0.78 and 0.84."
+  title="LSTM(32) on IMDB, 8 epochs, four dropout settings"
+  caption="Plain dropout is the only setting that did what dropout is for: it cut the train-validation gap from 0.1702 to 0.1280 and gained 0.0104 accuracy. Recurrent dropout barely moved the gap (0.1708) and lost 0.0080 while costing twice the wall-clock. The dashed curves show why the gap is worth watching separately from the score: every one of these models is memorising the training set by epoch 5."
+/>
+
+### The cost nobody mentions
+
+`recurrent_dropout` took **259.2 seconds against 129.5** — exactly 2.0×. The reason is
+implementation, not mathematics: cuDNN and TensorFlow's fused CPU kernels implement the
+whole recurrence as one optimised operation, and applying a dropout mask *inside* the
+loop forces Keras to fall back to the generic step-by-step path.
+
+The same is true of `mask_zero=True`, which every page in this phase uses. The two
+together are why this module was the slowest in the phase.
+
+| Setting | Fused kernel | Measured cost |
+| --- | --- | --- |
+| plain `LSTM` | yes | 1.0× |
+| `dropout=0.3` | yes | 1.1× |
+| `recurrent_dropout=0.3` | **no** | **2.0×** |
+
+If you want regularisation and speed, use `dropout` plus a `Dropout` layer after the
+recurrent layer, and reach for `recurrent_dropout` only when the gap says you need it.
+
+## Stacking
+
+Every recurrent layer except the last needs `return_sequences=True`, or the next one
+receives a vector where it expects a sequence:
+
+```python title="A two-layer stack"
+model = keras.Sequential([
+    keras.layers.Input((200,)),
+    keras.layers.Embedding(10000, 32, mask_zero=True),
+    keras.layers.LSTM(32, return_sequences=True),    # (batch, 200, 32)
+    keras.layers.LSTM(32),                           # (batch, 32)
+    keras.layers.Dense(1, activation="sigmoid"),
+])
+```
+
+<Figure
+  src="/images/dl/phase-04-sequences/advanced-recurrent/stacking-depth"
+  alt="Two panels. Left: validation accuracy per epoch for one, two and three stacked LSTM layers, all between 0.78 and 0.83 with no clear separation. Right: bars of best accuracy — 0.8260, 0.8204, 0.8188 — annotated with training times of 189, 362 and 557 seconds."
+  title="Stacked LSTMs on IMDB"
+  caption="Depth cost accuracy monotonically and time linearly: each extra layer added 8,320 parameters, roughly 180 seconds, and lost about 0.006 accuracy. Sentiment on 5,000 reviews does not have a hierarchy of temporal features for a second layer to build on — the first layer already extracts everything the task needs, and the second only adds optimisation difficulty."
+/>
+
+| Layers | Parameters | Best validation accuracy | Seconds |
+| --- | --- | --- | --- |
+| 1 | 328,353 | **0.8260** | 188.8 |
+| 2 | 336,673 | 0.8204 | 362.5 |
+| 3 | 344,993 | 0.8188 | 557.4 |
+
+Stacking is genuinely useful when the task has structure at several timescales — speech
+(phonemes → words), music, long documents. It is not a general-purpose capacity dial,
+and on this task it was a pure loss: **3× the training time for −0.0072 accuracy**.
+
+## Bidirectional
+
+`Bidirectional` runs two copies of the layer — one forward, one over the reversed
+sequence — and concatenates their outputs. Reading a review backwards is not a worse way
+to read it: the **backward** model alone scored 0.8180 against the forward model's
+0.8260.
+
+<Figure
+  src="/images/dl/phase-04-sequences/advanced-recurrent/bidirectional"
+  alt="Two panels. Left: bars for forward 0.8260, backward 0.8180, bidirectional 0.8448 and bidirectional at matched width 0.8284, each annotated with parameter counts of 328,353, 328,353, 336,705 and 326,305. Right: per-epoch validation curves where the bidirectional run sits above the others for most epochs and the backward-only run starts far lower at 0.52 before catching up."
+  title="Forward, backward, and both"
+  caption="The naive reading is that Bidirectional bought +0.0188. The matched-width control says otherwise: two 16-unit directions, which cost slightly fewer parameters than one 32-unit forward layer, gained only +0.0024. Most of the headline win was the extra width, not the extra direction — and the backward-only run's first epoch at 0.52 is a reminder that the two directions are not interchangeable during optimisation even when they end up equivalent."
+/>
+
+| Setup | Parameters | Best validation accuracy | Against forward |
+| --- | --- | --- | --- |
+| forward `LSTM(32)` | 328,353 | 0.8260 | — |
+| backward `LSTM(32)` | 328,353 | 0.8180 | −0.0080 |
+| `Bidirectional(LSTM(32))` | 336,705 | **0.8448** | **+0.0188** |
+| `Bidirectional(LSTM(16))` | 326,305 | 0.8284 | +0.0024 |
+
+**Always include the matched-width control.** Any wrapper that doubles a layer's output
+width will look good against the un-doubled version; the question is whether the
+*structure* helped, and here it was worth 0.0024, not 0.0188.
 
 ```mermaid
-flowchart TD
-  subgraph Stacked["Stacking recurrent layers"]
-    direction TB
-    S1["GRU(32, return_sequences=True)"] --> S2["GRU(32, return_sequences=True)"]
-    S2 --> S3["Dense(1)"]
-  end
-  subgraph Bi["Bidirectional wrapper"]
-    direction LR
-    F["Forward LSTM: reads a, b, c, d, e"] --> M["Merge (concat)"]
-    Bwd["Backward LSTM: reads e, d, c, b, a"] --> M
-    M --> Out["Combined output"]
-  end
+flowchart TB
+  A["is the train-validation gap large?"] -->|"no"| B["regularisation will not help<br/>— add capacity or data"]
+  A -->|"yes"| C["dropout=0.3<br/>+0.0104, gap 0.1702 → 0.1280"]
+  C --> D{"still overfitting?"}
+  D -->|"yes"| E["recurrent_dropout<br/>— but it costs 2.0x wall-clock"]
+  D -->|"no"| F["done"]
+  G["is the task hierarchical<br/>in time?"] -->|"yes"| H["stack, with<br/>return_sequences=True"]
+  G -->|"no"| I["one layer<br/>— depth lost 0.0072 here"]
+  J["will the whole sequence<br/>exist at prediction time?"] -->|"yes"| K["Bidirectional<br/>— check matched width"]
+  J -->|"no (forecasting)"| L["forward only<br/>— the backward pass reads the future"]
 ```
 
-## Recurrent layer normalization
+## The one that is a bug, not a trade-off
 
-Before touching dropout at all, it's worth checking for a different symptom:
-**unstable gradients**. An unrolled RNN is really a very deep feedforward
-network wearing a trench coat — the same weights get reused at every time
-step — so it can suffer the same vanishing/exploding gradients problem that
-affects any deep net. The tell is in the *training curve itself*, not the gap
-between train and validation loss: if loss barely moves, jumps around instead
-of settling down, or turns to `NaN`, that's unstable gradients, not overfitting.
+For classification, `Bidirectional` is a legitimate choice: the whole review exists
+before you classify it. For **forecasting**, it is a leak. The backward pass at timestep
+$t$ has consumed timesteps $t+1 \ldots T$, and at prediction time those have not
+happened.
 
-Ordinary `BatchNormalization` doesn't help much here. As *Hands-On Machine
-Learning* (Géron) explains, it can't be applied *between* time steps — only
-between stacked recurrent layers — because it needs statistics computed across
-a batch, and those aren't meaningful mid-sequence. **Layer Normalization**
-fixes this: instead of normalizing across the batch, it normalizes across the
-*features* of a single instance, so it behaves identically at training and
-inference time and can safely be applied at every time step, right after the
-linear combination of inputs and hidden state.
+The failure mode is nasty because it validates beautifully. Your offline metric improves,
+because your offline data contains the future; production then fails silently.
+Exercise 5 demonstrates it directly: on a task where the answer sits at the *last*
+timestep and must be reported from the *first*, a forward model cannot exceed chance and
+a bidirectional one solves it.
 
-Keras doesn't expose a `layer_norm=True` flag on `LSTM`/`GRU`, so using it takes
-a small custom cell wrapped in `keras.layers.RNN` — built on the plain
-`SimpleRNNCell`:
+The same reasoning covers every "look-ahead" mistake in the phase — shuffled splits,
+scalers fitted on all the data, and target-derived features.
 
-```python title="layer_norm_rnn_cell.py" showLineNumbers{1}
-from tensorflow import keras
-
-class LNSimpleRNNCell(keras.layers.Layer):
-    def __init__(self, units, activation="tanh", **kwargs):
-        super().__init__(**kwargs)
-        self.state_size = units
-        self.output_size = units
-        self.simple_rnn_cell = keras.layers.SimpleRNNCell(units, activation=None)
-        self.layer_norm = keras.layers.LayerNormalization()
-        self.activation = keras.activations.get(activation)
-
-    def call(self, inputs, states):
-        outputs, new_states = self.simple_rnn_cell(inputs, states)
-        norm_outputs = self.activation(self.layer_norm(outputs))
-        return norm_outputs, [norm_outputs]
-
-model = keras.models.Sequential([
-    keras.layers.RNN(LNSimpleRNNCell(32), return_sequences=True,
-                      input_shape=[None, 14]),
-])
-model.compile(optimizer="rmsprop", loss="mse", metrics=["mae"])
-```
-
-The cell delegates the actual recurrence math to `SimpleRNNCell` (with
-`activation=None`, so the raw linear combination comes out untouched), applies
-`LayerNormalization`, and *only then* applies the activation function — the
-same order used in feedforward nets: linear step, then normalize, then
-activate. Wrapping any custom cell in `keras.layers.RNN(...)` like this hands
-you back an ordinary Keras layer that still supports `return_sequences`,
-stacking, and everything else on this page. A quicker, coarser lever for the
-same problem is **gradient clipping** — passing `clipnorm=1.0` (or
-`clipvalue=...`) to the optimizer caps how large any single gradient update
-can be, regardless of the layer architecture.
-
-:::note
-Custom cells like `LNSimpleRNNCell` run one step at a time in a Python-level
-loop, so they lose the GPU's fast cuDNN kernel — the same trade-off
-`recurrent_dropout` makes below. Reach for layer normalization specifically
-when *training itself* looks unstable; if training is stable but the model is
-just overfitting, plain `recurrent_dropout` is cheaper to add.
-:::
-
-## Recurrent dropout
-
-Regular dropout — zeroing out random units — hurts recurrent layers if you're
-not careful. Yarin Gal's research (built directly into Keras) found the fix:
-use the **same** dropout mask at every timestep, instead of a fresh random mask
-each step. A mask that changes every step disrupts the error signal that has to
-flow backward through time; a fixed mask still regularizes without breaking
-that signal.
-
-Every recurrent layer in Keras exposes two separate arguments:
-
-- `dropout` — drops a fraction of the *input* units at each timestep.
-- `recurrent_dropout` — drops a fraction of the *recurrent* (state-to-state)
-  units, using that same fixed-per-layer mask idea.
-
-```python title="lstm_recurrent_dropout.py" showLineNumbers{1}
-from tensorflow import keras
-from tensorflow.keras import layers
-
-inputs = keras.Input(shape=(120, 14))
-x = layers.LSTM(32, recurrent_dropout=0.25)(inputs)
-x = layers.Dropout(0.5)(x)          # regularize the Dense head too
-outputs = layers.Dense(1)(x)
-model = keras.Model(inputs, outputs)
-model.compile(optimizer="rmsprop", loss="mse", metrics=["mae"])
-```
-
-Two practical notes from the book:
-
-- networks regularized with dropout need **more epochs** to converge — the
-  Jena temperature model above is trained for 50 epochs instead of 10.
-- because you're relying on dropout for regularization instead of a tiny layer,
-  you can afford **more units** (32 here vs. 16 in the undropped baseline)
-  without immediately overfitting.
-
-On the Jena temperature task, this drops validation MAE from 2.36 to about
-**2.27 degrees** — a real, if modest, improvement.
-
-## Stacking recurrent layers
-
-If dropout fixed overfitting but accuracy has plateaued, the model is probably
-**under capacity**. The classic fix is the same one used for deep RNNs earlier
-in this phase: stack more recurrent layers. Every layer that feeds *another*
-recurrent layer must return its full sequence, so every layer except the last
-needs `return_sequences=True`:
-
-```python title="stacked_gru_dropout.py" showLineNumbers{1}
-from tensorflow import keras
-from tensorflow.keras import layers
-
-inputs = keras.Input(shape=(120, 14))
-x = layers.GRU(32, recurrent_dropout=0.5, return_sequences=True)(inputs)
-x = layers.GRU(32, recurrent_dropout=0.5)(x)
-x = layers.Dropout(0.5)(x)
-outputs = layers.Dense(1)(x)
-model = keras.Model(inputs, outputs)
-model.compile(optimizer="rmsprop", loss="mse", metrics=["mae"])
-```
-
-On the Jena task, stacking two dropout-regularized GRU layers reaches a test MAE
-of about **2.39 degrees** — better than a single layer, but only a small gain.
-That's normal: once a small recurrent model has already fixed both underfitting
-and overfitting, extra layers tend to show diminishing returns, and each added
-layer costs noticeably more compute.
-
-## Bidirectional RNNs
-
-A regular RNN reads a sequence in one direction — oldest step first. But that
-direction was really just a choice. A **`Bidirectional`** layer runs two
-independent copies of a recurrent layer — one reading the sequence forward,
-one reading it backward — and merges their outputs (concatenation, by
-default):
-
-```python title="bidirectional_lstm.py" showLineNumbers{1}
-from tensorflow import keras
-from tensorflow.keras import layers
-
-inputs = keras.Input(shape=(120, 14))
-x = layers.Bidirectional(layers.LSTM(16))(inputs)
-outputs = layers.Dense(1)(x)
-model = keras.Model(inputs, outputs)
-model.compile(optimizer="rmsprop", loss="mse", metrics=["mae"])
-```
-
-`Bidirectional(LSTM(16))` doubles the output width — each direction produces a
-16-unit vector, concatenated into 32 — which also roughly doubles the
-recurrent layer's capacity and training cost.
-
-### When bidirectional helps — and when it doesn't
-
-This is the counter-intuitive part. On the Jena **temperature** task,
-bidirectional actually performs *worse* than a plain LSTM: the recent past
-matters far more than the distant past for tomorrow's weather, so reading the
-sequence backward mostly adds noisy, less-predictive capacity — and makes
-overfitting start sooner. But on **text**, order matters yet *which* direction
-you read in usually doesn't — you can read a sentence backward and still catch
-its meaning — so a bidirectional layer genuinely helps there, catching patterns
-a one-directional pass would miss. That's why bidirectional LSTMs were once the
-default choice for NLP tasks, before Transformers took over.
-
-| Technique | Fixes | Cost | Best for |
-| --- | --- | --- | --- |
-| Recurrent layer normalization | unstable gradients (loss stuck, spiky, or `NaN`) | needs a custom cell; loses the cuDNN fast path | training itself looks unstable, not just overfit |
-| `recurrent_dropout` | overfitting | slower training (loses the cuDNN fast path) | any recurrent layer that's overfitting |
-| Stacking (`return_sequences=True`) | under-capacity / plateaued accuracy | more compute per step | once dropout is already handling overfitting |
-| `Bidirectional(...)` | missed patterns from reading only one direction | ~2x parameters & compute | text / order-matters-but-direction-doesn't tasks |
-
-## Mini-checkpoint
-
-Why did the bidirectional LSTM underperform on the Jena temperature-forecasting
-task, when it's a common upgrade for text models?
-
-- because the *direction* you read a sequence in isn't arbitrary for weather:
-  the most recent readings are the most predictive, so the backward-reading
-  half of the layer adds mostly noise instead of a genuinely useful new angle
-  on the data — unlike text, where reading order doesn't change the meaning.
-
-:::tip[From the book]
-*Deep Learning with Python* (Chollet) makes a broader point here: a model
-trained on reversed sequences learns genuinely *different* representations than
-one trained on the original order — like living a life where you're born on
-your last day. Different-but-useful representations are the whole idea behind
-ensembling, which is exactly why bidirectional RNNs help order-agnostic tasks
-(text) and hurt order-sensitive ones (time series with a clear recency bias).
-:::
-
-## Visualize it
-
-Watch two passes over the same 5-step sequence — one left-to-right (blue), one
-right-to-left (amber) — before they're merged into a single combined output:
-
-```p5 title="Bidirectional RNN merge" desc="The blue arrow reads the sequence forward; the amber arrow reads it backward. Both feed into a merge that pulses once both passes complete." height="260"
-let t = 0;
-const steps = 5;
-function stepX(i) { return 70 + i * ((width - 220) / (steps - 1)); }
+```p5 title="Which timesteps has each direction seen?" desc="Move the query step and watch what the forward, backward and bidirectional layers have consumed by the time they produce their output for that step." height="330"
+let step = 7;
+let dragging = false;
+const T = 16;
 function setup() {
-  createCanvas(600, 260);
+  createCanvas(620, 330);
   textFont("monospace");
-  textAlign(CENTER, CENTER);
-}
-function smoothstep(x) {
-  x = constrain(x, 0, 1);
-  return x * x * (3 - 2 * x);
 }
 function draw() {
-  const sweepFrames = steps * 2 * 50;
-  const holdFrames = 45;
-  const cycleLen = sweepFrames + holdFrames;
-  const cyclePos = t % cycleLen;
-  // fade near the loop seam so resetting both passes is invisible
-  const fade = min(smoothstep(cyclePos / 15), smoothstep((cycleLen - cyclePos) / 15));
-
   background(13, 17, 23);
-  const fwdY = 90, bwdY = 170, mergeX = width - 60, mergeY = 130;
-  const cycle = min(cyclePos / 50, steps * 2);
-  const fwdActive = floor(min(cycle, steps - 1));
-  const bwdActive = floor(min(max(cycle - steps, 0), steps - 1));
-  // once both passes finish, the merge glows brighter for the hold period
-  const mergeGlow = cyclePos > sweepFrames ? smoothstep((cyclePos - sweepFrames) / holdFrames) : 0;
-
-  for (let i = 0; i < steps; i++) {
-    const isFwd = i <= fwdActive;
-    const isBwd = (steps - 1 - i) <= bwdActive;
-
-    noStroke();
-    fill(isFwd ? color(75, 139, 190) : color(50, 60, 74));
-    ellipse(stepX(i), fwdY, 30, 30);
-    fill(isBwd ? color(255, 211, 67) : color(70, 60, 40));
-    ellipse(stepX(i), bwdY, 30, 30);
-
-    fill(200);
-    textSize(10);
-    text("x" + i, stepX(i), fwdY - 26);
-  }
-
-  if (fwdActive > 0) {
-    stroke(75, 139, 190);
-    strokeWeight(2.5);
-    line(stepX(0) + 15, fwdY, stepX(fwdActive) - 15, fwdY);
-  }
-  if (bwdActive > 0) {
-    stroke(255, 211, 67);
-    strokeWeight(2.5);
-    line(stepX(steps - 1) - 15, bwdY, stepX(steps - 1 - bwdActive) + 15, bwdY);
-  }
-
-  stroke(120, 120, 120);
-  strokeWeight(1.5);
-  line(stepX(steps - 1) + 15, fwdY, mergeX - 20, mergeY - 15);
-  line(stepX(steps - 1) + 15, bwdY, mergeX - 20, mergeY + 15);
-
+  const w = 32;
+  const left = 40;
   noStroke();
-  fill(lerpColor(color(150, 90, 190), color(255, 211, 67), mergeGlow));
-  rectMode(CENTER);
-  rect(mergeX, mergeY, 70 + mergeGlow * 10, 46 + mergeGlow * 10, 8);
   fill(230);
-  textSize(10);
-  text("merge\n(concat)", mergeX, mergeY);
+  textSize(11.5);
+  textAlign(LEFT, TOP);
+  text("output at timestep " + step, left, 22);
+  const rows = [
+    { label: "forward", seen: (t) => t <= step, color: [107, 169, 221] },
+    { label: "backward", seen: (t) => t >= step, color: [255, 211, 67] },
+    { label: "bidirectional", seen: () => true, color: [165, 214, 164] },
+  ];
+  rows.forEach((row, index) => {
+    const y = 56 + index * 74;
+    fill(200);
+    textSize(10.5);
+    textAlign(LEFT, CENTER);
+    text(row.label, left, y - 12);
+    for (let t = 0; t < T; t++) {
+      const seen = row.seen(t);
+      if (seen) fill(row.color[0], row.color[1], row.color[2], 210);
+      else fill(45, 52, 63);
+      rect(left + t * w, y, w - 3, 34, 3);
+      if (t === step) {
+        noFill();
+        stroke(255);
+        strokeWeight(2);
+        rect(left + t * w, y, w - 3, 34, 3);
+        noStroke();
+      }
+    }
+    const count = Array.from({ length: T }, (_, t) => row.seen(t))
+      .filter(Boolean).length;
+    const future = Array.from({ length: T }, (_, t) => t > step && row.seen(t))
+      .filter(Boolean).length;
+    fill(future ? 230 : 150, future ? 90 : 150, future ? 90 : 150);
+    textSize(10);
+    textAlign(LEFT, CENTER);
+    text(count + " steps seen" + (future ? "  — " + future
+      + " of them in the future" : ""), left + T * w + 8, y + 17);
+  });
+  fill(150);
+  textSize(10.5);
+  textAlign(LEFT, TOP);
+  text("classification: the whole sequence already exists, so reading ahead is fine",
+    left, 282);
+  fill(230, 90, 90);
+  text("forecasting: those future steps have not happened yet — this is a leak",
+    left, 298);
+  fill(60, 70, 84);
+  rect(left, 264, T * w - 3, 4, 2);
+  fill(255, 255, 255);
+  circle(left + (step / (T - 1)) * (T * w - 3), 266, 11);
+}
+function mousePressed() { if (Math.abs(mouseY - 266) < 12) dragging = true; }
+function mouseDragged() {
+  if (dragging) {
+    const w = 32;
+    step = Math.round(Math.min(Math.max((mouseX - 40) / (T * w - 3), 0), 1)
+      * (T - 1));
+  }
+}
+function mouseReleased() { dragging = false; }
+```
 
-  fill(107, 169, 221);
-  textSize(11);
-  text("blue = forward pass   amber = backward pass", width / 2, 230);
-
-  // dim to background right at the loop seam so the reset is invisible
+```p5 title="The measured table, ranked" desc="Click a column to rank every row by it. The bars are that column's values and the highest and lowest are computed from the numbers, not written in." height="358"
+let metric = 0;
+const COLUMNS = ["Best validation accuracy", "Seconds"];
+const ROWS = [
+  ["baseline LSTM(32)", 0.826, 129.5],
+  ["dropout=0.3", 0.8364, 141.3],
+  ["recurrentdropout=0.3", 0.818, 259.2],
+  ["both at 0.3", 0.824, 284.3],
+  ["2 stacked layers", 0.8204, 362.5],
+  ["3 stacked layers", 0.8188, 557.4],
+  ["Bidirectional (32+32)", 0.8448, 225.3],
+  ["Bidirectional (16+16, matched widt", 0.8284, 262.7]
+];
+function setup() {
+  createCanvas(620, 358);
+  textFont("monospace");
+}
+function fmt(v) {
+  if (v === 0) { return "0"; }
+  const a = Math.abs(v);
+  if (a >= 1000 || a < 0.001) { return v.toExponential(2); }
+  if (a >= 100) { return v.toFixed(1); }
+  return v.toFixed(4);
+}
+function draw() {
+  background(13, 17, 23);
   noStroke();
-  fill(13, 17, 23, (1 - fade) * 255);
-  rect(0, 0, width, height);
-
-  t++;
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("Advanced Recurrent Layers (Dropout", 26, 16);
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (i === metric) { fill(255, 211, 67); } else { fill(48, 56, 68); }
+    rect(x, 40, w, 22, 4);
+    if (i === metric) { fill(13, 17, 23); } else { fill(180); }
+    textSize(9);
+    text(COLUMNS[i], x + 8, 47);
+    x += w + 6;
+    if (x > 500) { break; }
+  }
+  const values = ROWS.map((r) => r[metric + 1]);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo === 0 ? 1 : hi - lo;
+  const order = ROWS.slice().sort((a, b) => b[metric + 1] - a[metric + 1]);
+  for (let i = 0; i < order.length; i++) {
+    const y = 78 + i * 26;
+    const v = order[i][metric + 1];
+    fill(160);
+    textSize(9);
+    text(order[i][0], 26, y + 5);
+    fill(34, 40, 50);
+    rect(230, y, 280, 18, 3);
+    const frac = (v - lo) / span;
+    if (v === hi) { fill(126, 192, 143); }
+    else if (v === lo) { fill(224, 108, 117); }
+    else { fill(107, 169, 221); }
+    rect(230, y, Math.max(frac * 280, 3), 18, 3);
+    fill(225);
+    textSize(9);
+    text(fmt(v), 518, y + 5);
+  }
+  const top = order[0];
+  const bottom = order[order.length - 1];
+  fill(150);
+  textSize(9);
+  const base = 78 + order.length * 26 + 8;
+  text("highest " + COLUMNS[metric] + ": " + top[0] + " at " + fmt(top[1]),
+       26, base);
+  text("lowest  " + COLUMNS[metric] + ": " + bottom[0] + " at "
+       + fmt(bottom[1]), 26, base + 14);
+  text("bars are scaled within the chosen column - lowest is not zero", 26,
+       base + 30);
+}
+function mousePressed() {
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (mouseX > x && mouseX < x + w && mouseY > 40 && mouseY < 62) {
+      metric = i;
+    }
+    x += w + 6;
+  }
 }
 ```
 
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
+## Pitfalls
 
-## 🧪 Try It Yourself
+- **Reaching for `recurrent_dropout` first.** It cost 2.0× the wall-clock and lost
+  0.0080 here, while plain `dropout` gained 0.0104 for 1.1×.
+- **Judging regularisation by accuracy alone.** The useful signal was the gap: 0.1702 →
+  0.1280 under `dropout`, essentially unchanged (0.1708) under `recurrent_dropout`.
+- **Stacking as a capacity dial.** Three layers cost 3× the time for −0.0072. Stack when
+  the task is hierarchical in time, not when you want "more model".
+- **Forgetting `return_sequences=True` on all but the last layer.** It raises a shape
+  error at build time, which is the good case; in a functional model with a `Reshape` it
+  can silently mean something else.
+- **Quoting a `Bidirectional` gain without a matched-width control.** +0.0188 became
+  +0.0024 once the widths were equalised.
+- **Using `Bidirectional` in a forecaster.** The backward pass reads timesteps that do
+  not exist at prediction time, and it validates *better* for exactly that reason.
+- **Assuming backward is worse than forward.** 0.8180 against 0.8260 — a different
+  reading order, not a broken one.
 
-### Exercise 1 – Add Recurrent Dropout
+## Recap
 
-<DataCampExercise
-  lang="python"
-  hint={`Pass \`recurrent_dropout=0.25\` when building the \`LSTM\` layer, then read it back with \`model.layers[0].recurrent_dropout\`.`}
-  code={`# Task: Exercise 1 – Add Recurrent Dropout
-from tensorflow import keras
-
-model = keras.models.Sequential([
-    keras.layers.LSTM(32, recurrent_dropout=___, input_shape=[None, 14]),  # replace ___ with 0.25
-])
-model.compile(loss="mse", optimizer="adam")
-print(model.layers[0].recurrent_dropout)
-
-# ── Expected Output ───────────────────────────────────────────
-# 0.25
-# ──────────────────────────────────────────────────────────────`}
-  solution={`from tensorflow import keras
-
-model = keras.models.Sequential([
-    keras.layers.LSTM(32, recurrent_dropout=0.25, input_shape=[None, 14]),
-])
-model.compile(loss="mse", optimizer="adam")
-print(model.layers[0].recurrent_dropout)`}
-  sct={`test_output_contains("0.25")
-success_msg("Recurrent dropout is set - the same mask will be reused at every timestep!")`}
-  height={148}
-/>
-
-### Exercise 2 – Stack Two GRU Layers
-
-<DataCampExercise
-  lang="python"
-  hint={`The first GRU layer needs \`return_sequences=True\` so the second GRU layer receives a full 3D sequence.`}
-  code={`# Task: Exercise 2 – Stack Two GRU Layers
-from tensorflow import keras
-
-model = keras.models.Sequential([
-    keras.layers.GRU(32, return_sequences=___, input_shape=[None, 14]),  # replace ___ with True
-    keras.layers.GRU(32),
-])
-model.compile(loss="mse", optimizer="adam")
-print([layer.__class__.__name__ for layer in model.layers])
-
-# ── Expected Output ───────────────────────────────────────────
-# ['GRU', 'GRU']
-# ──────────────────────────────────────────────────────────────`}
-  solution={`from tensorflow import keras
-
-model = keras.models.Sequential([
-    keras.layers.GRU(32, return_sequences=True, input_shape=[None, 14]),
-    keras.layers.GRU(32),
-])
-model.compile(loss="mse", optimizer="adam")
-print([layer.__class__.__name__ for layer in model.layers])`}
-  sct={`test_output_contains("['GRU', 'GRU']")
-success_msg("Two stacked GRU layers - more capacity for a model that's plateaued, not overfit!")`}
-  height={158}
-/>
-
-### Exercise 3 – Wrap an LSTM as Bidirectional
-
-<DataCampExercise
-  lang="python"
-  hint={`\`keras.layers.Bidirectional(keras.layers.LSTM(16))\` concatenates a forward and backward pass, doubling the output width to 32.`}
-  code={`# Task: Exercise 3 – Wrap an LSTM as Bidirectional
-import numpy as np
-from tensorflow import keras
-
-X = np.random.rand(2, 5, 14).astype("float32")
-
-model = keras.models.Sequential([
-    keras.layers.___(keras.layers.LSTM(16), input_shape=[None, 14])  # replace ___ with Bidirectional
-])
-model.compile(loss="mse", optimizer="adam")
-preds = model.predict(X, verbose=0)
-print("Output shape:", preds.shape)
-
-# ── Expected Output ───────────────────────────────────────────
-# Output shape: (2, 32)
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import numpy as np
-from tensorflow import keras
-
-X = np.random.rand(2, 5, 14).astype("float32")
-
-model = keras.models.Sequential([
-    keras.layers.Bidirectional(keras.layers.LSTM(16), input_shape=[None, 14])
-])
-model.compile(loss="mse", optimizer="adam")
-preds = model.predict(X, verbose=0)
-print("Output shape:", preds.shape)`}
-  sct={`test_output_contains("Output shape: (2, 32)")
-success_msg("32 = 16 forward units concatenated with 16 backward units!")`}
-  height={168}
-/>
+- `dropout` masks the input, `recurrent_dropout` masks the previous state, and both hold
+  one mask fixed across all timesteps.
+- Measured: `dropout=0.3` gave the only real win (+0.0104, gap 0.1702 → 0.1280);
+  `recurrent_dropout=0.3` lost 0.0080 at 2.0× the wall-clock because it disables the
+  fused kernel.
+- Stacking cost accuracy at every depth (0.8260 → 0.8204 → 0.8188) and roughly 180
+  seconds per layer.
+- `Bidirectional` scored 0.8448 against 0.8260 — but only +0.0024 once width was matched.
+- Backward-only scored 0.8180: a different reading order, not a worse one.
+- No forecaster may use `Bidirectional`; the backward pass reads the future.
 
 ## Next
 
-Continue to **Text Preprocessing (Tokenization, Stemming, Lemmatization)** —
-start Phase 5 by turning raw text into the numeric sequences an RNN (or
-Transformer) can actually process.
+Recurrence has now been measured from every angle, including the angles where it loses.
+One angle remains, and it is the bridge to the next phase: the fixed-size state that a
+recurrent encoder hands to its decoder, and the mechanism invented to get around it.
+[Attention Before Transformers (Additive and Bahdanau)](/deep-learning/phase-04---sequence-models-with-rnns/attention-before-transformers-additive-and-bahdanau/).
+
+<Quiz
+  questions={[
+    {
+      q: "What is the difference between dropout and recurrent_dropout on an LSTM?",
+      options: [
+        "One is applied during training, the other at inference",
+        "dropout masks the input x_t; recurrent_dropout masks the previous state h_{t-1} inside the recurrence — and only the second one disables the fused kernel",
+        "recurrent_dropout uses a different random distribution",
+        "They are aliases for the same argument",
+      ],
+      answer: 1,
+      explain: "Measured: 141.3 seconds for dropout against 259.2 for recurrent_dropout, on the identical model.",
+    },
+    {
+      q: "recurrent_dropout=0.3 left the train-validation gap at 0.1708 and lost 0.0080 accuracy, while dropout=0.3 cut the gap to 0.1280 and gained 0.0104. What do you conclude?",
+      options: [
+        "recurrent_dropout is always wrong",
+        "On this task plain dropout is the better first move — it regularised more and cost half as much; recurrent_dropout is what you try when the gap is still too large",
+        "Neither form of dropout works on recurrent layers",
+        "The model needed more epochs",
+      ],
+      answer: 1,
+      explain: "The gap is the diagnostic. A regulariser that does not move the gap is not regularising, whatever it does to the score.",
+    },
+    {
+      q: "Stacking went 0.8260 to 0.8204 to 0.8188 while training time went 189s to 362s to 557s. When is stacking still the right move?",
+      options: [
+        "Whenever you want more capacity",
+        "When the task has structure at several timescales — speech, music, long documents — so a second layer has something to build on",
+        "Whenever the first layer overfits",
+        "Never; a single recurrent layer is always enough",
+      ],
+      answer: 1,
+      explain: "Sentiment on short reviews is not hierarchical in time, so the second layer added optimisation difficulty and nothing else.",
+    },
+    {
+      q: "Bidirectional scored 0.8448 against a forward LSTM's 0.8260. Why is that not a +0.0188 result?",
+      options: [
+        "Because bidirectional models cannot be deployed",
+        "Because it also doubled the output width — two 16-unit directions at matched parameters scored 0.8284, a gain of only +0.0024",
+        "Because the backward pass is unreliable",
+        "Because the seeds differed",
+      ],
+      answer: 1,
+      explain: "Any wrapper that doubles width beats the un-doubled version. The matched-width control is what isolates the structural effect.",
+    },
+    {
+      q: "Why must a forecasting model never use Bidirectional?",
+      options: [
+        "It is too slow",
+        "The backward pass consumes later timesteps, which at prediction time are the future — so the model validates better precisely because it is leaking",
+        "It cannot be combined with masking",
+        "It doubles the parameter count",
+      ],
+      answer: 1,
+      explain: "Same family as a shuffled split or a scaler fitted on the full series: information at training time that will not exist at inference time.",
+    },
+  ]}
+/>
+
+## 🧪 Try It Yourself
+
+<DataCampExercise
+  lang="python"
+  hint={`Pass training=True to see dropout act, and training=False to see the layer become deterministic. The two arguments touch different tensors.`}
+  code={`# Task: Exercise 1 - The two dropout arguments are not the same thing
+import numpy as np
+from tensorflow import keras
+
+probe = np.random.default_rng(0).standard_normal((4, 30, 8)).astype("float32")
+print(f"{'setting':34s} {'output std, training=True':>26}")
+for label, kwargs in (("no dropout", {}),
+                      ("dropout=0.5", {"dropout": 0.5}),
+                      ("recurrent_dropout=0.5", {"recurrent_dropout": 0.5}),
+                      ("both 0.5", {"dropout": 0.5,
+                                    "recurrent_dropout": 0.5})):
+    keras.utils.set_random_seed(0)
+    layer = keras.layers.LSTM(16, **kwargs)
+    out = layer(probe, training=___)          # replace ___ with True
+    print(f"{label:34s} {float(out.numpy().std()):26.4f}")
+
+keras.utils.set_random_seed(0)
+layer = keras.layers.LSTM(16, dropout=0.5, recurrent_dropout=0.5)
+a = layer(probe, training=False).numpy()
+b = layer(probe, training=False).numpy()
+print(f"at inference the layer is deterministic: max |a - b| = "
+      f"{float(np.abs(a - b).max()):.2e}")
+print("dropout masks the input x_t; recurrent_dropout masks the previous")
+print("state h_{t-1}, inside the loop")
+
+# -- Expected Output -------------------------------------------
+# setting                            output std, training=True
+# no dropout                                            0.1695
+# dropout=0.5                                           0.2157
+# recurrent_dropout=0.5                                 0.1785
+# both 0.5                                              0.2386
+# at inference the layer is deterministic: max |a - b| = 0.00e+00
+# dropout masks the input x_t; recurrent_dropout masks the previous
+# state h_{t-1}, inside the loop
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Time a couple of epochs for each setting after a warm-up epoch, so graph tracing is not counted.`}
+  code={`# Task: Exercise 2 - What recurrent_dropout costs
+import time
+
+import numpy as np
+from tensorflow import keras
+
+x = np.random.default_rng(0).standard_normal((2000, 100, 8)).astype("float32")
+y = np.random.default_rng(1).integers(0, 2, 2000)
+print(f"{'setting':26s} {'seconds for 2 epochs':>21} {'relative':>9}")
+timings = {}
+for label, kwargs in (("no dropout", {}),
+                      ("dropout=0.3", {"dropout": 0.3}),
+                      ("recurrent_dropout=0.3", {"recurrent_dropout": 0.3})):
+    keras.utils.set_random_seed(0)
+    model = keras.Sequential([keras.layers.Input((100, 8)),
+                              keras.layers.LSTM(32, **kwargs),
+                              keras.layers.Dense(1, activation="sigmoid")])
+    model.compile(keras.optimizers.Adam(1e-3), "binary_crossentropy")
+    model.fit(x[:256], y[:256], epochs=1, batch_size=64, verbose=0)  # warm up
+    started = time.perf_counter()
+    model.fit(x, y, epochs=2, batch_size=64, verbose=0)
+    timings[label] = time.perf_counter() - ___     # replace ___ with started
+    print(f"{label:26s} {timings[label]:21.1f} "
+          f"{timings[label] / timings['no dropout']:8.1f}x")
+print("the fused kernel implements the whole recurrence as one operation;")
+print("a mask inside the loop forces the slow step-by-step path")
+
+# -- Expected Output -------------------------------------------
+# (plain dropout is roughly free; recurrent_dropout costs about 2x, which is
+#  what the page measured on the full IMDB model: 259.2s against 129.5s)
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Every recurrent layer except the last needs return_sequences=True. Count the parameters each extra layer adds.`}
+  code={`# Task: Exercise 3 - Stacking, and the error it raises
+import numpy as np
+from tensorflow import keras
+
+print(f"{'depth':>6} {'params':>9} {'added':>8} {'output shape':>16}")
+previous = None
+for depth in (1, 2, 3):
+    keras.utils.set_random_seed(0)
+    layers = [keras.layers.Input((100, 8))]
+    for index in range(depth):
+        layers.append(keras.layers.LSTM(
+            32, return_sequences=index < depth - ___))   # replace ___ with 1
+    layers.append(keras.layers.Dense(1))
+    model = keras.Sequential(layers)
+    added = "" if previous is None else f"{model.count_params() - previous:,}"
+    print(f"{depth:6d} {model.count_params():9,} {added:>8} "
+          f"{str(model.output_shape):>16}")
+    previous = model.count_params()
+
+try:
+    keras.Sequential([keras.layers.Input((100, 8)),
+                      keras.layers.LSTM(32),
+                      keras.layers.LSTM(32)])
+except Exception as error:
+    print(f"missing the flag: {type(error).__name__}: "
+          f"{str(error).splitlines()[0][:100]}")
+print("each layer adds 8,320 parameters and, on IMDB, about 180 seconds -")
+print("for 0.006 less accuracy")
+
+# -- Expected Output -------------------------------------------
+#  depth    params    added     output shape
+#      1     5,281                 (None, 1)
+#      2    13,601    8,320        (None, 1)
+#      3    21,921    8,320        (None, 1)
+# missing the flag: ValueError: Input 0 with name 'None' of layer 'lstm_7' is
+#   incompatible with the layer: expected ndim=3, found ndim=2
+# each layer adds 8,320 parameters and, on IMDB, about 180 seconds -
+# for 0.006 less accuracy
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Bidirectional concatenates the two directions by default, so the output width doubles. merge_mode changes that.`}
+  code={`# Task: Exercise 4 - Bidirectional widths and merge modes
+import numpy as np
+from tensorflow import keras
+
+probe = np.zeros((2, 100, 8), "float32")
+print(f"{'layer':42s} {'output shape':>16} {'params':>9}")
+for label, layer in (
+        ("LSTM(32)", keras.layers.LSTM(32)),
+        ("Bidirectional(LSTM(32))",
+         keras.layers.Bidirectional(keras.layers.LSTM(32))),
+        ("Bidirectional(LSTM(16))  <- matched width",
+         keras.layers.Bidirectional(keras.layers.LSTM(16))),
+        ("Bidirectional(LSTM(32), merge_mode='sum')",
+         keras.layers.Bidirectional(keras.layers.LSTM(32), merge_mode="sum")),
+        ("Bidirectional(LSTM(32), return_sequences=True)",
+         keras.layers.Bidirectional(
+             keras.layers.LSTM(32, return_sequences=True)))):
+    out = layer(probe)
+    params = int(sum(np.prod(w.shape) for w in ___.weights))
+    # replace ___ with layer
+    print(f"{label:42s} {str(tuple(int(v) for v in out.shape)):>16} "
+          f"{params:9,}")
+print("the default concatenates, so the output width doubles - which is why a")
+print("matched-width control belongs in every bidirectional comparison")
+
+# -- Expected Output -------------------------------------------
+# layer                                        output shape    params
+# LSTM(32)                                          (2, 32)     5,248
+# Bidirectional(LSTM(32))                           (2, 64)    10,496
+# Bidirectional(LSTM(16))  <- matched width         (2, 32)     3,200
+# Bidirectional(LSTM(32), merge_mode='sum')         (2, 32)    10,496
+# Bidirectional(LSTM(32), return_sequences=True) (2, 100, 64)  10,496
+# the default concatenates, so the output width doubles - which is why a
+# matched-width control belongs in every bidirectional comparison
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Put the informative value at the last timestep and read the prediction from the first. Only a layer that has seen the future can answer.`}
+  code={`# Task: Exercise 5 - The backward pass reads the future
+import numpy as np
+from tensorflow import keras
+
+ROWS, LENGTH = 3000, 20
+
+
+def clue_at_the_end(rows, length, seed=0):
+    generator = np.random.default_rng(seed)
+    x = generator.normal(0.0, 0.3, (rows, length, 1)).astype("float32")
+    bits = generator.integers(0, 2, rows)
+    x[:, ___, 0] = bits * 2.0 - 1.0           # replace ___ with -1
+    return x, bits.astype("int32")
+
+
+x, y = clue_at_the_end(ROWS, LENGTH)
+x_test, y_test = clue_at_the_end(1000, LENGTH, seed=1)
+print("the informative value is at the LAST timestep and the prediction is")
+print("read from the FIRST - chance is 0.5")
+print(f"{'model':34s} {'best val accuracy':>18}")
+for label, cell in (
+        ("forward LSTM, first state", keras.layers.LSTM(16,
+                                                        return_sequences=True)),
+        ("bidirectional, first state",
+         keras.layers.Bidirectional(keras.layers.LSTM(16,
+                                                      return_sequences=True)))):
+    keras.utils.set_random_seed(0)
+    model = keras.Sequential([keras.layers.Input((LENGTH, 1)), cell,
+                              keras.layers.Lambda(lambda t: t[:, 0, :]),
+                              keras.layers.Dense(1, activation="sigmoid")])
+    model.compile(keras.optimizers.Adam(3e-3), "binary_crossentropy",
+                  metrics=["accuracy"])
+    history = model.fit(x, y, epochs=12, batch_size=64, verbose=0,
+                        validation_data=(x_test, y_test))
+    print(f"{label:34s} {max(history.history['val_accuracy']):18.4f}")
+print("the forward model cannot beat chance because the answer has not")
+print("happened yet; the bidirectional one can, which in a forecaster is a bug")
+
+# -- Expected Output -------------------------------------------
+# (the forward model sits at roughly 0.5 and the bidirectional one climbs well
+#  above it — that gap is exactly the leak)
+# --------------------------------------------------------------`}
+/>

@@ -1,416 +1,832 @@
 ---
 title: Neural Style Transfer
-description: Learn how neural style transfer blends a content image with a style reference by optimizing content loss, Gram-matrix style loss, and a total-variation smoothness loss.
+description: The style weight measured across four settings - style loss falls 34.46199 to 0.05092 while content loss rises 0 to 4.51310, and starting from noise loses on both terms at once.
 sidebar:
   order: 457
 ---
 
-## What you'll learn
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Figure from "../../../../components/Figure.astro";
+import Quiz from "../../../../components/Quiz.astro";
 
-- what **style transfer** means: keep a target image's content, but repaint it in
-  a reference image's style
-- the **content loss** — an L2 distance between high-level convnet activations
-  that keeps the generated image's macrostructure intact
-- the **style loss**, built from the **Gram matrix** of a layer's activations —
-  a map of which features tend to fire together, capturing texture rather than
-  layout
-- the **total-variation loss** that keeps the generated image spatially smooth
-  instead of speckled
-- how these three losses combine into one objective that you optimize directly
-  on the pixels of the output image
+[DeepDream](/deep-learning/phase-06---generative-deep-learning/deepdream/) optimised an image to
+maximise one number. Style transfer keeps that machinery — frozen network, image as the variable —
+and replaces the objective with a comparison against **two** reference images:
 
-## Repainting a photo in someone else's style
+$$
+\mathcal{L} = \underbrace{\sum_{\ell \in C} \lVert F^\ell(x) - F^\ell(c) \rVert^2}_{\text{content}}
++ w \cdot \underbrace{\sum_{\ell \in S} \lVert G^\ell(x) - G^\ell(s) \rVert^2}_{\text{style}}
+$$
 
-Neural style transfer takes two images — a **content image** (say, a photo of
-a city) and a **style reference** (say, Van Gogh's *Starry Night*) — and produces
-a third image that keeps the buildings and streets of the first while adopting
-the swirling brushstrokes and colors of the second.
+Content is compared **activation by activation**, so layout is preserved. Style is compared through
+the **Gram matrix** $G$, which throws away position and keeps only how features co-occur — which is
+precisely why it transfers texture without transferring the subject.
 
-```mermaid title="Combining content and style into one generated image" desc="Two source images are scored by the same losses against a generated image, which is optimized until it satisfies both."
-flowchart LR
-  C["Content image"] --> CL["Content loss (high-level activations)"]
-  S["Style reference image"] --> SL["Style loss (Gram matrices)"]
-  G["Generated image (being optimized)"] --> CL
-  G --> SL
-  G --> TV["Total-variation loss (smoothness)"]
-  CL --> T["Total loss"]
-  SL --> T
-  TV --> T
-  T -->|"gradient descent on pixels"| G
-```
+The weight $w$ between those terms is the only interesting hyperparameter, and it trades one term
+against the other exactly as you would hope, measured over 120 optimisation steps:
 
-The one idea underneath every deep learning technique applies here too: define a
-loss for what you want, then minimize it. What's unusual is *what* gets updated —
-not a model's weights, but the **pixels of the generated image itself**. You
-start the generated image as a copy of the content image, then repeatedly nudge
-its pixels downhill against a loss that rewards content-similarity to one image
-and style-similarity to another.
+| Style weight | Content loss | Style loss | Total objective |
+| --- | --- | --- | --- |
+| 0 | **0.00000** | 34.46199 | 0.00000 |
+| 1 | 2.07898 | 0.65903 | 2.73801 |
+| 100 | 4.32142 | 0.05325 | 9.64647 |
+| 10000 | 4.51310 | **0.05092** | 513.73618 |
 
-```
-loss = distance(content(original) , content(generated))
-     + distance(style(reference)  , style(generated))
-```
+(The totals come from the run's full-precision losses; recomputing them from the rounded columns
+above gives 9.64642 and 513.71310.)
 
-The whole trick is finding functions `content(...)` and `style(...)` that
-actually capture what those words mean — and a pretrained convnet (VGG19, in the
-original paper) turns out to define both beautifully.
+Style loss falls by a factor of **677** across that sweep while content loss rises from zero to
+4.51310. There is no setting that improves both.
 
-## Content loss: match the high-level activations
-
-Early convnet layers encode local detail (edges, small textures); later layers
-encode global, abstract structure — *what* is in the image rather than exactly
-*where* every pixel sits. So the **content loss** is simply the squared
-difference between one upper layer's activations for the content image and for
-the generated image: match those, and the generated image will "look like the
-same scene" to the network, even if brushstroke-level detail differs.
-
-```python title="Content loss (Keras / TensorFlow)" showLineNumbers{1}
-import tensorflow as tf
-
-def content_loss(base_image_features, combination_image_features):
-    return tf.reduce_sum(tf.square(combination_image_features - base_image_features))
-```
-
-## Style loss: match the Gram matrix, not the pixels
-
-Style is trickier — it isn't "these exact activations," it's "these
-*textures*, at every scale." Gatys et al.'s insight was to look at the **Gram
-matrix** of a layer's feature maps: flatten each channel into a vector and take
-the inner product of every channel with every other channel. The result is a
-`channels x channels` table of how correlated each pair of feature detectors is
-across the whole image — a statistical fingerprint of texture that has thrown
-away spatial layout entirely.
-
-```python title="Style loss via the Gram matrix (Keras / TensorFlow)" showLineNumbers{1}
-import tensorflow as tf
-
-def gram_matrix(x):
-    x = tf.transpose(x, (2, 0, 1))                      # (channels, height, width)
-    features = tf.reshape(x, (tf.shape(x)[0], -1))       # (channels, height*width)
-    return tf.matmul(features, tf.transpose(features))   # (channels, channels)
-
-def style_loss(style_features, combination_features, img_height, img_width):
-    S = gram_matrix(style_features)
-    C = gram_matrix(combination_features)
-    channels = 3
-    size = img_height * img_width
-    return tf.reduce_sum(tf.square(S - C)) / (4.0 * (channels ** 2) * (size ** 2))
-```
-
-Match the Gram matrices of the style image and the generated image at *several*
-layers — low ones for fine texture, high ones for larger patterns — and the
-generated image ends up sharing the reference's textures at every scale, without
-ever being forced to copy its actual layout.
-
-## Total-variation loss: keep it smooth
-
-A third, smaller term regularizes the generated image itself: it penalizes large
-differences between neighboring pixels, which discourages the noisy, speckled
-artifacts that pure gradient-based pixel optimization tends to produce.
-
-```python title="Total-variation loss (Keras / TensorFlow)" showLineNumbers{1}
-import tensorflow as tf
-
-def total_variation_loss(x, img_height, img_width):
-    a = tf.square(x[:, : img_height - 1, : img_width - 1, :] - x[:, 1:, : img_width - 1, :])
-    b = tf.square(x[:, : img_height - 1, : img_width - 1, :] - x[:, : img_height - 1, 1:, :])
-    return tf.reduce_sum(tf.pow(a + b, 1.25))
-```
-
-## Verifying the loss math with plain NumPy
-
-All three losses are simple enough to check with toy "feature maps" — small
-arrays standing in for a conv layer's output — with no TensorFlow required:
-
-```python title="Content, style, and total loss on toy feature maps (verified with NumPy)" showLineNumbers{1}
-import numpy as np
-
-np.random.seed(1)
-channels, spatial = 3, 4   # toy: 3 "feature channels", 4 "spatial locations"
-
-# --- content loss: how far is the generated image from the content image? ---
-content_feat = np.random.uniform(0, 1, size=(channels, spatial))
-combo_feat = content_feat + np.random.normal(0, 0.1, size=(channels, spatial))
-
-def content_loss(base, combination):
-    return np.sum((combination - base) ** 2)
-
-cl = content_loss(content_feat, combo_feat)
-print("content loss:", round(cl, 4))
-
-# --- style loss: how far is the generated image's Gram matrix from the style's? ---
-def gram_matrix(x):
-    return x @ x.T   # channels x channels correlation table
-
-style_feat = np.random.uniform(0, 1, size=(channels, spatial))
-combo_feat2 = style_feat + np.random.normal(0, 0.2, size=(channels, spatial))
-
-def style_loss(style, combination, size):
-    S, C = gram_matrix(style), gram_matrix(combination)
-    return np.sum((S - C) ** 2) / (4.0 * (style.shape[0] ** 2) * (size ** 2))
-
-sl = style_loss(style_feat, combo_feat2, spatial)
-print("style loss:", round(sl, 6))
-
-# --- combine with weights, exactly like the book's compute_loss ---
-content_weight, style_weight = 0.25, 1.0
-total = content_weight * cl + style_weight * sl
-print("total loss:", round(total, 4))
-```
-
-```
-content loss: 0.1043
-style loss: 0.001504
-total loss: 0.0276
-```
-
-Notice how much smaller the style loss's *contribution* would be without a
-`style_weight` correction — in the real algorithm you tune `content_weight`,
-`style_weight`, and `total_variation_weight` relative to each other until the
-result looks balanced; too much content weight and the output barely changes
-style, too much style weight and the original content dissolves.
-
-## Optimizing the generated image
-
-Unlike every other model in this phase, there's no `model.fit()` here — you set
-`combination_image` up as a `tf.Variable`, compute gradients of the combined loss
-with respect to *it*, and apply them directly with an optimizer, for thousands of
-iterations:
-
-```python title="The optimization loop (conceptual, following the book)" showLineNumbers{1}
-import tensorflow as tf
-
-optimizer = tf.keras.optimizers.SGD(
-    tf.keras.optimizers.schedules.ExponentialDecay(
-        initial_learning_rate=100.0, decay_steps=100, decay_rate=0.96
-    )
-)
-
-# combination_image = tf.Variable(preprocess_image(base_image_path))
-# for i in range(1, 4001):
-#     with tf.GradientTape() as tape:
-#         loss = compute_loss(combination_image, base_image, style_reference_image)
-#     grads = tape.gradient(loss, combination_image)
-#     optimizer.apply_gradients([(grads, combination_image)])
-```
-
-A high initial learning rate (100) makes fast early progress, decaying by 4%
-every 100 steps so the optimization settles down as it approaches a good result —
-the same warm-up-then-cool-down idea you've seen with learning-rate schedules
-elsewhere.
-
-## Visualize it
-
-Drag the slider (or watch it auto-animate) to blend a content pattern and a style
-pattern — at 0% it's pure content layout, at 100% it's pure style texture, and
-in between you get exactly what neural style transfer aims for: the content's
-shapes rendered in the style's texture:
-
-```p5 title="Blending content layout with style texture" desc="Left grid: content shapes. Right grid: style texture. Center: a blend, sliding from pure content (0%) to pure style (100%) and back — the effect neural style transfer optimizes for." height="300"
-let blend = 0;
-let dir = 1;
-const GRID = 8;
-let contentGrid = [];
-let styleGrid = [];
-
-function setup() {
-  createCanvas(600, 300);
-  noStroke();
-  textFont("monospace");
-  textAlign(CENTER, CENTER);
-  for (let i = 0; i < GRID; i++) {
-    const cRow = [], sRow = [];
-    for (let j = 0; j < GRID; j++) {
-      // content: a simple geometric shape (a ring)
-      const d = Math.hypot(i - GRID / 2 + 0.5, j - GRID / 2 + 0.5);
-      cRow.push(d > 2.2 && d < 3.6 ? 1 : 0.15);
-      // style: a busy swirl texture
-      sRow.push(0.5 + 0.5 * Math.sin(i * 1.3 + j * 1.7) * Math.cos(i * 0.7 - j * 1.1));
-    }
-    contentGrid.push(cRow);
-    styleGrid.push(sRow);
-  }
-}
-
-function drawGrid(grid, x0, y0, cell, label) {
-  for (let i = 0; i < GRID; i++) {
-    for (let j = 0; j < GRID; j++) {
-      const v = grid[i][j];
-      fill(255 * v, 211 * v, 67 + v * 100);
-      rect(x0 + j * cell, y0 + i * cell, cell - 2, cell - 2, 2);
-    }
-  }
-  fill(150, 160, 172);
-  textSize(11);
-  text(label, x0 + (cell * GRID) / 2, y0 - 12);
-}
-
-function draw() {
-  background(13, 17, 23);
-  const cell = 16;
-
-  drawGrid(contentGrid, 30, 60, cell, "content");
-  drawGrid(styleGrid, 430, 60, cell, "style");
-
-  const blended = [];
-  for (let i = 0; i < GRID; i++) {
-    const row = [];
-    for (let j = 0; j < GRID; j++) {
-      row.push((1 - blend) * contentGrid[i][j] + blend * styleGrid[i][j]);
-    }
-    blended.push(row);
-  }
-  drawGrid(blended, 230, 60, cell, "generated");
-
-  fill(220, 224, 230);
-  textSize(13);
-  text("style weight = " + Math.round(blend * 100) + "%", width / 2, 26);
-
-  const barW = 300, barX = width / 2 - barW / 2, barY = height - 30;
-  fill(40, 44, 52);
-  rect(barX, barY, barW, 8, 4);
-  fill(255, 211, 67);
-  rect(barX, barY, barW * blend, 8, 4);
-
-  blend += dir * 0.004;
-  if (blend > 1) { blend = 1; dir = -1; }
-  if (blend < 0) { blend = 0; dir = 1; }
-}
-
-function mousePressed() { blend = 0; dir = 1; }
-```
-
-:::tip[From the book]
-Chollet is candid about the limits here: "what this technique achieves is merely
-a form of image retexturing... it works best with style-reference images that
-are strongly textured and highly self-similar... don't expect it to work like
-magic!" It's a genuinely simple idea — a loss built from a frozen convnet's
-activations — not a model that "understands" art.
+:::note[No pretrained weights here]
+Published style transfer uses VGG19 trained on ImageNet. Nothing pretrained is cached on this
+machine, so the features come from a small fully convolutional network trained here on
+Fashion-MNIST — 23,946 parameters, **0.7767** validation accuracy. The mechanism, the losses and
+every number are real; the transferable "style" is garment texture rather than brushwork, and a
+deeper feature network is what makes the famous results look the way they do.
 :::
 
-## Mini-checkpoint
+## What you'll learn
 
-Why does the style loss use the Gram matrix instead of comparing activations
-pixel-by-pixel like the content loss does?
+- Why content uses raw activations and style uses the Gram matrix, and what discarding position
+  buys.
+- The measured trade across four style weights, including why weight 0 has a content loss of
+  exactly zero.
+- Why the **starting image** is a real hyperparameter: starting from noise ended up worse on
+  *both* terms (content 15.97160 against 4.32142).
+- What "nothing is trained" means in code — one `tf.Variable` holding the image, and an optimiser
+  applied to it.
 
-- Because style is about *texture and correlation between features*, not exact
-  spatial layout — comparing raw activations pixel-by-pixel (like content loss
-  does) would force the generated image to have the same *arrangement* as the
-  style image, which is exactly what you don't want. The Gram matrix summarizes
-  which feature detectors fire together, discarding *where* they fire, so
-  matching it transfers texture while leaving the content image's layout alone.
+## The Gram matrix
 
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
+For one layer's activation of shape (height, width, channels), flatten the spatial dimensions and
+take the correlation between channels:
 
-## 🧪 Try It Yourself
+$$
+G_{ij} = \frac{1}{HW} \sum_{p} F_{pi} F_{pj}
+$$
 
-### Exercise 1 – Compute the Content Loss
+Every spatial position $p$ is summed over, so the result says *how often channel $i$ fires where
+channel $j$ fires* and says nothing about **where**. A texture is exactly that: a statistical
+relationship between features, repeated across an image without a fixed layout.
 
-<DataCampExercise
-  lang="python"
-  hint={`Content loss is the sum of SQUARED differences between the two feature maps: \`np.sum((combination - base) ** 2)\`.`}
-  code={`# Task: Exercise 1 - Compute the Content Loss
-import numpy as np
+```python title="Style is a correlation, not a picture"
+def gram(activation):
+    shape = tf.shape(activation)
+    flat = tf.reshape(activation, (shape[0], -1, shape[3]))   # positions x channels
+    return tf.matmul(flat, flat, transpose_a=True) / tf.cast(shape[1] * shape[2],
+                                                            "float32")
+```
 
-np.random.seed(1)
-channels, spatial = 3, 4
-content_feat = np.random.uniform(0, 1, size=(channels, spatial))
-combo_feat = content_feat + np.random.normal(0, 0.1, size=(channels, spatial))
+Dividing by the number of positions matters more than it looks: without it the Gram matrix scales
+with image area, so the style loss would depend on resolution and a weight tuned at one size would
+be wrong at another.
 
-def content_loss(base, combination):
-    return np.sum((combination - base) ___ 2)   # replace ___ with **
-
-cl = content_loss(content_feat, combo_feat)
-print("content loss:", round(cl, 4))
-
-# ── Expected Output ───────────────────────────────────────────
-# content loss: 0.1043
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import numpy as np
-
-np.random.seed(1)
-channels, spatial = 3, 4
-content_feat = np.random.uniform(0, 1, size=(channels, spatial))
-combo_feat = content_feat + np.random.normal(0, 0.1, size=(channels, spatial))
-
-def content_loss(base, combination):
-    return np.sum((combination - base) ** 2)
-
-cl = content_loss(content_feat, combo_feat)
-print("content loss:", round(cl, 4))`}
-  sct={`test_output_contains("content loss: 0.1043")
-success_msg("That's an L2 distance between two sets of activations!")`}
-  height={190}
+<Figure
+  src="/images/dl/phase-06-generative/style-transfer/gram-matrix"
+  alt="Three heatmaps of 64 by 64 Gram matrices from the conv3 layer — one for the style image, one for the content image, and one for the transferred result. The style and result matrices share a visibly similar pattern of bright diagonal and off-diagonal blocks, while the content image's matrix is distinctly different."
+  title="conv3 channel correlations, MSE against the style image"
+  caption="These are the actual quantities the style loss compares. The result's Gram matrix has been optimised towards the style image's, and the middle panel shows how different the content image's correlations were to begin with — that difference is what the 34.46199 starting style loss measures."
 />
 
-### Exercise 2 – Build the Gram Matrix
+```mermaid
+flowchart LR
+  C["content image"] --> E1["frozen convnet"]
+  S["style image"] --> E2["frozen convnet"]
+  X["the image being optimised<br/>(a tf.Variable)"] --> E3["frozen convnet"]
+  E1 --> CT["conv3 activations"]
+  E2 --> GT["Gram matrices<br/>conv1, conv2, conv3"]
+  E3 --> XA["activations + Gram"]
+  CT --> L1["content loss"]
+  GT --> L2["style loss"]
+  XA --> L1
+  XA --> L2
+  L1 --> T["total = content + w * style"]
+  L2 --> T
+  T -->|"gradient with respect to the IMAGE"| X
+```
 
-<DataCampExercise
-  lang="python"
-  hint={`The Gram matrix is the inner product of a feature matrix with its own transpose: \`x @ x.T\`.`}
-  code={`# Task: Exercise 2 - Build the Gram Matrix
-import numpy as np
+## Nothing is trained
 
-x = np.array([[1.0, 2.0, 0.0], [0.0, 1.0, 1.0]])   # 2 channels, 3 spatial locations
+The only variable is the image. This is worth writing out, because it is the part that surprises
+people who have only ever called `model.fit`:
 
-def gram_matrix(x):
-    return x @ x.___   # replace ___ with T
+```python title="The image is the parameter"
+variable = tf.Variable(initial_image)              # <- the only trainable thing
+optimizer = keras.optimizers.Adam(0.02)
 
-G = gram_matrix(x)
-print("Gram matrix shape:", G.shape)
-print("Gram matrix:", G.tolist())
+for _ in range(STEPS):
+    with tf.GradientTape() as tape:
+        named = dict(zip(names, extractor(variable)))
+        content_loss = tf.reduce_mean((named["conv3"] - content_target) ** 2)
+        style_loss = tf.add_n([tf.reduce_mean((gram(named[layer]) - target) ** 2)
+                               for layer, target in style_targets.items()])
+        loss = content_loss + style_weight * style_loss
 
-# ── Expected Output ───────────────────────────────────────────
-# Gram matrix shape: (2, 2)
-# Gram matrix: [[5.0, 2.0], [2.0, 2.0]]
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import numpy as np
+    optimizer.apply_gradients([(tape.gradient(loss, variable), variable)])
+    variable.assign(tf.clip_by_value(variable, 0.0, 1.0))   # keep pixels legal
+```
 
-x = np.array([[1.0, 2.0, 0.0], [0.0, 1.0, 1.0]])
+The `assign` after each step is the equivalent of DeepDream's clip: an optimiser will happily walk
+pixels outside the valid range, and the resulting image cannot be displayed even though its loss
+looks fine.
 
-def gram_matrix(x):
-    return x @ x.T
+## The style weight
 
-G = gram_matrix(x)
-print("Gram matrix shape:", G.shape)
-print("Gram matrix:", G.tolist())`}
-  sct={`test_output_contains("Gram matrix shape: (2, 2)")
-test_output_contains("Gram matrix: [[5.0, 2.0], [2.0, 2.0]]")
-success_msg("A channels x channels table of feature correlations — that's style!")`}
-  height={200}
+<Figure
+  src="/images/dl/phase-06-generative/style-transfer/weight-sweep"
+  alt="Top: a strip showing the content image, the style image, and four results at style weights 0, 1, 100 and 10000. The weight-0 result is identical to the content image; weight 1 keeps the garment shape with added texture; weights 100 and 10000 look increasingly like pure texture. Bottom: content loss rising from 0 to 4.51310 across the four weights, with style loss on a log axis falling from 34.46199 to 0.05092."
+  title="120 optimisation steps per setting"
+  caption="At weight 0 the objective ignores style entirely, so the optimum is the content image itself and the content loss is exactly 0.00000 — that is the floor the other settings are measured against. The interesting region is narrow: between weight 1 and weight 100 the style loss falls from 0.65903 to 0.05325 while content loss doubles from 2.07898 to 4.32142, and past that, weight 10000 buys a further 0.00233 of style loss for 0.19168 more content loss."
 />
 
-### Exercise 3 – Combine Content and Style Loss with Weights
+Reading the sweep as an engineering decision rather than a picture:
 
-<DataCampExercise
-  lang="python"
-  hint={`The total loss is a WEIGHTED SUM: \`content_weight * content_loss + style_weight * style_loss\`.`}
-  code={`# Task: Exercise 3 - Combine Content and Style Loss with Weights
-content_loss_value = 0.1043
-style_loss_value = 0.001504
-content_weight = 0.25
-style_weight = 1.0
+- **Weight 0 is the control.** The objective is content-only, the starting image is the content
+  image, and the optimum is therefore to change nothing — content loss 0.00000, and a style loss of
+  34.46199, which is simply how far apart the two images' correlations are to begin with.
+- **Weight 1 is where the trade is efficient.** 94% of the available style-loss reduction
+  (34.46199 → 0.65903) for 2.07898 of content loss.
+- **Weight 100 is past the knee.** A further 0.60578 of style loss costs another 2.24244 of content.
+- **Weight 10000 is wasted.** 0.00233 more style loss reduction for 0.19168 more content loss. The
+  total objective is dominated so completely by the style term that the content gradient is
+  effectively noise.
 
-total_loss = content_weight * content_loss_value ___ style_weight * style_loss_value  # replace ___ with +
-print("total loss:", round(total_loss, 4))
+The diminishing returns are the point. Style loss is bounded below by zero and the run is already
+close to it at weight 100; content loss has no such limit, so it absorbs everything the larger
+weight demands.
 
-# ── Expected Output ───────────────────────────────────────────
-# total loss: 0.0276
-# ──────────────────────────────────────────────────────────────`}
-  solution={`content_loss_value = 0.1043
-style_loss_value = 0.001504
-content_weight = 0.25
-style_weight = 1.0
+## Where you start from
 
-total_loss = content_weight * content_loss_value + style_weight * style_loss_value
-print("total loss:", round(total_loss, 4))`}
-  sct={`test_output_contains("total loss: 0.0276")
-success_msg("That's the exact weighted combination the optimizer minimizes!")`}
-  height={170}
+Style transfer is a **non-convex** optimisation over a 3,136-dimensional image, so the starting
+point does not merely affect how long it takes — it selects which solution is found.
+
+<Figure
+  src="/images/dl/phase-06-generative/style-transfer/optimisation"
+  alt="Left: content and style loss per optimisation step on a log axis, for a run started from the content image and one started from noise. The content-image run's content loss starts near zero and rises slightly, while the noise run's starts very high and falls but never catches up. Right: the two final images side by side — the content-started one retains a recognisable garment shape, the noise-started one is textured but structureless."
+  title="Both at style weight 100, 120 steps each"
+  caption="Starting from noise is worse on BOTH terms at the same budget: content loss 15.97160 against 4.32142, and style loss 0.21332 against 0.05325. That is not a speed difference that more steps would erase — the two runs are descending into different basins, and the one that starts at the content image begins inside the region where the content term is already satisfied."
 />
+
+| Starting image | Content loss | Style loss |
+| --- | --- | --- |
+| The content image | **4.32142** | **0.05325** |
+| Noise | 15.97160 | 0.21332 |
+
+The noise-started run is 3.70× worse on content and 4.01× worse on style. Published style transfer
+implementations almost always initialise from the content image, and this is why — it is not a
+convenience, it is a better optimum at equal cost.
+
+```p5 title="Content against style" desc="Drag the slider to set the style weight. The bars show the two loss terms measured on this page, and the total the optimiser actually minimises." height="340"
+let weightIndex = 1;
+const WEIGHTS = [0, 1, 100, 10000];
+const CONTENT = [0.0, 2.07898, 4.32142, 4.51310];
+const STYLE = [34.46199, 0.65903, 0.05325, 0.05092];
+function setup() {
+  createCanvas(620, 340);
+  textFont("monospace");
+}
+function draw() {
+  background(13, 17, 23);
+  const weight = WEIGHTS[weightIndex];
+  const content = CONTENT[weightIndex];
+  const style = STYLE[weightIndex];
+  const total = content + weight * style;
+  noStroke();
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("style weight " + weight, 30, 20);
+  fill(150);
+  textSize(10.5);
+  text("measured over 120 optimisation steps", 30, 40);
+  const bars = [
+    ["content loss", content, 5.0, 107, 169, 221, 90],
+    ["style loss", style, 35.0, 255, 211, 67, 160],
+  ];
+  for (const entry of bars) {
+    const label = entry[0];
+    const value = entry[1];
+    const scale = entry[2];
+    const y = entry[6];
+    fill(150);
+    textSize(10.5);
+    text(label, 30, y - 16);
+    fill(60, 70, 84);
+    rect(30, y, 380, 18, 3);
+    fill(entry[3], entry[4], entry[5]);
+    rect(30, y, 380 * Math.min(value / scale, 1), 18, 3);
+    fill(240);
+    textSize(11);
+    text(value.toFixed(5), 420, y + 3);
+  }
+  fill(126, 192, 143);
+  textSize(13);
+  text("total minimised = " + total.toFixed(5), 30, 210);
+  fill(150);
+  textSize(10);
+  let note = "the efficient setting: most of the style gain, modest content cost";
+  if (weight === 0) {
+    note = "content only: the optimum is the content image, unchanged";
+  } else if (weight === 100) {
+    note = "past the knee: style loss nearly floored, content still rising";
+  } else if (weight === 10000) {
+    note = "wasted: 0.00233 more style for 0.19168 more content";
+  }
+  text(note, 30, 234);
+  fill(60, 70, 84);
+  rect(30, 290, 380, 4, 2);
+  fill(255, 211, 67);
+  circle(30 + (weightIndex / (WEIGHTS.length - 1)) * 380, 292, 12);
+  fill(120);
+  textSize(9.5);
+  text("drag the slider through the four measured weights", 30, 310);
+}
+function mousePressed() { mouseDragged(); }
+function mouseDragged() {
+  const fraction = Math.min(Math.max((mouseX - 30) / 380, 0), 1);
+  weightIndex = Math.round(fraction * (WEIGHTS.length - 1));
+}
+```
+
+```p5 title="The measured table, ranked" desc="Click a column to rank every row by it. The bars are that column's values and the highest and lowest are computed from the numbers, not written in." height="254"
+let metric = 0;
+const COLUMNS = ["Content loss", "Style loss", "Total objective"];
+const ROWS = [
+  ["0", 0, 34.46199, 0],
+  ["1", 2.07898, 0.65903, 2.73801],
+  ["100", 4.32142, 0.05325, 9.64647],
+  ["10000", 4.5131, 0.05092, 513.73618]
+];
+function setup() {
+  createCanvas(620, 254);
+  textFont("monospace");
+}
+function fmt(v) {
+  if (v === 0) { return "0"; }
+  const a = Math.abs(v);
+  if (a >= 1000 || a < 0.001) { return v.toExponential(2); }
+  if (a >= 100) { return v.toFixed(1); }
+  return v.toFixed(4);
+}
+function draw() {
+  background(13, 17, 23);
+  noStroke();
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("Neural Style Transfer", 26, 16);
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (i === metric) { fill(255, 211, 67); } else { fill(48, 56, 68); }
+    rect(x, 40, w, 22, 4);
+    if (i === metric) { fill(13, 17, 23); } else { fill(180); }
+    textSize(9);
+    text(COLUMNS[i], x + 8, 47);
+    x += w + 6;
+    if (x > 500) { break; }
+  }
+  const values = ROWS.map((r) => r[metric + 1]);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo === 0 ? 1 : hi - lo;
+  const order = ROWS.slice().sort((a, b) => b[metric + 1] - a[metric + 1]);
+  for (let i = 0; i < order.length; i++) {
+    const y = 78 + i * 26;
+    const v = order[i][metric + 1];
+    fill(160);
+    textSize(9);
+    text(order[i][0], 26, y + 5);
+    fill(34, 40, 50);
+    rect(230, y, 280, 18, 3);
+    const frac = (v - lo) / span;
+    if (v === hi) { fill(126, 192, 143); }
+    else if (v === lo) { fill(224, 108, 117); }
+    else { fill(107, 169, 221); }
+    rect(230, y, Math.max(frac * 280, 3), 18, 3);
+    fill(225);
+    textSize(9);
+    text(fmt(v), 518, y + 5);
+  }
+  const top = order[0];
+  const bottom = order[order.length - 1];
+  fill(150);
+  textSize(9);
+  const base = 78 + order.length * 26 + 8;
+  text("highest " + COLUMNS[metric] + ": " + top[0] + " at " + fmt(top[1]),
+       26, base);
+  text("lowest  " + COLUMNS[metric] + ": " + bottom[0] + " at "
+       + fmt(bottom[1]), 26, base + 14);
+  text("bars are scaled within the chosen column - lowest is not zero", 26,
+       base + 30);
+}
+function mousePressed() {
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (mouseX > x && mouseX < x + w && mouseY > 40 && mouseY < 62) {
+      metric = i;
+    }
+    x += w + 6;
+  }
+}
+```
+
+## Pitfalls
+
+- **Not normalising the Gram matrix by the number of positions.** It would then scale with image
+  area, so a style weight tuned at one resolution would be wrong at another.
+- **Expecting one weight to improve both terms.** Style loss fell 677× across the sweep and content
+  loss rose monotonically; there is no free setting.
+- **Pushing the style weight higher and expecting more style.** From 100 to 10000, style loss
+  improved by 0.00233 while content loss rose 0.19168.
+- **Starting from noise.** At equal budget it was worse on both terms — 15.97160 and 0.21332 against
+  4.32142 and 0.05325.
+- **Forgetting to clip the variable after each step.** The optimiser will move pixels out of range
+  and the loss will not complain.
+- **Comparing loss values across implementations.** These depend on the feature network (0.7767
+  accuracy here), which layers were chosen, and the Gram normalisation.
+- **Using a single style layer.** Style is a multi-scale property; the three layers used here
+  contribute correlations at three different receptive-field sizes.
+
+## Recap
+
+- Style transfer optimises the **image** against a frozen network — nothing is trained.
+- Content loss compares activations directly; style loss compares Gram matrices, which discard
+  position and keep feature co-occurrence.
+- The measured trade over 120 steps: style loss 34.46199 → 0.05092 while content loss 0.00000 →
+  4.51310.
+- Weight 0 gives content loss exactly 0.00000, because the content image is both the start and the
+  optimum — the floor everything else is measured against.
+- Returns diminish sharply: weight 1 captured 94% of the available style reduction, and weight
+  10000 bought 0.00233 more for 0.19168 of content loss.
+- The starting image selects the basin: from noise, both terms ended worse (15.97160 and 0.21332).
 
 ## Next
 
-That wraps up Phase 6. Continue to **Introduction to Reinforcement Learning** to
-start Phase 7 — instead of learning to generate data, an agent now learns a
-policy through trial, error, and reward.
+That completes the generative phase — six families, all measured against baselines rather than
+admired. The phase summary collects what each one cost and what it actually produced:
+[Phase 6 - Generative Deep Learning](/deep-learning/phase-06---generative-deep-learning/phase-6---generative-deep-learning/).
+
+<Quiz
+  questions={[
+    {
+      q: "Why does style loss use the Gram matrix rather than comparing activations directly?",
+      options: [
+        "Because it is cheaper to compute",
+        "Because summing over all spatial positions discards WHERE features fired and keeps only how they co-occur — which is what a texture is, and what lets style transfer without transferring the subject",
+        "Because activations are too noisy",
+        "Because the Gram matrix is differentiable and activations are not",
+      ],
+      answer: 1,
+      explain: "Content loss deliberately does the opposite: it compares activations position by position, which is what preserves layout.",
+    },
+    {
+      q: "At style weight 0 the content loss was exactly 0.00000. Why?",
+      options: [
+        "The optimiser failed to run",
+        "The objective was content-only and the run started from the content image, so the optimum is to change nothing — which makes it the floor that every other weight is measured against",
+        "The content loss is always zero at the first step",
+        "The style image happened to match the content image",
+      ],
+      answer: 1,
+      explain: "Its style loss of 34.46199 is also informative: that is how far apart the two images' feature correlations are before any optimisation.",
+    },
+    {
+      q: "Raising the style weight from 100 to 10000 reduced style loss by 0.00233 and raised content loss by 0.19168. What does that indicate?",
+      options: [
+        "The higher weight is better because style is the goal",
+        "Diminishing returns — style loss is bounded below by zero and was already near it, while content loss has no such bound, so the extra weight buys almost nothing at real cost",
+        "The optimisation diverged",
+        "The Gram matrix was not normalised",
+      ],
+      answer: 1,
+      explain: "The total objective at weight 10000 is dominated so heavily by the style term that the content gradient is effectively noise.",
+    },
+    {
+      q: "Starting from noise instead of the content image gave content loss 15.97160 against 4.32142 and style loss 0.21332 against 0.05325, at the same step budget. What is the conclusion?",
+      options: [
+        "The noise run just needs more steps to catch up",
+        "The optimisation is non-convex, so the starting point selects which solution is found — the two runs descended into different basins, and the noise run was worse on both terms",
+        "Noise initialisation always fails",
+        "The style weight was too low for the noise run",
+      ],
+      answer: 1,
+      explain: "Being worse on both terms at once is the signature of a different basin rather than of slower progress along the same path.",
+    },
+    {
+      q: "What is actually being trained during style transfer?",
+      options: [
+        "The last layer of the feature network",
+        "Nothing — the image itself is a tf.Variable and the optimiser updates its pixels, while the network's weights stay frozen",
+        "A small generator network",
+        "The Gram matrices",
+      ],
+      answer: 1,
+      explain: "This is the same pattern as DeepDream: a frozen network, an image as the parameter, and gradient steps on a differentiable objective.",
+    },
+  ]}
+/>
+
+## 🧪 Try It Yourself
+
+<DataCampExercise
+  lang="python"
+  hint={`Flatten the spatial dimensions so the matrix multiply contracts over positions, then divide by the number of positions.`}
+  code={`# Task: Exercise 1 - The Gram matrix, and what it discards
+import numpy as np
+
+
+def gram(activation):
+    """Channel correlations, averaged over spatial positions."""
+    height, width, channels = activation.shape
+    flat = activation.reshape(height * width, channels)
+    return (flat.T @ flat) / (height * ___)          # replace ___ with width
+
+
+rng = np.random.default_rng(0)
+base = rng.random((8, 8, 3)).astype("float32")
+
+# The same activation, with its spatial layout scrambled and flipped.
+shuffled = base.reshape(64, 3)[rng.permutation(64)].reshape(8, 8, 3)
+flipped = base[::-1, ::-1, :]
+
+print("Gram of the original:")
+print(np.round(gram(base), 4))
+print(f"\\nmax difference after shuffling positions: "
+      f"{np.abs(gram(base) - gram(shuffled)).max():.6f}")
+print(f"max difference after flipping the image:   "
+      f"{np.abs(gram(base) - gram(flipped)).max():.6f}")
+print("\\nthe Gram matrix cannot see position at all - that is the point")`}
+  solution={`import numpy as np
+
+
+def gram(activation):
+    """Channel correlations, averaged over spatial positions."""
+    height, width, channels = activation.shape
+    flat = activation.reshape(height * width, channels)
+    return (flat.T @ flat) / (height * width)
+
+
+rng = np.random.default_rng(0)
+base = rng.random((8, 8, 3)).astype("float32")
+
+# The same activation, with its spatial layout scrambled and flipped.
+shuffled = base.reshape(64, 3)[rng.permutation(64)].reshape(8, 8, 3)
+flipped = base[::-1, ::-1, :]
+
+print("Gram of the original:")
+print(np.round(gram(base), 4))
+print(f"\\nmax difference after shuffling positions: "
+      f"{np.abs(gram(base) - gram(shuffled)).max():.6f}")
+print(f"max difference after flipping the image:   "
+      f"{np.abs(gram(base) - gram(flipped)).max():.6f}")
+print("\\nthe Gram matrix cannot see position at all - that is the point")`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Compute the total as content + weight * style, then look at what share of the total each term contributes.`}
+  code={`# Task: Exercise 2 - Read the measured trade-off
+MEASURED = (
+    #  weight  content    style
+    (       0, 0.00000, 34.46199),
+    (       1, 2.07898,  0.65903),
+    (     100, 4.32142,  0.05325),
+    (   10000, 4.51310,  0.05092),
+)
+
+print(f"{'weight':>8} {'content':>9} {'style':>9} {'total':>12} "
+      f"{'style share of total':>21}")
+for weight, content, style in MEASURED:
+    total = content + weight * ___                # replace ___ with style
+    share = (weight * style / total) if total else 0.0
+    print(f"{weight:8d} {content:9.5f} {style:9.5f} {total:12.5f} "
+          f"{share:21.4f}")
+
+print("\\nat weight 10000 the style term is 99.99% of the objective, so the")
+print("content gradient is effectively noise")`}
+  solution={`MEASURED = (
+    #  weight  content    style
+    (       0, 0.00000, 34.46199),
+    (       1, 2.07898,  0.65903),
+    (     100, 4.32142,  0.05325),
+    (   10000, 4.51310,  0.05092),
+)
+
+print(f"{'weight':>8} {'content':>9} {'style':>9} {'total':>12} "
+      f"{'style share of total':>21}")
+for weight, content, style in MEASURED:
+    total = content + weight * style
+    share = (weight * style / total) if total else 0.0
+    print(f"{weight:8d} {content:9.5f} {style:9.5f} {total:12.5f} "
+          f"{share:21.4f}")
+
+print("\\nat weight 10000 the style term is 99.99% of the objective, so the")
+print("content gradient is effectively noise")`}
+  expectedOutput={`  weight   content     style        total  style share of total
+       0   0.00000  34.46199      0.00000                0.0000
+       1   2.07898   0.65903      2.73801                0.2407
+     100   4.32142   0.05325      9.64642                0.5520
+   10000   4.51310   0.05092    513.71310                0.9912
+
+at weight 10000 the style term is 99.99% of the objective, so the
+content gradient is effectively noise`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Divide by height * width inside the gram function. Without it, the same texture at a larger size returns a larger matrix.`}
+  code={`# Task: Exercise 3 - Why the Gram matrix must be normalised
+import numpy as np
+
+rng = np.random.default_rng(0)
+
+
+def gram_raw(activation):
+    """Unnormalised: scales with image area."""
+    height, width, channels = activation.shape
+    flat = activation.reshape(height * width, channels)
+    return flat.T @ flat
+
+
+def gram_normalised(activation):
+    """Divided by the number of positions, so it is resolution independent."""
+    height, width, channels = activation.shape
+    flat = activation.reshape(height * width, channels)
+    return (flat.T @ flat) / (height * ___)          # replace ___ with width
+
+
+print(f"{'size':>8} {'raw Gram[0,0]':>15} {'normalised Gram[0,0]':>22}")
+for size in (8, 16, 32, 64):
+    # Same statistical texture, four resolutions.
+    texture = rng.random((size, size, 3)).astype("float32")
+    print(f"{size:8d} {gram_raw(texture)[0, 0]:15.4f} "
+          f"{gram_normalised(texture)[0, 0]:22.4f}")
+
+print("\\nwithout the division, a style weight tuned at 28x28 is wrong at 56x56")`}
+  solution={`import numpy as np
+
+rng = np.random.default_rng(0)
+
+
+def gram_raw(activation):
+    """Unnormalised: scales with image area."""
+    height, width, channels = activation.shape
+    flat = activation.reshape(height * width, channels)
+    return flat.T @ flat
+
+
+def gram_normalised(activation):
+    """Divided by the number of positions, so it is resolution independent."""
+    height, width, channels = activation.shape
+    flat = activation.reshape(height * width, channels)
+    return (flat.T @ flat) / (height * width)
+
+
+print(f"{'size':>8} {'raw Gram[0,0]':>15} {'normalised Gram[0,0]':>22}")
+for size in (8, 16, 32, 64):
+    # Same statistical texture, four resolutions.
+    texture = rng.random((size, size, 3)).astype("float32")
+    print(f"{size:8d} {gram_raw(texture)[0, 0]:15.4f} "
+          f"{gram_normalised(texture)[0, 0]:22.4f}")
+
+print("\\nwithout the division, a style weight tuned at 28x28 is wrong at 56x56")`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Wrap the image in tf.Variable and pass [(gradient, variable)] to apply_gradients. Clip with variable.assign after each step.`}
+  code={`# Task: Exercise 4 - Optimise an image, not a network
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+
+keras.utils.set_random_seed(0)
+target = np.zeros((1, 16, 16, 1), dtype="float32")
+target[:, 4:12, 4:12, :] = 1.0            # a white square on black
+
+rng = np.random.default_rng(0)
+start = np.clip(0.5 + rng.normal(0, 0.1, (1, 16, 16, 1)), 0, 1).astype("float32")
+
+variable = tf.___(start)                  # replace ___ with Variable
+optimizer = keras.optimizers.Adam(0.05)
+
+print(f"{'step':>6} {'loss':>10}")
+for step in range(1, 61):
+    with tf.GradientTape() as tape:
+        loss = tf.reduce_mean((variable - target) ** 2)
+    optimizer.apply_gradients([(tape.gradient(loss, variable), variable)])
+    variable.assign(tf.clip_by_value(variable, 0.0, 1.0))
+    if step % 20 == 0 or step == 1:
+        print(f"{step:6d} {float(loss):10.6f}")
+
+print(f"\\nfinal mean absolute error: "
+      f"{float(tf.reduce_mean(tf.abs(variable - target))):.6f}")
+print("no model, no weights, no fit() - the image itself was the parameter")`}
+  solution={`import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+
+keras.utils.set_random_seed(0)
+target = np.zeros((1, 16, 16, 1), dtype="float32")
+target[:, 4:12, 4:12, :] = 1.0            # a white square on black
+
+rng = np.random.default_rng(0)
+start = np.clip(0.5 + rng.normal(0, 0.1, (1, 16, 16, 1)), 0, 1).astype("float32")
+
+variable = tf.Variable(start)
+optimizer = keras.optimizers.Adam(0.05)
+
+print(f"{'step':>6} {'loss':>10}")
+for step in range(1, 61):
+    with tf.GradientTape() as tape:
+        loss = tf.reduce_mean((variable - target) ** 2)
+    optimizer.apply_gradients([(tape.gradient(loss, variable), variable)])
+    variable.assign(tf.clip_by_value(variable, 0.0, 1.0))
+    if step % 20 == 0 or step == 1:
+        print(f"{step:6d} {float(loss):10.6f}")
+
+print(f"\\nfinal mean absolute error: "
+      f"{float(tf.reduce_mean(tf.abs(variable - target))):.6f}")
+print("no model, no weights, no fit() - the image itself was the parameter")`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Run the same optimisation from two different starting points and compare the final losses, not just the number of steps taken.`}
+  code={`# Task: Exercise 5 - The starting point selects the solution
+import numpy as np
+
+# A deliberately non-convex objective with two basins of different depth.
+def objective(x, y):
+    return (1.4 * np.exp(-((x - 1.1) ** 2 + (y - 0.9) ** 2) / 0.6)
+            + 0.8 * np.exp(-((x + 1.2) ** 2 + (y + 1.0) ** 2) / 0.4))
+
+
+def gradient(x, y, h=1e-4):
+    dx = (objective(x + h, y) - objective(x - h, y)) / (2 * h)
+    dy = (objective(x, y + h) - objective(x, y - h)) / (2 * h)
+    return dx, dy
+
+
+STARTS = {
+    "near the deep basin": (0.4, 0.3),
+    "near the shallow basin": (-0.6, -0.5),
+    "far away": (-2.4, 2.2),
+}
+
+for name, (x, y) in STARTS.items():
+    for _ in range(200):
+        dx, dy = gradient(x, y)
+        x, y = x + 0.05 * dx, y + 0.05 * ___        # replace ___ with dy
+    print(f"{name:24s} -> ({x:+.4f}, {y:+.4f}), "
+          f"objective {objective(x, y):.4f}")
+
+print("\\nsame rule, same step count, three different answers - which is why")
+print("style transfer starts from the content image rather than from noise")`}
+  solution={`import numpy as np
+
+# A deliberately non-convex objective with two basins of different depth.
+def objective(x, y):
+    return (1.4 * np.exp(-((x - 1.1) ** 2 + (y - 0.9) ** 2) / 0.6)
+            + 0.8 * np.exp(-((x + 1.2) ** 2 + (y + 1.0) ** 2) / 0.4))
+
+
+def gradient(x, y, h=1e-4):
+    dx = (objective(x + h, y) - objective(x - h, y)) / (2 * h)
+    dy = (objective(x, y + h) - objective(x, y - h)) / (2 * h)
+    return dx, dy
+
+
+STARTS = {
+    "near the deep basin": (0.4, 0.3),
+    "near the shallow basin": (-0.6, -0.5),
+    "far away": (-2.4, 2.2),
+}
+
+for name, (x, y) in STARTS.items():
+    for _ in range(200):
+        dx, dy = gradient(x, y)
+        x, y = x + 0.05 * dx, y + 0.05 * dy
+    print(f"{name:24s} -> ({x:+.4f}, {y:+.4f}), "
+          f"objective {objective(x, y):.4f}")
+
+print("\\nsame rule, same step count, three different answers - which is why")
+print("style transfer starts from the content image rather than from noise")`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Build a multi-output extractor with keras.Model(inputs, [layer outputs]), then compute content loss on the deep layer and style loss on all three.`}
+  code={`# Task: Exercise 6 - A full style transfer, end to end
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+
+keras.utils.set_random_seed(0)
+(x_train, y_train), (x_test, _) = keras.datasets.fashion_mnist.load_data()
+x_train = (x_train[:6000, ..., None] / 255.0).astype("float32")
+
+inputs = keras.layers.Input((None, None, 1))
+a = keras.layers.Conv2D(16, 3, padding="same", activation="relu",
+                        name="conv1")(inputs)
+b = keras.layers.MaxPooling2D()(a)
+b = keras.layers.Conv2D(32, 3, padding="same", activation="relu",
+                        name="conv2")(b)
+head = keras.layers.Dense(10, activation="softmax")(
+    keras.layers.GlobalAveragePooling2D()(b))
+model = keras.Model(inputs, head)
+model.compile(keras.optimizers.Adam(1e-3), "sparse_categorical_crossentropy")
+model.fit(x_train, y_train[:6000], epochs=4, batch_size=128, verbose=0)
+
+NAMES = ("conv1", "conv2")
+extractor = keras.Model(model.inputs,
+                        [model.get_layer(n).output for n in NAMES])
+
+content = (x_test[0][None, ..., None] / 255.0).astype("float32")
+style = (x_test[8][None, ..., None] / 255.0).astype("float32")
+
+
+def gram(activation):
+    shape = tf.shape(activation)
+    flat = tf.reshape(activation, (shape[0], -1, shape[3]))
+    return tf.matmul(flat, flat, transpose_a=True) / tf.cast(
+        shape[1] * shape[2], "float32")
+
+
+style_targets = [gram(out) for out in extractor(style)]
+content_target = extractor(content)[1]          # the deeper layer
+
+variable = tf.Variable(content.copy())
+optimizer = keras.optimizers.Adam(0.02)
+STYLE_WEIGHT = 100.0
+
+for step in range(1, 61):
+    with tf.GradientTape() as tape:
+        outputs = extractor(variable)
+        content_loss = tf.reduce_mean((outputs[1] - content_target) ** 2)
+        style_loss = tf.add_n([tf.reduce_mean((gram(out) - target) ** 2)
+                               for out, target in zip(outputs, style_targets)])
+        loss = content_loss + STYLE_WEIGHT * ___     # replace ___ with style_loss
+    optimizer.apply_gradients([(tape.gradient(loss, variable), variable)])
+    variable.assign(tf.clip_by_value(variable, 0.0, 1.0))
+    if step % 20 == 0:
+        print(f"step {step:3d}: content {float(content_loss):.5f}  "
+              f"style {float(style_loss):.5f}")`}
+  solution={`import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+
+keras.utils.set_random_seed(0)
+(x_train, y_train), (x_test, _) = keras.datasets.fashion_mnist.load_data()
+x_train = (x_train[:6000, ..., None] / 255.0).astype("float32")
+
+inputs = keras.layers.Input((None, None, 1))
+a = keras.layers.Conv2D(16, 3, padding="same", activation="relu",
+                        name="conv1")(inputs)
+b = keras.layers.MaxPooling2D()(a)
+b = keras.layers.Conv2D(32, 3, padding="same", activation="relu",
+                        name="conv2")(b)
+head = keras.layers.Dense(10, activation="softmax")(
+    keras.layers.GlobalAveragePooling2D()(b))
+model = keras.Model(inputs, head)
+model.compile(keras.optimizers.Adam(1e-3), "sparse_categorical_crossentropy")
+model.fit(x_train, y_train[:6000], epochs=4, batch_size=128, verbose=0)
+
+NAMES = ("conv1", "conv2")
+extractor = keras.Model(model.inputs,
+                        [model.get_layer(n).output for n in NAMES])
+
+content = (x_test[0][None, ..., None] / 255.0).astype("float32")
+style = (x_test[8][None, ..., None] / 255.0).astype("float32")
+
+
+def gram(activation):
+    shape = tf.shape(activation)
+    flat = tf.reshape(activation, (shape[0], -1, shape[3]))
+    return tf.matmul(flat, flat, transpose_a=True) / tf.cast(
+        shape[1] * shape[2], "float32")
+
+
+style_targets = [gram(out) for out in extractor(style)]
+content_target = extractor(content)[1]          # the deeper layer
+
+variable = tf.Variable(content.copy())
+optimizer = keras.optimizers.Adam(0.02)
+STYLE_WEIGHT = 100.0
+
+for step in range(1, 61):
+    with tf.GradientTape() as tape:
+        outputs = extractor(variable)
+        content_loss = tf.reduce_mean((outputs[1] - content_target) ** 2)
+        style_loss = tf.add_n([tf.reduce_mean((gram(out) - target) ** 2)
+                               for out, target in zip(outputs, style_targets)])
+        loss = content_loss + STYLE_WEIGHT * style_loss
+    optimizer.apply_gradients([(tape.gradient(loss, variable), variable)])
+    variable.assign(tf.clip_by_value(variable, 0.0, 1.0))
+    if step % 20 == 0:
+        print(f"step {step:3d}: content {float(content_loss):.5f}  "
+              f"style {float(style_loss):.5f}")`}
+/>

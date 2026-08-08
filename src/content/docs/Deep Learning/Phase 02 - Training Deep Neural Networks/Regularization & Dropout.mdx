@@ -1,388 +1,807 @@
 ---
 title: Regularization & Dropout
-description: Fight overfitting in deep nets with L1/L2 penalties, Dropout, MC Dropout, and max-norm regularization.
+description: Dropout measured across four rates, L2's real effect once Keras' penalty-inflated val_loss is corrected for, and MC dropout's uncertainty signal at 2.3x separation.
 sidebar:
   order: 414
 ---
 
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Figure from "../../../../components/Figure.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+Regularisation is any pressure that stops a model fitting its training set
+perfectly. There are four common kinds, they work by completely different
+mechanisms, and one of them is routinely mis-measured because Keras reports a
+number that is not what you think it is. All four are measured below on the same
+over-parameterised network.
+
 ## What you'll learn
 
-- L1 and L2 regularization on a layer's weights, and `functools.partial` to
-  avoid repeating the same arguments everywhere
-- Dropout — randomly ignoring neurons during training — and why it works
-- MC Dropout, which turns a trained Dropout model into an uncertainty estimator
-  for free
-- max-norm regularization, which rescales weights after every training step
+- Inverted dropout implemented by hand — and why Keras scales *up* during
+  training rather than down at inference.
+- The simplest regulariser measured: **13,002 parameters reached 0.8407** against
+  669,706 parameters' 0.8467.
+- Four dropout rates, where **0.5 was best** and 0.7 began to underfit — with the
+  train/validation gap moving from **+0.1133 to −0.0090**.
+- Why Keras' `val_loss` cannot be compared across L2 strengths, and what the
+  plain cross-entropy shows instead: **0.6253 → 0.4810**.
+- L2's actual effect on the weights: mean |w| falling **16×** while the largest
+  single weight **grew**.
+- MC dropout: an accuracy gain inside the noise, but a spread **2.3× larger on
+  wrong predictions**.
+- Max-norm, measured as a hard cap: **0 of 512** columns above the limit against
+  **512 of 512** without it.
 
-## Why regularize at all?
+## The cheapest regulariser is a smaller model
 
-Deep nets have "an incredible amount of freedom": tens of thousands of
-parameters, sometimes millions. That's exactly what lets them fit complex
-datasets — and exactly what lets them overfit the training set instead of
-learning something that generalizes. You already know one of the best fixes from
-Chapter 10's toolkit: **early stopping**. Batch Normalization also acts as a mild
-regularizer as a side effect. This page covers three more dedicated techniques.
+Before any penalty or noise, there is capacity. Two hidden layers on 6,000
+Fashion-MNIST rows, Adam, 30 epochs:
 
-## Reducing model size — the simplest regularizer
+<Figure
+  src="/images/dl/phase-02-training/regularization-and-dropout/capacity-and-dropout"
+  alt="Two panels of validation loss against epoch. Left: three model widths — 16 units descends slowly and is still falling at epoch 30, 64 units bottoms at epoch 13, 512 units bottoms at epoch 6 and then climbs steeply. Right: four dropout rates on the 512-unit model, where 0.0 climbs sharply after epoch 6 while 0.5 stays nearly flat after its minimum."
+  title="Two ways to regularise the same problem"
+  caption="Left: the 512-unit model reaches the lowest validation loss of the three (0.4263) and then throws it away, ending at 0.6253. The 16-unit model never overfits — it is still improving at epoch 30 — but it never gets as low either. Right: dropout 0.5 on the wide model reaches 0.4065, better than any width, and its curve barely rises afterwards."
+/>
 
-Before reaching for L1/L2 penalties or Dropout, Chollet's suggestion is to try
-the cheapest fix first: **make the model smaller**. A model with fewer
-parameters has less room to simply memorize the training set, so to reduce its
-loss it's forced to learn compressed, genuinely predictive patterns instead —
-exactly what generalizes to new data. There's no formula for the "right" size;
-the workflow is to start small and add capacity only until validation loss
-stops improving.
+| Hidden width | Parameters | Best val loss | At epoch | Final val loss | Val accuracy |
+| --- | --- | --- | --- | --- | --- |
+| 16 | **13,002** | 0.4562 | 30 | **0.4562** | 0.8407 |
+| 64 | 55,050 | 0.4690 | 13 | 0.5210 | 0.8453 |
+| 512 | **669,706** | **0.4263** | 6 | 0.6253 | 0.8467 |
 
-```python title="Same architecture, three capacities" showLineNumbers{1}
-import tensorflow as tf
+**Fifty times the parameters bought 0.0060 accuracy.** The small model's best and
+final losses are the same number, because it has no capacity to overfit with —
+which is a form of regularisation you get for free, along with a model that trains
+faster and ships smaller.
 
-def build(units):
-    return tf.keras.models.Sequential([
-        tf.keras.layers.Dense(units, activation="relu", input_shape=(20,)),
-        tf.keras.layers.Dense(units, activation="relu"),
-        tf.keras.layers.Dense(1, activation="sigmoid"),
-    ])
-
-small_model = build(units=4)     # underfits later to overfit, but recovers slower
-reference_model = build(units=16)
-large_model = build(units=512)   # overfits almost immediately, noisy val loss
-
-for name, model in [("small", small_model), ("reference", reference_model), ("large", large_model)]:
-    print(name, "params:", model.count_params())
-```
-
-A model that's too small won't overfit at all — it'll plateau and stay there,
-which is itself useful information: it tells you to add capacity back before
-you reach for any of the regularizers below.
-
-## L1 and L2 regularization
-
-Just like Ridge and Lasso for linear models, you can penalize a layer's
-connection weights directly. L2 regularization shrinks weights toward zero
-smoothly; L1 pushes many of them *all the way* to zero, giving you a sparse
-model.
-
-```python title="L2-regularized Dense layer" showLineNumbers{1}
-import tensorflow as tf
-
-layer = tf.keras.layers.Dense(
-    100,
-    activation="elu",
-    kernel_initializer="he_normal",
-    kernel_regularizer=tf.keras.regularizers.l2(0.01),
-)
-```
-
-Because you'll typically want the same activation, initializer, and regularizer
-on every hidden layer, `functools.partial` saves you from repeating yourself
-(and from typos that only show up on the third layer):
-
-```python title="functools.partial to avoid repetition" showLineNumbers{1}
-import tensorflow as tf
-from functools import partial
-
-RegularizedDense = partial(
-    tf.keras.layers.Dense,
-    activation="elu",
-    kernel_initializer="he_normal",
-    kernel_regularizer=tf.keras.regularizers.l2(0.01),
-)
-
-model = tf.keras.models.Sequential([
-    tf.keras.layers.Flatten(input_shape=[28, 28]),
-    RegularizedDense(300),
-    RegularizedDense(100),
-    RegularizedDense(10, activation="softmax", kernel_initializer="glorot_uniform"),
-])
-```
+The wide model is not useless: it reaches a lower minimum. It just cannot stay
+there, which is what every other technique on this page is for.
 
 ## Dropout
 
-**Dropout** is one of the most popular — and most surprising — regularizers for
-deep nets. At every training step, every neuron (including inputs, but never
-outputs) has a probability `p` of being temporarily ignored entirely for that
-step. The dropout rate `p` is usually `10%–50%`.
+At each training step, zero each unit independently with probability $r$, then
+scale the survivors by $1/(1-r)$ so the layer's expected output is unchanged:
+
+$$
+\tilde{a}_i =
+\begin{cases}
+0 & \text{with probability } r \\[2pt]
+\dfrac{a_i}{1-r} & \text{otherwise}
+\end{cases}
+$$
+
+This is *inverted* dropout, and the scaling is why prediction needs no correction
+at all — the training-time output already has the right expectation. Measured on a
+matrix of ones with $r = 0.5$: the surviving entries all come out as exactly
+**2.0**, and `training=False` returns the input unchanged.
+
+| Dropout rate | Best val loss | At epoch | Final val loss | Val accuracy | Train accuracy | Gap |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0.0 | 0.4263 | 6 | 0.6253 | 0.8467 | 0.9600 | **0.1133** |
+| 0.2 | 0.4147 | 13 | 0.5774 | 0.8453 | 0.9397 | 0.0944 |
+| **0.5** | **0.4065** | 17 | **0.4230** | **0.8633** | 0.8930 | **0.0297** |
+| 0.7 | 0.4313 | 22 | 0.4396 | 0.8533 | 0.8443 | **−0.0090** |
+
+Three things happen as the rate rises. The **overfitting turn moves later** (epoch
+6 → 13 → 17 → 22), the **gap closes** (0.1133 → −0.0090), and the **training
+accuracy falls** (0.9600 → 0.8443). At 0.7 the training accuracy is *below* the
+validation accuracy, which is the signature of a model being held back rather than
+generalised.
+
+Dropout 0.5 was the best single result on this page: 0.8633 accuracy and a
+validation loss that ends 0.0165 above its own minimum, against the unregularised
+model's 0.1990 above.
+
+```python title="Dropout goes after the activation"
+keras.layers.Dense(512, activation="relu"),
+keras.layers.Dropout(0.5),
+keras.layers.Dense(512, activation="relu"),
+keras.layers.Dropout(0.5),
+```
 
 ```mermaid
 flowchart TD
-  A["Full network"] --> B["Step t: random neurons dropped<br/>(dashed = output 0)"]
-  A --> C["Step t+1: a different random subset dropped"]
-  B --> D["Trained weights are shared across<br/>every random sub-network"]
-  C --> D
+  A["model overfits"] --> B{"can you use<br/>a smaller model?"}
+  B -- yes --> C["fewer units or layers<br/>free, faster, smaller"]
+  B -- "no: capacity is needed" --> D["dropout 0.2 to 0.5<br/>strongest single lever here"]
+  D --> E{"still overfitting?"}
+  E -- yes --> F["add L2, and/or<br/>get more data"]
+  E -- no --> G["stop: check the gap<br/>is not negative"]
+  H["need uncertainty, not accuracy?"] --> I["keep dropout on at predict time<br/>and average N passes"]
 ```
 
-It sounds destructive, but it works because no neuron can rely on any single
-neighbor being present — each one has to become independently useful, which
-produces a network that's less sensitive to noise and generalizes better. Keras
-handles the training/prediction asymmetry (scaling outputs by the keep
-probability) for you automatically:
+## L2, and a measurement trap
 
-```python title="Dropout before every Dense layer" showLineNumbers{1}
-import tensorflow as tf
+$$
+L_{\text{total}} = L_{\text{data}} + \lambda \sum_i w_i^2
+$$
 
-model = tf.keras.models.Sequential([
-    tf.keras.layers.Flatten(input_shape=[28, 28]),
-    tf.keras.layers.Dropout(rate=0.2),
-    tf.keras.layers.Dense(300, activation="elu", kernel_initializer="he_normal"),
-    tf.keras.layers.Dropout(rate=0.2),
-    tf.keras.layers.Dense(100, activation="elu", kernel_initializer="he_normal"),
-    tf.keras.layers.Dropout(rate=0.2),
-    tf.keras.layers.Dense(10, activation="softmax"),
-])
+The gradient of that penalty is $2\lambda w$, so every step shrinks each weight in
+proportion to its own size — which is why L2 is also called weight decay.
+
+**The trap:** Keras adds the penalty term to the loss it reports, including
+`val_loss`. Comparing `val_loss` across different $\lambda$ values therefore
+compares different quantities, and the stronger penalty looks worse purely because
+its own penalty is included. Measured both ways:
+
+| L2 $\lambda$ | Keras `val_loss` | Plain cross-entropy | Val accuracy | mean \|w\| | max \|w\| |
+| --- | --- | --- | --- | --- | --- |
+| none | 0.6253 | 0.6253 | 0.8467 | 0.0461 | 0.6245 |
+| 1e−5 | 0.7049 | 0.6868 | 0.8413 | 0.0393 | 0.6833 |
+| 1e−4 | 0.6451 | 0.5519 | **0.8560** | 0.0271 | 0.9342 |
+| 1e−3 | 0.6913 | 0.5251 | 0.8133 | 0.0098 | 0.9499 |
+| 1e−2 | 0.6469 | **0.4810** | 0.8360 | **0.0028** | **1.1726** |
+
+Read the two loss columns against each other. On Keras' number, L2 looks useless —
+every setting is worse than none. On the **plain cross-entropy the strongest
+penalty is the best by a wide margin**, 0.4810 against 0.6253. Same runs, opposite
+conclusions, and only one of the two columns is measuring what you meant.
+
+Accuracy tells a third story, peaking at 1e−4 (0.8560) and dipping at 1e−3
+(0.8133). With a 1,500-row validation set those swings are not reliable either.
+The one column that moves cleanly and monotonically is the mechanism:
+
+<Figure
+  src="/images/dl/phase-02-training/regularization-and-dropout/l2-weights"
+  alt="Two panels. Left: validation accuracy per epoch for five L2 strengths, all within a band of about 0.04. Right: log-scale histograms of the learned weights for three penalties — no penalty is a broad bell, 1e-4 is narrower, and 1e-2 is a tall narrow spike at zero with visible tails extending past 0.2."
+  title="What the penalty buys, and what it does"
+  caption="Left uses validation accuracy rather than Keras' val_loss, because val_loss includes the penalty term and is not comparable across strengths. Right shows the actual effect: at 1e-2 the mean absolute weight is 0.0028 against 0.0461 with no penalty — a 16x reduction — while the largest single weight grows from 0.6245 to 1.1726. L2 penalises the sum of squares, so it flattens the bulk and tolerates a few large survivors."
+/>
+
+That last point is worth keeping. **L2 does not bound any individual weight.** It
+minimises the total sum of squares, and the cheapest way to do that is to crush the
+many small weights while letting a few genuinely useful ones grow. If you need a
+per-weight bound, that is what max-norm is for.
+
+## MC dropout: keeping the noise on at prediction time
+
+Dropout is normally switched off for prediction. Leave it on, run the same input
+through the model 100 times, and you get a distribution instead of a point:
+
+<Figure
+  src="/images/dl/phase-02-training/regularization-and-dropout/mc-dropout"
+  alt="Two panels. Left: overlapping histograms of the prediction spread across 100 stochastic passes, with the correct-prediction distribution concentrated near 0.08 and the wrong-prediction distribution shifted right and much wider. Right: accuracy against the number of averaged passes, rising from 0.839 at one pass to about 0.865 by 25, against a dashed line at 0.8633 for one deterministic pass."
+  title="100 stochastic passes over the same test set"
+  caption="Left: on predictions the model got right the spread across passes averages 0.0837; on predictions it got wrong, 0.1902 — 2.3x wider. That separation is the useful output. Right: averaging the passes reaches 0.8653 against the deterministic 0.8633, a gain of 0.0020, and it is not even monotonic — 50 passes scored 0.8607. The accuracy benefit here is noise."
+/>
+
+| Passes averaged | Test accuracy |
+| --- | --- |
+| 1 (stochastic) | **0.8387** |
+| 2 | 0.8493 |
+| 5 | 0.8627 |
+| 10 | 0.8633 |
+| 25 | 0.8653 |
+| 50 | **0.8607** |
+| 100 | 0.8653 |
+| one deterministic pass | 0.8633 |
+
+The honest reading has two halves. **The accuracy gain is not real**: 0.8653
+against 0.8633 is 0.0020 on a 1,500-row test set, and the non-monotonic 50-pass
+result confirms it is noise. **The uncertainty signal is real**: spread 0.0837 when
+correct against 0.1902 when wrong is a factor of 2.3, and it costs 100 forward
+passes to obtain.
+
+If you need to know *which* predictions to distrust — for routing to a human, for
+abstention, for flagging out-of-distribution inputs — that spread is a usable
+signal, and MC dropout is the cheapest way to get one out of a model you have
+already trained. If you just want accuracy, spend the 100 passes elsewhere.
+
+```python title="training=True is the whole trick"
+samples = np.stack([model(x_test, training=True).numpy() for _ in range(100)])
+mean = samples.mean(axis=0)          # the averaged prediction
+spread = samples.std(axis=0)         # how much the passes disagreed
 ```
 
-Since Dropout is only active during training, always compare training loss
-*without* dropout (measured after training) against the validation loss — with
-dropout on, a model can look like it isn't overfitting even when it is.
-
-:::tip[From the book]
-Chollet traces Dropout back to Geoffrey Hinton's own explanation of where the
-idea came from: "I went to my bank. The tellers kept changing and I asked one
-of them why. He said he didn't know but they got moved around a lot. I figured
-it must be because it would require cooperation between employees to
-successfully defraud the bank. This made me realize that randomly removing a
-different subset of neurons on each example would prevent conspiracies and
-thus reduce overfitting." Dropout's job is to inject just enough noise to break
-up the "conspiracies" — coincidental patterns — that a network would otherwise
-happily memorize.
-:::
-
-## MC Dropout
-
-Yarin Gal and Zoubin Ghahramani's trick: leave dropout **on** at prediction time
-and run the same input through the model many times. Because dropout is random,
-every pass gives a slightly different prediction — average them, and you get
-both a better point estimate *and* a genuine uncertainty measure (the standard
-deviation across passes), all without retraining anything.
-
-```python title="MC Dropout: uncertainty from a trained model" showLineNumbers{1}
-import numpy as np
-
-# training=True keeps Dropout active even though we are predicting
-y_probas = np.stack([model(X_test_scaled, training=True) for _ in range(100)])
-y_proba = y_probas.mean(axis=0)   # the MC Dropout point estimate
-y_std = y_probas.std(axis=0)      # how uncertain each prediction is
-```
-
-If other layers (like BatchNormalization) also behave differently in
-training vs. prediction, forcing `training=True` globally isn't safe — subclass
-`Dropout` instead so *only* dropout is forced on:
-
-```python title="An MCDropout layer that is always active" showLineNumbers{1}
-import tensorflow as tf
-
-class MCDropout(tf.keras.layers.Dropout):
-    def call(self, inputs):
-        return super().call(inputs, training=True)
-```
-
-## Max-norm regularization
-
-Instead of adding a penalty term to the loss, **max-norm regularization**
-rescales a neuron's incoming weight vector after every training step, so that
-`‖w‖₂ ≤ r`. Smaller `r` means stronger regularization, and it can also help
-tame unstable gradients even without Batch Normalization.
-
-```python title="Max-norm constraint on a Dense layer" showLineNumbers{1}
-import tensorflow as tf
-
-layer = tf.keras.layers.Dense(
-    100,
-    activation="elu",
-    kernel_initializer="he_normal",
-    kernel_constraint=tf.keras.constraints.max_norm(1.0),
-)
-```
-
-## Visualize it
-
-Each training step, Dropout silently switches a random subset of neurons off
-(shown dimmed below) — click to re-roll which ones are dropped:
-
-```p5 title="Dropout randomly disables neurons each step" desc="A dense layer where a random subset of neurons blink off (dimmed) at independent, staggered training steps; click to resample every neuron at once." height="280"
-let neurons = [];
-const p = 0.4; // dropout rate
-
-function layout() {
-  neurons = [];
-  for (let i = 0; i < 10; i++) {
-    const dropped = random() < p;
-    neurons.push({
-      y: 30 + i * 24,
-      dropped,
-      render: dropped ? 1 : 0,       // eased 0..1 blend toward the target state
-      nextToggle: floor(random(35, 110)), // each neuron re-rolls on its own clock
-    });
-  }
-}
+```p5 title="Dropout, one batch at a time" desc="A layer of 24 units with a dropout mask applied. Drag the rate, press Resample to draw a new mask, and watch the survivors scale up by 1/(1-rate) so the sum stays put." height="330"
+let rate = 0.5;
+let mask = [];
+const UNITS = 24;
 function setup() {
-  createCanvas(600, 280);
+  createCanvas(600, 330);
   textFont("monospace");
-  textAlign(CENTER, CENTER);
-  layout();
+  resample();
+}
+function resample() {
+  mask = [];
+  for (let i = 0; i < UNITS; i++) mask.push(Math.random() > rate ? 1 : 0);
 }
 function draw() {
   background(13, 17, 23);
-  const inX = 130, outX = 470, midY = 140;
   noStroke();
-  fill(200);
+  const scale = 1 / (1 - rate);
+  fill(230);
   textSize(12);
-  text("input", inX, 20);
-  text("hidden layer (rate=0.4)", (inX + outX) / 2, 20);
-  text("output", outX, 20);
-
-  for (const n of neurons) {
-    n.nextToggle--;
-    if (n.nextToggle <= 0) {
-      n.dropped = random() < p;
-      n.nextToggle = floor(random(35, 110));
-    }
-    n.render = lerp(n.render, n.dropped ? 1 : 0, 0.1);
+  textAlign(LEFT, TOP);
+  text("every unit outputs 1.0 before dropout", 50, 26);
+  const kept = mask.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < UNITS; i++) {
+    const x = 50 + (i % 12) * 42, y = 56 + Math.floor(i / 12) * 74;
+    const on = mask[i] === 1;
+    fill(on ? 46 : 40, on ? 96 : 44, on ? 140 : 52);
+    rect(x, y, 34, 34, 4);
+    fill(on ? 240 : 90);
+    textSize(10);
+    textAlign(CENTER, CENTER);
+    text(on ? scale.toFixed(2) : "0", x + 17, y + 17);
+    fill(on ? 120 : 60, on ? 200 : 64, on ? 120 : 70);
+    rect(x, y + 38, 34, on ? Math.min(scale * 10, 26) : 2, 2);
   }
-
-  for (const n of neurons) {
-    const dropCol = lerpColor(color(120, 200, 120, 160), color(90, 60, 60, 80), n.render);
-    stroke(dropCol);
-    strokeWeight(1.2);
-    line(inX + 20, midY, inX + 90, n.y);
-    line(outX - 90, n.y, outX - 20, midY);
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("kept " + kept + " of " + UNITS + "     scale factor 1/(1-r) = "
+    + scale.toFixed(3), 50, 214);
+  fill(255, 211, 67);
+  text("sum before " + UNITS.toFixed(1) + "     sum after "
+    + (kept * scale).toFixed(1) + "     expected " + UNITS.toFixed(1), 50, 234);
+  fill(150);
+  textSize(11);
+  text("the sum only matches on average - a single mask can be far off", 50, 254);
+  fill(90, 100, 114);
+  rect(50, 292, 240, 12, 6);
+  fill(75, 139, 190);
+  ellipse(50 + rate / 0.9 * 240, 298, 18, 18);
+  fill(150);
+  textSize(10);
+  textAlign(LEFT, CENTER);
+  text("rate " + rate.toFixed(2), 300, 298);
+  fill(90, 100, 114);
+  rect(380, 286, 110, 24, 4);
+  fill(240);
+  textAlign(CENTER, CENTER);
+  textSize(11);
+  text("resample", 435, 298);
+}
+function mousePressed() {
+  if (mouseX > 380 && mouseX < 490 && mouseY > 286 && mouseY < 310) {
+    resample();
+    return;
   }
-  noStroke();
-  fill(75, 139, 190);
-  ellipse(inX, midY, 30, 30);
-  fill(75, 139, 190);
-  ellipse(outX, midY, 30, 30);
-
-  for (const n of neurons) {
-    const bodyCol = lerpColor(color(120, 200, 120), color(90, 50, 50), n.render);
-    const r = lerp(26, 22, n.render);
-    fill(bodyCol);
-    ellipse(inX + 90, n.y, r, r);
-    if (n.render > 0.5) {
-      fill(200, 120, 120, (n.render - 0.5) * 2 * 255);
-      textSize(10);
-      text("0", inX + 90, n.y);
-    }
+  setRate();
+}
+function mouseDragged() { setRate(); }
+function setRate() {
+  if (mouseY > 280 && mouseY < 316 && mouseX > 40 && mouseX < 300) {
+    rate = Math.max(0, Math.min(0.9, (mouseX - 50) / 240 * 0.9));
+    resample();
   }
 }
-function mousePressed() { layout(); }
 ```
 
-:::tip[From the book]
-Géron's analogy for why dropout works so well: imagine a company where every
-employee tosses a coin each morning to decide whether to show up. No single
-person could ever be the only one who knows how to run the coffee machine — that
-knowledge has to spread across the whole team. Dropout forces neurons into the
-same situation: none of them can co-adapt and lean on a few specific neighbors,
-so the whole network ends up more robust.
-:::
+## Max-norm: a hard cap instead of a penalty
 
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
+```python title="Applied after every update, not added to the loss"
+keras.layers.Dense(512, activation="relu",
+                   kernel_constraint=keras.constraints.MaxNorm(1.0, axis=0))
+```
 
-## 🧪 Try It Yourself
+After each optimiser step, any column of the kernel whose norm exceeds the limit
+is rescaled down to it. Measured after five epochs:
 
-### Exercise 1 – L2-Regularize a Dense Layer
+| | Max column norm | Mean column norm | Columns above 1.0 |
+| --- | --- | --- | --- |
+| `MaxNorm(1.0)` | **1.000001** | 0.999975 | **0 of 512** |
+| unconstrained | 1.398920 | 1.191048 | **512 of 512** |
 
-<DataCampExercise
-  lang="python"
-  hint={`Pass \`kernel_regularizer=tf.keras.regularizers.l2(0.01)\` when creating the layer.`}
-  code={`# Task: Exercise 1 - L2-Regularize a Dense Layer
-import tensorflow as tf
+Every column sits exactly at the cap. That is the difference between a constraint
+and a penalty: L2 *encourages* small weights and lets exceptions through (max |w|
+grew to 1.1726 above), while max-norm *forbids* large ones. It pairs well with
+dropout and with high learning rates, because it makes a single oversized update
+harmless.
 
-layer = tf.keras.layers.Dense(
-    64, activation="elu",
-    kernel_regularizer=tf.keras.regularizers.___(0.01),   # replace ___ with l2
-)
-print(layer.kernel_regularizer.__class__.__name__)
+```p5 title="The measured table, ranked" desc="Click a column to rank every row by it. The bars are that column's values and the highest and lowest are computed from the numbers, not written in." height="358"
+let metric = 0;
+const COLUMNS = ["Test accuracy"];
+const ROWS = [
+  ["1 (stochastic)", 0.8387],
+  ["2", 0.8493],
+  ["5", 0.8627],
+  ["10", 0.8633],
+  ["25", 0.8653],
+  ["50", 0.8607],
+  ["100", 0.8653],
+  ["one deterministic pass", 0.8633]
+];
+function setup() {
+  createCanvas(620, 358);
+  textFont("monospace");
+}
+function fmt(v) {
+  if (v === 0) { return "0"; }
+  const a = Math.abs(v);
+  if (a >= 1000 || a < 0.001) { return v.toExponential(2); }
+  if (a >= 100) { return v.toFixed(1); }
+  return v.toFixed(4);
+}
+function draw() {
+  background(13, 17, 23);
+  noStroke();
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("Regularization & Dropout", 26, 16);
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (i === metric) { fill(255, 211, 67); } else { fill(48, 56, 68); }
+    rect(x, 40, w, 22, 4);
+    if (i === metric) { fill(13, 17, 23); } else { fill(180); }
+    textSize(9);
+    text(COLUMNS[i], x + 8, 47);
+    x += w + 6;
+    if (x > 500) { break; }
+  }
+  const values = ROWS.map((r) => r[metric + 1]);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo === 0 ? 1 : hi - lo;
+  const order = ROWS.slice().sort((a, b) => b[metric + 1] - a[metric + 1]);
+  for (let i = 0; i < order.length; i++) {
+    const y = 78 + i * 26;
+    const v = order[i][metric + 1];
+    fill(160);
+    textSize(9);
+    text(order[i][0], 26, y + 5);
+    fill(34, 40, 50);
+    rect(230, y, 280, 18, 3);
+    const frac = (v - lo) / span;
+    if (v === hi) { fill(126, 192, 143); }
+    else if (v === lo) { fill(224, 108, 117); }
+    else { fill(107, 169, 221); }
+    rect(230, y, Math.max(frac * 280, 3), 18, 3);
+    fill(225);
+    textSize(9);
+    text(fmt(v), 518, y + 5);
+  }
+  const top = order[0];
+  const bottom = order[order.length - 1];
+  fill(150);
+  textSize(9);
+  const base = 78 + order.length * 26 + 8;
+  text("highest " + COLUMNS[metric] + ": " + top[0] + " at " + fmt(top[1]),
+       26, base);
+  text("lowest  " + COLUMNS[metric] + ": " + bottom[0] + " at "
+       + fmt(bottom[1]), 26, base + 14);
+  text("bars are scaled within the chosen column - lowest is not zero", 26,
+       base + 30);
+}
+function mousePressed() {
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (mouseX > x && mouseX < x + w && mouseY > 40 && mouseY < 62) {
+      metric = i;
+    }
+    x += w + 6;
+  }
+}
+```
 
-# ── Expected Output ───────────────────────────────────────────
-# L2
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
+## Pitfalls
 
-layer = tf.keras.layers.Dense(
-    64, activation="elu",
-    kernel_regularizer=tf.keras.regularizers.l2(0.01),
-)
-print(layer.kernel_regularizer.__class__.__name__)`}
-  sct={`test_output_contains("L2")
-success_msg("L2 regularization applied to the layer's weights!")`}
-  height={150}
-/>
+- **Comparing `val_loss` across L2 strengths.** Keras includes the penalty in the
+  reported loss. Compare accuracy, or recompute the plain cross-entropy.
+- **Adding dropout to a model that is not overfitting.** At rate 0.7 the training
+  accuracy fell below the validation accuracy — the model was being held back.
+- **Reaching for regularisation before trying a smaller model.** 13,002 parameters
+  got within 0.0060 of 669,706 here, and trained faster.
+- **Expecting L2 to bound individual weights.** It minimises a sum, so a few
+  weights grew while the mean fell 16×. Use `MaxNorm` for a real bound.
+- **Believing MC dropout improves accuracy.** Measured gain 0.0020, non-monotonic
+  across pass counts. Its value is the spread, not the mean.
+- **Forgetting `training=True` for MC dropout.** `model.predict` disables dropout,
+  so all 100 passes return the same numbers.
+- **Stacking every regulariser at once.** Each one shifts the optimal setting of
+  the others; add them one at a time and measure.
+- **Putting dropout before the activation.** Convention and the measurements here
+  put it after; zeroing pre-activations interacts badly with a following
+  normalisation layer.
 
-### Exercise 2 – Add a Dropout Layer
+## Recap
 
-<DataCampExercise
-  lang="python"
-  hint={`\`tf.keras.layers.Dropout(rate=0.2)\` randomly zeroes ~20% of its inputs during training.`}
-  code={`# Task: Exercise 2 - Add a Dropout Layer
-import tensorflow as tf
-
-model = tf.keras.models.Sequential([
-    tf.keras.layers.Flatten(input_shape=[28, 28]),
-    tf.keras.layers.___(rate=0.2),   # replace ___ with Dropout
-    tf.keras.layers.Dense(300, activation="elu"),
-])
-print(model.layers[1].rate)
-
-# ── Expected Output ───────────────────────────────────────────
-# 0.2
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
-
-model = tf.keras.models.Sequential([
-    tf.keras.layers.Flatten(input_shape=[28, 28]),
-    tf.keras.layers.Dropout(rate=0.2),
-    tf.keras.layers.Dense(300, activation="elu"),
-])
-print(model.layers[1].rate)`}
-  sct={`test_output_contains("0.2")
-success_msg("Dropout layer added with a 20% rate!")`}
-  height={150}
-/>
-
-### Exercise 3 – Run MC Dropout Predictions
-
-<DataCampExercise
-  lang="python"
-  hint={`Call the model with \`training=True\` inside a loop, then average the stacked predictions with \`.mean(axis=0)\`.`}
-  code={`# Task: Exercise 3 - Run MC Dropout Predictions
-import numpy as np
-import tensorflow as tf
-
-model = tf.keras.models.Sequential([
-    tf.keras.layers.Dense(20, activation="relu", input_shape=(5,)),
-    tf.keras.layers.Dropout(0.5),
-    tf.keras.layers.Dense(1),
-])
-
-X = np.random.rand(4, 5).astype("float32")
-y_probas = np.stack([model(X, ___=True) for _ in range(50)])   # replace ___ with training
-y_proba = y_probas.mean(axis=0)
-print("shape:", y_proba.shape)
-
-# ── Expected Output ───────────────────────────────────────────
-# shape: (4, 1)
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import numpy as np
-import tensorflow as tf
-
-model = tf.keras.models.Sequential([
-    tf.keras.layers.Dense(20, activation="relu", input_shape=(5,)),
-    tf.keras.layers.Dropout(0.5),
-    tf.keras.layers.Dense(1),
-])
-
-X = np.random.rand(4, 5).astype("float32")
-y_probas = np.stack([model(X, training=True) for _ in range(50)])
-y_proba = y_probas.mean(axis=0)
-print("shape:", y_proba.shape)`}
-  sct={`test_output_contains("shape: (4, 1)")
-success_msg("MC Dropout predictions averaged successfully!")`}
-  height={165}
-/>
+- Capacity is the first regulariser: 13,002 parameters reached 0.8407 against
+  669,706 parameters' 0.8467, and never overfit.
+- Inverted dropout scales survivors by $1/(1-r)$ during training, so inference
+  needs no correction — verified as an exact ×2 at rate 0.5.
+- Across rates 0.0 to 0.7, dropout moved the overfitting turn from epoch 6 to 22
+  and the train/validation gap from 0.1133 to −0.0090. Rate 0.5 was best at 0.8633.
+- Keras' `val_loss` includes the L2 penalty, which inverts the apparent ranking;
+  on plain cross-entropy L2 improved the result from 0.6253 to 0.4810.
+- L2 cut the mean absolute weight 16× while the largest weight grew — it bounds a
+  sum, not any single weight.
+- MC dropout's accuracy gain was 0.0020 and non-monotonic; its spread separated
+  correct from wrong predictions by a factor of 2.3.
+- `MaxNorm` is a hard cap applied after every update: 0 of 512 columns exceeded it
+  against 512 of 512 unconstrained.
 
 ## Next
 
-Continue to **Learning Rate Scheduling** — the last lever for training deep
-nets faster and reaching a better final solution.
+Seven techniques, each measured in isolation. The question that remains is the
+order to apply them in on a problem you have never seen:
+[The Universal Workflow of Machine
+Learning](/deep-learning/phase-02---training-deep-neural-networks/the-universal-workflow-of-machine-learning/).
+
+<Quiz
+  questions={[
+    {
+      q: "Keras reported val_loss 0.6469 for L2 = 1e-2 and 0.6253 for no penalty, but the plain cross-entropy was 0.4810 against 0.6253. What explains the contradiction?",
+      options: [
+        "The plain cross-entropy was computed on different data",
+        "Keras adds the regularisation term to the loss it reports, so val_loss for a penalised model includes its own penalty — the two columns are not the same quantity",
+        "val_loss is computed before the final epoch's update",
+        "The model with L2 was still improving",
+      ],
+      answer: 1,
+      explain: "Compare accuracy, or recompute the plain loss from the predictions. Comparing raw val_loss across penalty strengths is a category error.",
+    },
+    {
+      q: "At dropout 0.7 the training accuracy was 0.8443 and the validation accuracy 0.8533 — a negative gap. What does that indicate?",
+      options: [
+        "The validation set is easier than the training set",
+        "The regularisation is now strong enough to hold the model back on the training data itself, which is underfitting rather than generalisation",
+        "There is a bug in the evaluation code",
+        "Dropout is behaving correctly and this is the target state",
+      ],
+      answer: 1,
+      explain: "A small positive gap is healthy. A negative one means the noise injected during training is costing more than the overfitting it prevents.",
+    },
+    {
+      q: "Why does inverted dropout scale the surviving units by 1/(1-r) during training?",
+      options: [
+        "To keep the gradients from vanishing",
+        "So the layer's expected output matches what it would be with no dropout — which means prediction needs no correction at all",
+        "To compensate for the reduced number of parameters",
+        "Because the loss function requires normalised inputs",
+      ],
+      answer: 1,
+      explain: "Verified: at rate 0.5 the survivors come out as exactly 2.0, and training=False returns the input unchanged.",
+    },
+    {
+      q: "MC dropout scored 0.8653 across 100 passes against 0.8633 for a single deterministic pass, but 0.8607 at 50 passes. What should you take from it?",
+      options: [
+        "100 passes is the right number to use",
+        "The accuracy differences are noise; the genuinely useful output is the spread across passes, which was 2.3x larger on wrong predictions than on correct ones",
+        "MC dropout does not work with this architecture",
+        "The model needs more dropout",
+      ],
+      answer: 1,
+      explain: "A non-monotonic sequence across pass counts is the giveaway. Use MC dropout when you need calibrated disagreement, not for a fraction of a point of accuracy.",
+    },
+    {
+      q: "L2 at 1e-2 reduced the mean absolute weight to 0.0028 while the largest single weight grew to 1.1726. Why?",
+      options: [
+        "The measurement is wrong — L2 shrinks every weight",
+        "L2 minimises the sum of squares, so the cheapest way to satisfy it is to crush the many small weights while letting a few genuinely useful ones grow",
+        "The largest weight belongs to a layer without the regulariser",
+        "Adam's adaptive scaling cancels the penalty for large weights",
+      ],
+      answer: 1,
+      explain: "If you need a bound on individual weights, MaxNorm gives one: 0 of 512 columns exceeded the cap, against 512 of 512 unconstrained.",
+    },
+  ]}
+/>
+
+## 🧪 Try It Yourself
+
+<DataCampExercise
+  lang="python"
+  hint={`Divide the masked values by (1 - rate) so the expected sum is unchanged. Keras does this during training, which is why prediction needs no scaling.`}
+  code={`# Task: Exercise 1 - Inverted dropout by hand
+import numpy as np
+from tensorflow import keras
+
+rng = np.random.default_rng(0)
+values = np.ones((4, 8), dtype="float32")
+rate = 0.5
+mask = (rng.random((4, 8)) > rate).astype("float32")
+scaled = values * mask / (1.0 - ___)          # replace ___ with rate
+
+print("mask (1 = kept):")
+print(mask.astype(int))
+print(f"input mean {values.mean():.4f}")
+print(f"masked mean without rescaling {(values * mask).mean():.4f}")
+print(f"masked mean with 1/(1-rate)   {scaled.mean():.4f}")
+
+layer = keras.layers.Dropout(rate, seed=0)
+train_out = layer(values, training=True).numpy()
+predict_out = layer(values, training=False).numpy()
+print(f"keras training=True : kept values are all "
+      f"{np.unique(train_out[train_out > 0])}  mean {train_out.mean():.4f}")
+print(f"keras training=False: unchanged, mean {predict_out.mean():.4f}")
+print("Keras uses inverted dropout: it scales up during training so that")
+print("prediction needs no correction at all")
+
+# -- Expected Output -------------------------------------------
+# mask (1 = kept):
+# [[1 0 0 0 1 1 1 1]
+#  [1 1 1 0 1 0 1 0]
+#  [1 1 0 0 0 0 1 1]
+#  [1 0 1 1 1 1 1 0]]
+# input mean 1.0000
+# masked mean without rescaling 0.6250
+# masked mean with 1/(1-rate)   1.2500
+# keras training=True : kept values are all [2.]  mean 0.7500
+# keras training=False: unchanged, mean 1.0000
+# Keras uses inverted dropout: it scales up during training so that
+# prediction needs no correction at all
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Only the hidden width changes. Watch the epoch at which the best validation loss occurs — a model that cannot overfit reaches its best on the last epoch.`}
+  code={`# Task: Exercise 2 - The simplest regulariser is a smaller model
+import numpy as np
+from tensorflow import keras
+
+LIMIT, EPOCHS = 6000, 30
+(x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()
+x_train = x_train[:LIMIT].reshape(LIMIT, -1).astype("float32") / 255.0
+y_train = y_train[:LIMIT]
+x_test = x_test[:LIMIT // 4].reshape(LIMIT // 4, -1).astype("float32") / 255.0
+y_test = y_test[:LIMIT // 4]
+
+
+def build(width=512, dropout=0.0, penalty=0.0, constraint=None):
+    keras.utils.set_random_seed(0)
+    regulariser = keras.regularizers.l2(penalty) if penalty else None
+    layers = [keras.layers.Input((784,))]
+    for _ in range(2):
+        layers.append(keras.layers.Dense(width, activation="relu",
+                                         kernel_regularizer=regulariser,
+                                         kernel_constraint=constraint))
+        if dropout:
+            layers.append(keras.layers.Dropout(dropout))
+    layers.append(keras.layers.Dense(10, activation="softmax"))
+    model = keras.Sequential(layers)
+    model.compile(keras.optimizers.Adam(1e-3),
+                  "sparse_categorical_crossentropy", metrics=["accuracy"])
+    return model
+
+
+print(f"{'width':>7} {'params':>10} {'best val loss':>14} {'at epoch':>9} "
+      f"{'final val loss':>15} {'val acc':>8}")
+for width in (16, 64, 512):
+    model = build(width=___)                  # replace ___ with width
+    history = model.fit(x_train, y_train, epochs=EPOCHS, batch_size=128,
+                        verbose=0, validation_data=(x_test, y_test))
+    losses = history.history["val_loss"]
+    best = int(np.argmin(losses)) + 1
+    print(f"{width:7d} {model.count_params():10,} {min(losses):14.4f} "
+          f"{best:9d} {losses[-1]:15.4f} "
+          f"{history.history['val_accuracy'][-1]:8.4f}")
+print("the 512-unit model reaches the lowest validation loss and then throws it")
+print("away; the 16-unit model never overfits because it cannot")
+
+# -- Expected Output -------------------------------------------
+#   width     params  best val loss  at epoch  final val loss  val acc
+#      16     13,002         0.4562        30          0.4562   0.8407
+#      64     55,050         0.4690        13          0.5210   0.8453
+#     512    669,706         0.4263         6          0.6253   0.8467
+# the 512-unit model reaches the lowest validation loss and then throws it
+# away; the 16-unit model never overfits because it cannot
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Watch three things as the rate rises: the epoch of the best validation loss, the final training accuracy, and the gap between training and validation accuracy.`}
+  code={`# Task: Exercise 3 - Sweep the dropout rate
+import numpy as np
+from tensorflow import keras
+
+LIMIT, EPOCHS = 6000, 30
+(x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()
+x_train = x_train[:LIMIT].reshape(LIMIT, -1).astype("float32") / 255.0
+y_train = y_train[:LIMIT]
+x_test = x_test[:LIMIT // 4].reshape(LIMIT // 4, -1).astype("float32") / 255.0
+y_test = y_test[:LIMIT // 4]
+
+print(f"{'rate':>6} {'best val loss':>14} {'at epoch':>9} "
+      f"{'final val loss':>15} {'val acc':>8} {'train acc':>10}")
+for rate in (0.0, 0.2, 0.5, 0.7):
+    keras.utils.set_random_seed(0)
+    layers = [keras.layers.Input((784,))]
+    for _ in range(2):
+        layers.append(keras.layers.Dense(512, activation="relu"))
+        if rate:
+            layers.append(keras.layers.Dropout(___))   # replace ___ with rate
+    layers.append(keras.layers.Dense(10, activation="softmax"))
+    model = keras.Sequential(layers)
+    model.compile(keras.optimizers.Adam(1e-3),
+                  "sparse_categorical_crossentropy", metrics=["accuracy"])
+    history = model.fit(x_train, y_train, epochs=EPOCHS, batch_size=128,
+                        verbose=0, validation_data=(x_test, y_test))
+    losses = history.history["val_loss"]
+    best = int(np.argmin(losses)) + 1
+    print(f"{rate:6.1f} {min(losses):14.4f} {best:9d} {losses[-1]:15.4f} "
+          f"{history.history['val_accuracy'][-1]:8.4f} "
+          f"{history.history['accuracy'][-1]:10.4f}")
+print("dropout closes the train/validation gap and delays the turning point;")
+print("0.5 was best here and 0.7 started to underfit")
+
+# -- Expected Output -------------------------------------------
+#   rate  best val loss  at epoch  final val loss  val acc  train acc
+#    0.0         0.4263         6          0.6253   0.8467     0.9600
+#    0.2         0.4147        13          0.5774   0.8453     0.9397
+#    0.5         0.4065        17          0.4230   0.8633     0.8930
+#    0.7         0.4313        22          0.4396   0.8533     0.8443
+# dropout closes the train/validation gap and delays the turning point;
+# 0.5 was best here and 0.7 started to underfit
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Recompute the plain cross-entropy from the predicted probabilities so the comparison is not polluted by the penalty term Keras folds into val_loss.`}
+  code={`# Task: Exercise 4 - What L2 does, measured honestly
+import numpy as np
+from tensorflow import keras
+
+LIMIT, EPOCHS = 6000, 30
+(x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()
+x_train = x_train[:LIMIT].reshape(LIMIT, -1).astype("float32") / 255.0
+y_train = y_train[:LIMIT]
+x_test = x_test[:LIMIT // 4].reshape(LIMIT // 4, -1).astype("float32") / 255.0
+y_test = y_test[:LIMIT // 4]
+
+print(f"{'penalty':>9} {'keras val_loss':>15} {'pure CE':>9} {'val acc':>8} "
+      f"{'mean |w|':>10} {'max |w|':>9}")
+for penalty in (0.0, 1e-5, 1e-4, 1e-3, 1e-2):
+    keras.utils.set_random_seed(0)
+    regulariser = keras.regularizers.l2(penalty) if penalty else None
+    model = keras.Sequential([
+        keras.layers.Input((784,)),
+        keras.layers.Dense(512, activation="relu",
+                           kernel_regularizer=regulariser),
+        keras.layers.Dense(512, activation="relu",
+                           kernel_regularizer=regulariser),
+        keras.layers.Dense(10, activation="softmax"),
+    ])
+    model.compile(keras.optimizers.Adam(1e-3),
+                  "sparse_categorical_crossentropy", metrics=["accuracy"])
+    history = model.fit(x_train, y_train, epochs=EPOCHS, batch_size=128,
+                        verbose=0, validation_data=(x_test, y_test))
+    probabilities = model.predict(x_test, verbose=0)
+    rows = np.arange(len(y_test))
+    pure = float(np.mean(-np.log(np.clip(probabilities[rows, ___], 1e-12,
+                                         None))))
+    # replace ___ with y_test
+    kernels = np.concatenate([w.numpy().ravel()
+                              for w in model.trainable_weights
+                              if w.numpy().ndim == 2])
+    print(f"{penalty:9g} {history.history['val_loss'][-1]:15.4f} {pure:9.4f} "
+          f"{history.history['val_accuracy'][-1]:8.4f} "
+          f"{np.abs(kernels).mean():10.4f} {np.abs(kernels).max():9.4f}")
+print("on Keras' val_loss L2 looks useless; on the plain cross-entropy the")
+print("strongest penalty is clearly the best. Only one column is comparable")
+
+# -- Expected Output -------------------------------------------
+#   penalty  keras val_loss   pure CE  val acc   mean |w|   max |w|
+#         0          0.6253    0.6253   0.8467     0.0461    0.6245
+#     1e-05          0.7049    0.6868   0.8413     0.0393    0.6833
+#    0.0001          0.6451    0.5519   0.8560     0.0271    0.9342
+#     0.001          0.6913    0.5251   0.8133     0.0098    0.9499
+#      0.01          0.6469    0.4810   0.8360     0.0028    1.1726
+# on Keras' val_loss L2 looks useless; on the plain cross-entropy the
+# strongest penalty is clearly the best. Only one column is comparable
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Calling the model with training=True keeps dropout active, so each call returns a different answer. model.predict would disable it and give the same numbers every time.`}
+  code={`# Task: Exercise 5 - MC dropout as an uncertainty signal
+import numpy as np
+from tensorflow import keras
+
+LIMIT, EPOCHS = 6000, 30
+(x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()
+x_train = x_train[:LIMIT].reshape(LIMIT, -1).astype("float32") / 255.0
+y_train = y_train[:LIMIT]
+x_test = x_test[:LIMIT // 4].reshape(LIMIT // 4, -1).astype("float32") / 255.0
+y_test = y_test[:LIMIT // 4]
+
+keras.utils.set_random_seed(0)
+model = keras.Sequential([
+    keras.layers.Input((784,)),
+    keras.layers.Dense(512, activation="relu"),
+    keras.layers.Dropout(0.5),
+    keras.layers.Dense(512, activation="relu"),
+    keras.layers.Dropout(0.5),
+    keras.layers.Dense(10, activation="softmax"),
+])
+model.compile(keras.optimizers.Adam(1e-3), "sparse_categorical_crossentropy",
+              metrics=["accuracy"])
+model.fit(x_train, y_train, epochs=EPOCHS, batch_size=128, verbose=0)
+
+deterministic = model.predict(x_test, verbose=0)
+samples = np.stack([model(x_test, training=___).numpy() for _ in range(100)])
+# replace ___ with True
+averaged = samples.mean(axis=0)
+winner = averaged.argmax(axis=1)
+spread = samples.std(axis=0)[np.arange(len(y_test)), winner]
+correct = winner == y_test
+
+print(f"one deterministic pass            : "
+      f"{float((deterministic.argmax(axis=1) == y_test).mean()):.4f}")
+print(f"{'passes':>8} {'accuracy':>10}")
+for count in (1, 2, 5, 10, 25, 50, 100):
+    accuracy = float((samples[:count].mean(axis=0).argmax(axis=1)
+                      == y_test).mean())
+    print(f"{count:8d} {accuracy:10.4f}")
+print(f"spread of the winning class: {spread[correct].mean():.4f} when correct, "
+      f"{spread[~correct].mean():.4f} when wrong "
+      f"({spread[~correct].mean() / spread[correct].mean():.2f}x)")
+print("the accuracy gain is noise-level; the useful output is the spread")
+
+# -- Expected Output -------------------------------------------
+# one deterministic pass            : 0.8633
+#   passes   accuracy
+#        1     0.8387
+#        2     0.8493
+#        5     0.8627
+#       10     0.8633
+#       25     0.8653
+#       50     0.8607
+#      100     0.8653
+# spread of the winning class: 0.0837 when correct, 0.1902 when wrong (2.27x)
+# the accuracy gain is noise-level; the useful output is the spread
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`MaxNorm with axis=0 caps the norm of each output unit's incoming weight vector. Compare the column norms with and without the constraint.`}
+  code={`# Task: Exercise 6 - Max-norm is a cap, not a penalty
+import numpy as np
+from tensorflow import keras
+
+LIMIT = 6000
+(x_train, y_train), _ = keras.datasets.fashion_mnist.load_data()
+x_train = x_train[:LIMIT].reshape(LIMIT, -1).astype("float32") / 255.0
+y_train = y_train[:LIMIT]
+
+
+def build(constraint=None):
+    keras.utils.set_random_seed(0)
+    model = keras.Sequential([
+        keras.layers.Input((784,)),
+        keras.layers.Dense(512, activation="relu",
+                           kernel_constraint=constraint),
+        keras.layers.Dense(512, activation="relu",
+                           kernel_constraint=constraint),
+        keras.layers.Dense(10, activation="softmax"),
+    ])
+    model.compile(keras.optimizers.Adam(1e-3),
+                  "sparse_categorical_crossentropy", metrics=["accuracy"])
+    return model
+
+
+constrained = build(keras.constraints.MaxNorm(max_value=1.0, axis=___))
+# replace ___ with 0
+constrained.fit(x_train, y_train, epochs=5, batch_size=128, verbose=0)
+norms = np.linalg.norm(constrained.weights[0].numpy(), axis=0)
+print(f"first kernel shape {constrained.weights[0].shape}, one norm per unit")
+print(f"with MaxNorm(1.0): max {norms.max():.6f}  mean {norms.mean():.6f}  "
+      f"columns above 1.0: {int((norms > 1.0 + 1e-5).sum())}")
+
+free = build()
+free.fit(x_train, y_train, epochs=5, batch_size=128, verbose=0)
+free_norms = np.linalg.norm(free.weights[0].numpy(), axis=0)
+print(f"unconstrained    : max {free_norms.max():.6f}  "
+      f"mean {free_norms.mean():.6f}  "
+      f"columns above 1.0: {int((free_norms > 1.0).sum())}")
+print("max-norm is applied after every update, not added to the loss - the")
+print("weights simply cannot exceed it")
+
+# -- Expected Output -------------------------------------------
+# first kernel shape (784, 512), one norm per unit
+# with MaxNorm(1.0): max 1.000001  mean 0.999975  columns above 1.0: 0
+# unconstrained    : max 1.398920  mean 1.191048  columns above 1.0: 512
+# max-norm is applied after every update, not added to the loss - the
+# weights simply cannot exceed it
+# --------------------------------------------------------------`}
+/>

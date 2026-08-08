@@ -1,460 +1,763 @@
 ---
 title: Image Segmentation
-description: Classify every pixel in an image, not just the whole image, using an encoder-decoder convnet with strided convolutions and Conv2DTranspose.
+description: Per-pixel classification measured three ways, where pixel accuracy of 0.9737 sat only 0.10 above a do-nothing baseline and skip connections lost to plain upsampling.
 sidebar:
   order: 426
 ---
 
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Figure from "../../../../components/Figure.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+Classification answers "what is in this image". Segmentation answers **"what is
+each pixel"** — one label per position, at the input's resolution. That changes the
+output shape, forces the network to recover spatial detail it deliberately threw
+away, and makes the obvious metric almost useless.
+
+The data here is generated rather than downloaded: 1,200 training scenes of 64×64
+containing a disc, a square and a triangle on noisy backgrounds, each with an exact
+per-pixel label map. Every mask is known to be correct, and the whole page runs on a
+CPU in a couple of minutes.
+
 ## What you'll learn
 
-- the difference between **semantic segmentation** (label pixels by category)
-  and **instance segmentation** (also separate individual object instances)
-- what a **segmentation mask** is, and how it's just a label image
-- why segmentation models downsample with **strided convolutions** instead of
-  pooling, then upsample with **`Conv2DTranspose`**
-- how to read a per-pixel prediction back into a mask with `argmax`
+- Why the output is $(H, W, C)$ with a softmax over the **channel** axis, not a
+  single vector.
+- The metric trap: **predicting "background" everywhere scores 0.8691 pixel
+  accuracy** on this data.
+- Three upsampling designs measured, where **plain upsampling plus convolution won
+  at 0.8965 mean IoU** and transposed convolution with skips came last at 0.8001.
+- Why the smallest class is always the worst: **triangle IoU 0.4470 to 0.7331**
+  while background sits above 0.98.
+- What `Conv2DTranspose` does to a shape, and how it differs from `UpSampling2D`.
+- Where segmentation errors actually live — the one-pixel boundary.
 
-## Beyond "what's in this image"
+## The output is an image
 
-So far, every CNN you've built answers one question per image: "is this a
-cat or a dog?" **Image segmentation** asks a much finer-grained question:
-"which *pixels* belong to the cat, and which belong to the background?" The
-output isn't a single label anymore — it's a full image, the same size as
-the input, where every pixel has been classified.
+A classifier ends with `Dense(classes, activation="softmax")` — one vector. A
+segmentation model ends with `Conv2D(classes, 1, activation="softmax")` — **one
+vector per pixel**, because a 1×1 convolution applied to an $(H, W, F)$ feature map
+produces $(H, W, \text{classes})$ and the softmax runs along the last axis.
 
-There are two flavors worth knowing:
+```python title="The only change at the output"
+# classification
+keras.layers.GlobalAveragePooling2D(),
+keras.layers.Dense(4, activation="softmax")        # (4,)
 
-- **Semantic segmentation** — every pixel gets a category label like "cat" or
-  "background." If there are two cats in the picture, both sets of pixels get
-  the same generic "cat" label.
-- **Instance segmentation** — goes further and tells the two cats apart:
-  "cat 1" and "cat 2" get different labels, even though both are "cat" pixels.
+# segmentation
+keras.layers.Conv2D(4, 1, activation="softmax")    # (64, 64, 4)
+```
 
-This page focuses on semantic segmentation, using the classic
-foreground/background/contour setup from the Oxford-IIIT Pets dataset: every
-photo of a cat or dog comes with a **segmentation mask** — a same-sized image
-where each pixel is an integer: `1` (foreground), `2` (background), or
-`3` (contour).
+The loss is unchanged. `sparse_categorical_crossentropy` against an integer mask of
+shape $(H, W)$ averages the per-pixel loss over every position — 4,096 predictions
+per image instead of one.
 
-```mermaid title="Segmentation model shape" desc="An encoder compresses the image into small, information-dense feature maps; a decoder expands them back out to a full-resolution, per-pixel prediction."
+<Figure
+  src="/images/dl/phase-03-vision/image-segmentation/segmentation-samples"
+  alt="A three-by-four grid. The top row shows four noisy 64x64 scenes each containing a bright disc, a dark square and a grey triangle. The middle row shows the true masks in flat colours. The bottom row shows the model's predictions, which match the discs and squares closely but distort or merge the triangles, with per-image error rates from 2.0 to 3.9 percent."
+  title="Inputs, true masks and predictions"
+  caption="The discs and squares come back almost exactly. The triangles — the smallest and least distinct class — are mangled wherever they overlap a disc, and the error is concentrated on boundaries. Per-image error rates of 2.0% to 3.9% sound excellent until you notice that 86.9% of pixels are background."
+/>
+
+## The metric trap
+
+| Class | Share of all pixels |
+| --- | --- |
+| background | **0.8691** |
+| disc | 0.0568 |
+| square | 0.0438 |
+| triangle | **0.0303** |
+
+A model that outputs "background" for every pixel scores **0.8691 pixel accuracy**
+and is completely useless. The trained model's 0.9737 is only **0.10 above that
+baseline** — the same imbalance problem measured on the [Reuters
+page](/deep-learning/phase-01---neural-network-foundations/first-example-classifying-newswires-reuters-multiclass/),
+except that in segmentation it is structural: backgrounds are always most of the
+image.
+
+The standard fix is **intersection over union**, per class:
+
+$$
+\text{IoU}_c = \frac{\lvert \hat{y} = c \; \wedge \; y = c \rvert}
+{\lvert \hat{y} = c \; \vee \; y = c \rvert}
+$$
+
+The all-background model scores IoU 0.8691 on background and **exactly 0.0 on the
+other three**, for a mean IoU of 0.2173. That is the number that tells you the model
+does nothing.
+
+```mermaid
 flowchart LR
-  subgraph Encoder
-    I["Input image<br/>200x200x3"] --> C1["Conv2D stride 2<br/>100x100x64"]
-    C1 --> C2["Conv2D stride 2<br/>50x50x128"]
-    C2 --> C3["Conv2D stride 2<br/>25x25x256"]
-  end
-  subgraph Decoder
-    C3 --> T1["Conv2DTranspose stride 2<br/>50x50x256"]
-    T1 --> T2["Conv2DTranspose stride 2<br/>100x100x128"]
-    T2 --> T3["Conv2DTranspose stride 2<br/>200x200x64"]
-  end
-  T3 --> O["Conv2D 1x1, softmax<br/>200x200x3 (per-pixel classes)"]
+  A["input 64x64x1"] --> B["Conv 16<br/>64x64"]
+  B --> C["pool<br/>32x32"]
+  C --> D["Conv 32<br/>32x32"]
+  D --> E["pool<br/>16x16"]
+  E --> F["Conv 64<br/>16x16<br/>widest view"]
+  F --> G["upsample<br/>32x32"]
+  G --> H["upsample<br/>64x64"]
+  H --> I["Conv2D(4, 1)<br/>softmax per pixel"]
+  B -. "skip: 64x64 detail" .-> H
+  D -. "skip: 32x32 detail" .-> G
 ```
 
-## Downsampling without losing "where"
+The shape is an hourglass: **downsample to see context, upsample to recover
+position.** The skip connections exist because the downsampling path destroys the
+precise location of every boundary, and the upsampling path cannot invent it back.
 
-The first half of a segmentation model looks a lot like a classification
-convnet: a stack of `Conv2D` layers with a growing number of filters. But
-there's one crucial change. Classification convnets use `MaxPooling2D` to
-shrink feature maps, because they only care about *whether* a pattern is
-present anywhere in the image — max pooling's translation invariance is a
-feature, not a bug, there.
+## Getting the resolution back
 
-Segmentation is the opposite: it needs to know *exactly* where every pixel's
-class boundary is. A 2 × 2 max-pooling window keeps only the single largest
-value in each block and throws away *which* of the four positions it came
-from — that's destructive to location information. So segmentation models
-downsample using **strided convolutions** instead: a `Conv2D` with
-`strides=2` shrinks the feature map by the same factor a pooling layer
-would, but every output value is still a proper, spatially-anchored weighted
-sum of a small neighborhood, keeping location information intact.
+Three ways, measured on identical data with the same seed:
 
-```python title="segmentation_model.py" showLineNumbers{1}
-from tensorflow import keras
-from tensorflow.keras import layers
+| Design | Parameters | Pixel accuracy | Mean IoU | Seconds |
+| --- | --- | --- | --- | --- |
+| transposed conv + skips | 51,124 | 0.9737 | **0.8001** | **72.8** |
+| upsample + conv + skips | 51,124 | **0.9863** | **0.8965** | **219.3** |
+| transposed conv, no skips | 46,452 | 0.9805 | 0.8540 | 77.8 |
 
-def get_model(img_size, num_classes):
-    inputs = keras.Input(shape=img_size + (3,))
-    x = layers.Rescaling(1. / 255)(inputs)
+<Figure
+  src="/images/dl/phase-03-vision/image-segmentation/upsampling-comparison"
+  alt="Two panels. Left: validation pixel accuracy per epoch for three designs, all above 0.96 and closely bunched, with upsample-plus-convolution highest. Right: a bar chart of mean IoU where upsample plus convolution reaches 0.8965, no skips 0.8540 and transposed convolution with skips 0.8001."
+  title="1,200 synthetic scenes, 12 epochs"
+  caption="The left panel is why pixel accuracy is a bad metric: all three designs look identical above 0.96. The right panel separates them — upsampling followed by a convolution reaches 0.8965 mean IoU while transposed convolution with the same parameter count reaches 0.8001, and dropping the skip connections entirely scored 0.8540, better than one of the designs that kept them."
+/>
 
-    # --- Encoder: downsample with STRIDED convolutions, not pooling ---
-    x = layers.Conv2D(64, 3, strides=2, activation="relu", padding="same")(x)
-    x = layers.Conv2D(64, 3, activation="relu", padding="same")(x)
-    x = layers.Conv2D(128, 3, strides=2, activation="relu", padding="same")(x)
-    x = layers.Conv2D(128, 3, activation="relu", padding="same")(x)
-    x = layers.Conv2D(256, 3, strides=2, activation="relu", padding="same")(x)
-    x = layers.Conv2D(256, 3, activation="relu", padding="same")(x)
+Two results here are worth stating carefully, because both contradict the usual
+advice:
 
-    # --- Decoder: upsample back to the original resolution ---
-    x = layers.Conv2DTranspose(256, 3, activation="relu", padding="same")(x)
-    x = layers.Conv2DTranspose(256, 3, activation="relu", padding="same", strides=2)(x)
-    x = layers.Conv2DTranspose(128, 3, activation="relu", padding="same")(x)
-    x = layers.Conv2DTranspose(128, 3, activation="relu", padding="same", strides=2)(x)
-    x = layers.Conv2DTranspose(64, 3, activation="relu", padding="same")(x)
-    x = layers.Conv2DTranspose(64, 3, activation="relu", padding="same", strides=2)(x)
+1. **Plain upsampling plus a convolution beat transposed convolution** at an
+   identical parameter count — 0.8965 against 0.8001 mean IoU. `UpSampling2D`
+   repeats each value into a 2×2 block and the following convolution smooths it;
+   `Conv2DTranspose` learns the upsampling, and here that flexibility cost more than
+   it bought. It was also 3× slower in wall-clock, which is the opposite of what its
+   simplicity suggests.
+2. **Dropping the skip connections beat one of the designs that used them** — 0.8540
+   against 0.8001. That is not evidence against skip connections; it is evidence that
+   *this particular* transposed-convolution decoder was the weak link, and the
+   comparison only separates them because IoU is sensitive enough to notice.
 
-    # One softmax score per pixel, per class
-    outputs = layers.Conv2D(num_classes, 3, activation="softmax", padding="same")(x)
-    return keras.Model(inputs, outputs)
+The honest summary: **on this problem the decoder choice mattered more than the skip
+connections**, and the cheapest decoder won. Exercise 5 isolates it — the same
+upsample-plus-convolution decoder with and without skips scored 0.8965 and 0.8974
+mean IoU, a difference of 0.0009 that is indistinguishable from run-to-run noise. On
+real segmentation tasks with thin structure — vessels, wires, text strokes — the skip
+connections matter much more than they do on four solid geometric shapes with clean
+boundaries, because there the boundary *is* the object.
 
-model = get_model(img_size=(200, 200), num_classes=3)
-model.compile(optimizer="rmsprop", loss="sparse_categorical_crossentropy")
-```
+### What each upsampling layer actually does
 
-## Conv2DTranspose: convolution that upsamples
+| Layer | (16, 16, 8) becomes | Parameters |
+| --- | --- | --- |
+| `UpSampling2D(2)` | (32, 32, 8) | **0** |
+| `Conv2DTranspose(4, 3, strides=2)` | (32, 32, 4) | 292 |
+| `UpSampling2D(2)` + `Conv2D(4, 3)` | (32, 32, 4) | 292 |
 
-`Conv2DTranspose` is best thought of as the inverse of a strided
-convolution. If a `Conv2D(128, 3, strides=2, padding="same")` shrinks a
-`(100, 100, 64)` input down to `(50, 50, 128)`, then a matching
-`Conv2DTranspose(64, 3, strides=2, padding="same")` takes that `(50, 50, 128)`
-feature map and expands it back out to `(100, 100, 64)` — the same spatial
-size you started with. Stack enough of these transposed convolutions and you
-can go from a small, information-dense `(25, 25, 256)` bottleneck all the way
-back up to a full `(200, 200, 3)` per-pixel prediction.
+`UpSampling2D` is a fixed rule — nearest-neighbour repetition, no weights at all.
+`Conv2DTranspose` inserts zeros between the input values and convolves, which is
+mathematically the gradient of a strided convolution and is why it is sometimes
+called a deconvolution (it is not one). The third row is the combination that won
+above: fixed upsampling, then a learned smoothing.
 
-You can think of the first half of the model as **compressing** the image
-into a compact representation (each output location now summarizes a large
-chunk of the original picture), and the second half as **decompressing**
-that representation back into a full-resolution answer — one softmax
-probability distribution over classes, for every single pixel.
+## Where the errors are
 
-## Loading the data and training the model
+| Design | background | disc | square | **triangle** |
+| --- | --- | --- | --- | --- |
+| transposed conv + skips | 0.9802 | 0.8453 | 0.9279 | **0.4470** |
+| upsample + conv | 0.9866 | 0.9314 | 0.9351 | **0.7331** |
+| no skips | 0.9817 | 0.9020 | 0.8830 | **0.6493** |
 
-A segmentation mask is just an image, so with a small dataset like
-Oxford-IIIT Pets (7,390 photos, each with a matching trimap mask) it's
-simplest to load everything straight into two NumPy arrays rather than
-build an input pipeline. Every input image and its mask are resized to the
-same `img_size`, and the raw mask labels (`1`, `2`, `3`) are shifted down by
-one so they line up with `sparse_categorical_crossentropy`'s expectation of
-zero-indexed classes:
+<Figure
+  src="/images/dl/phase-03-vision/image-segmentation/iou-by-class"
+  alt="Grouped bar chart of IoU for four classes across three designs, annotated with each class's share of all pixels. Background bars are all above 0.98, disc and square between 0.84 and 0.94, and triangle bars range from 0.45 to 0.73."
+  title="IoU per class, with each class's share of all pixels"
+  caption="The ordering is the same for every design and it follows the pixel share: background 86.9% of pixels and IoU above 0.98, triangle 3.0% and IoU as low as 0.4470. The triangle is also the hardest shape — thin at the apex, and the only one that regularly overlaps another object — so both effects push the same way."
+/>
 
-```python title="load_segmentation_data.py" showLineNumbers{1}
-import os
-import random
-import numpy as np
-from tensorflow.keras.utils import load_img, img_to_array
+The triangle loses on two counts, and they compound:
 
-input_dir = "images/"
-target_dir = "annotations/trimaps/"
-img_size = (200, 200)
+- **It is the smallest class** at 3.0% of pixels, so it contributes almost nothing to
+  the loss. A model can ignore it and still report 97% pixel accuracy.
+- **It has the most boundary per unit area.** IoU on a small object is dominated by
+  its outline: a shape 15 pixels across has roughly 56 boundary pixels out of 225
+  total, and a one-pixel error all the way round drops its IoU to 0.60.
 
-input_img_paths = sorted(
-    os.path.join(input_dir, fname) for fname in os.listdir(input_dir) if fname.endswith(".jpg")
-)
-target_paths = sorted(
-    os.path.join(target_dir, fname)
-    for fname in os.listdir(target_dir)
-    if fname.endswith(".png") and not fname.startswith(".")
-)
+That second point is the general rule of segmentation: **the metric is decided at
+the boundaries**, and small objects are almost all boundary. Weighting the loss by
+inverse class frequency, or using a Dice/IoU-based loss directly, is the standard
+response.
 
-# Shuffle both lists with the SAME seed so image/mask pairs stay lined up
-random.Random(1337).shuffle(input_img_paths)
-random.Random(1337).shuffle(target_paths)
-
-def path_to_input_image(path):
-    return img_to_array(load_img(path, target_size=img_size))
-
-def path_to_target(path):
-    img = img_to_array(load_img(path, target_size=img_size, color_mode="grayscale"))
-    return img.astype("uint8") - 1   # shift {1, 2, 3} -> {0, 1, 2}
-
-num_imgs = len(input_img_paths)
-input_imgs = np.zeros((num_imgs,) + img_size + (3,), dtype="float32")
-targets = np.zeros((num_imgs,) + img_size + (1,), dtype="uint8")
-for i in range(num_imgs):
-    input_imgs[i] = path_to_input_image(input_img_paths[i])
-    targets[i] = path_to_target(target_paths[i])
-
-# Hold out 1,000 samples for validation
-num_val_samples = 1000
-train_input_imgs, train_targets = input_imgs[:-num_val_samples], targets[:-num_val_samples]
-val_input_imgs, val_targets = input_imgs[-num_val_samples:], targets[-num_val_samples:]
-```
-
-With the data ready and `get_model()` from above compiled, training is a
-normal `model.fit()` call — the only addition worth calling out is a
-`ModelCheckpoint` callback that keeps only the best-scoring checkpoint by
-validation loss, since (like most models) this one overfits well before
-training finishes:
-
-```python title="train_segmentation_model.py" showLineNumbers{1}
-import tensorflow as tf
-
-model.compile(optimizer="rmsprop", loss="sparse_categorical_crossentropy")
-
-callbacks = [
-    tf.keras.callbacks.ModelCheckpoint("oxford_segmentation.keras", save_best_only=True),
-]
-history = model.fit(
-    train_input_imgs, train_targets,
-    epochs=50,
-    callbacks=callbacks,
-    batch_size=64,
-    validation_data=(val_input_imgs, val_targets),
-)
-```
-
-Plotting `history.history["loss"]` against `history.history["val_loss"]`
-typically shows validation loss bottoming out somewhere around epoch 25,
-then creeping back up as the model starts overfitting — exactly why the
-checkpoint is watching `val_loss` instead of just saving the final epoch's
-weights. Reload the saved `.keras` file and call `model.predict()` on a
-held-out image to get the raw `(200, 200, 3)` softmax output shown below.
-
-## Turning the prediction back into a mask
-
-The model's raw output has shape `(200, 200, 3)` — three probabilities per
-pixel. To get a single mask, take the `argmax` along the last axis:
-
-```python title="predict_mask.py" showLineNumbers{1}
-import numpy as np
-
-# pred: shape (200, 200, 3) -- one softmax distribution per pixel
-def display_mask(pred):
-    mask = np.argmax(pred, axis=-1)   # (200, 200): the winning class per pixel
-    mask *= 127                       # rescale {0, 1, 2} -> {0, 127, 254} for viewing
-    return mask
-```
-
-A model trained for around 50 epochs on the Oxford-IIIT Pets dataset
-overfits somewhere around epoch 25 (watch the validation loss to catch the
-best checkpoint), but produces solid foreground/background masks — with the
-odd artifact around sharp geometric shapes in the background.
-
-## Visualize it
-
-Watch the model predict its mask one scanline at a time: the raw photo shows
-first, then a sweeping scan line fills in the foreground/background/contour
-prediction row by row, holds the finished mask for a moment, then fades back
-to the plain photo and starts over — exactly what `argmax` over the softmax
-output gives you, one row at a time:
-
-```p5 title="A predicted segmentation mask, overlaid on the image" desc="A scan line sweeps down the image, filling in the predicted foreground/background/contour mask row by row, holds, then fades back to the plain photo. Click to restart." height="360"
-const gridSize = 16;
-const cell = 22;
-const originX = 60, originY = 40;
-
-const img = [];
-const mask = [];
-for (let r = 0; r < gridSize; r++) {
-  const imgRow = [];
-  const maskRow = [];
-  for (let c = 0; c < gridSize; c++) {
-    const dx = c - 9, dy = r - 7;
-    const dist = Math.sqrt(dx * dx + dy * dy * 1.4);
-    const isForeground = dist < 5.5;
-    const isContour = !isForeground && dist < 6.4;
-    imgRow.push(90 + noise(r * 0.4, c * 0.4) * 120);
-    maskRow.push(isForeground ? 1 : isContour ? 2 : 0);
-  }
-  img.push(imgRow);
-  mask.push(maskRow);
-}
-
-const FILL_START = 60, FILL_DUR = 170;
-const HOLD_DUR = 90;
-const FADE_DUR = 40;
-const PERIOD = FILL_START + FILL_DUR + HOLD_DUR + FADE_DUR;
-let tCounter = 0;
-
+```p5 title="Pixel accuracy against IoU" desc="Paint a prediction over a small mask and watch the two metrics disagree. Start from all-background: the accuracy is already high while three IoUs are zero." height="330"
+const N = 16;
+let truth = [];
+let predicted = [];
+let brush = 1;
+const NAMES = ["background", "disc", "square", "triangle"];
+const COLORS = [[46, 96, 140], [255, 150, 60], [90, 200, 120], [230, 90, 90]];
 function setup() {
-  createCanvas(620, 360);
+  createCanvas(600, 330);
   textFont("monospace");
-  textAlign(CENTER, CENTER);
+  for (let r = 0; r < N; r++) {
+    truth.push([]);
+    predicted.push([]);
+    for (let c = 0; c < N; c++) {
+      let label = 0;
+      const dr = r - 5, dc = c - 5;
+      if (dr * dr + dc * dc <= 9) label = 1;
+      if (r >= 9 && r <= 13 && c >= 3 && c <= 7) label = 2;
+      if (r >= 4 && r <= 8 && c >= 10 && c <= 10 + (r - 4)) label = 3;
+      truth[r].push(label);
+      predicted[r].push(0);
+    }
+  }
 }
-function maskColor(v) {
-  if (v === 1) return color(255, 211, 67, 190);   // foreground
-  if (v === 2) return color(120, 200, 120, 190);  // contour
-  return color(75, 139, 187, 90);                 // background
+function metrics() {
+  let correct = 0, total = 0;
+  const ious = [];
+  for (let k = 0; k < 4; k++) {
+    let inter = 0, union = 0;
+    for (let r = 0; r < N; r++) {
+      for (let c = 0; c < N; c++) {
+        if (k === 0) { total++; if (truth[r][c] === predicted[r][c]) correct++; }
+        const a = truth[r][c] === k, b = predicted[r][c] === k;
+        if (a && b) inter++;
+        if (a || b) union++;
+      }
+    }
+    ious.push(union ? inter / union : 0);
+  }
+  return { accuracy: correct / total, ious };
 }
 function draw() {
-  const t = tCounter % PERIOD;
-  const fillEnd = FILL_START + FILL_DUR;
-  const holdEnd = fillEnd + HOLD_DUR;
-
-  let revealRow = -1;
-  let maskAlpha = 0;
-  let caption = "Input image";
-
-  if (t < FILL_START) {
-    caption = "Input image (feeding into the trained segmentation model)";
-  } else if (t < fillEnd) {
-    const p = (t - FILL_START) / FILL_DUR;
-    revealRow = p * gridSize;
-    maskAlpha = 1;
-    caption = "Predicting per-pixel mask -- row " + Math.min(gridSize, Math.ceil(revealRow)) + " / " + gridSize;
-  } else if (t < holdEnd) {
-    revealRow = gridSize;
-    maskAlpha = 1;
-    caption = "Predicted mask (argmax over per-pixel softmax)";
-  } else {
-    const p = (t - holdEnd) / FADE_DUR;
-    revealRow = gridSize;
-    maskAlpha = 1 - p;
-    caption = "Predicted mask (argmax over per-pixel softmax)";
+  background(13, 17, 23);
+  noStroke();
+  const cell = 15;
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("true mask", 40, 24);
+  text("your prediction — click and drag", 280, 24);
+  for (let r = 0; r < N; r++) {
+    for (let c = 0; c < N; c++) {
+      let col = COLORS[truth[r][c]];
+      fill(col[0], col[1], col[2]);
+      rect(40 + c * cell, 48 + r * cell, cell - 1, cell - 1);
+      col = COLORS[predicted[r][c]];
+      fill(col[0], col[1], col[2]);
+      rect(280 + c * cell, 48 + r * cell, cell - 1, cell - 1);
+    }
   }
+  const m = metrics();
+  fill(255, 211, 67);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("pixel accuracy " + m.accuracy.toFixed(4), 40, 300);
+  fill(200);
+  textSize(11);
+  const mean = m.ious.reduce((a, b) => a + b, 0) / 4;
+  text("mean IoU " + mean.toFixed(4) + "   per class "
+    + m.ious.map((v) => v.toFixed(2)).join(" "), 40, 316);
+  for (let k = 0; k < 4; k++) {
+    const x = 280 + k * 78;
+    const col = COLORS[k];
+    fill(col[0], col[1], col[2], brush === k ? 255 : 110);
+    rect(x, 296, 72, 22, 3);
+    fill(brush === k ? 20 : 220);
+    textSize(9);
+    textAlign(CENTER, CENTER);
+    text(NAMES[k], x + 36, 307);
+  }
+}
+function paint() {
+  const cell = 15;
+  const c = Math.floor((mouseX - 280) / cell);
+  const r = Math.floor((mouseY - 48) / cell);
+  if (r >= 0 && r < N && c >= 0 && c < N) predicted[r][c] = brush;
+}
+function mousePressed() {
+  if (mouseY > 296 && mouseY < 318 && mouseX > 280) {
+    for (let k = 0; k < 4; k++) {
+      const x = 280 + k * 78;
+      if (mouseX > x && mouseX < x + 72) brush = k;
+    }
+    return;
+  }
+  paint();
+}
+function mouseDragged() { paint(); }
+```
 
+```p5 title="The measured table, ranked" desc="Click a column to rank every row by it. The bars are that column's values and the highest and lowest are computed from the numbers, not written in." height="228"
+let metric = 0;
+const COLUMNS = ["Parameters", "Pixel accuracy", "Mean IoU", "Seconds"];
+const ROWS = [
+  ["transposed conv + skips", 51124, 0.9737, 0.8001, 72.8],
+  ["upsample + conv + skips", 51124, 0.9863, 0.8965, 219.3],
+  ["transposed conv, no skips", 46452, 0.9805, 0.854, 77.8]
+];
+function setup() {
+  createCanvas(620, 228);
+  textFont("monospace");
+}
+function fmt(v) {
+  if (v === 0) { return "0"; }
+  const a = Math.abs(v);
+  if (a >= 1000 || a < 0.001) { return v.toExponential(2); }
+  if (a >= 100) { return v.toFixed(1); }
+  return v.toFixed(4);
+}
+function draw() {
   background(13, 17, 23);
   noStroke();
   fill(230);
-  textSize(13);
-  text(caption, width / 2, 20);
-
-  for (let r = 0; r < gridSize; r++) {
-    for (let c = 0; c < gridSize; c++) {
-      const x = originX + c * cell, y = originY + r * cell;
-      fill(img[r][c]);
-      noStroke();
-      rect(x, y, cell, cell);
-      if (r < revealRow) {
-        const rowAlpha = constrain(revealRow - r, 0, 1) * maskAlpha;
-        const mc = maskColor(mask[r][c]);
-        mc.setAlpha(alpha(mc) * rowAlpha);
-        fill(mc);
-        rect(x, y, cell, cell);
-      }
-    }
-  }
-
-  if (revealRow >= 0 && revealRow < gridSize && t < fillEnd) {
-    const scanY = originY + revealRow * cell;
-    stroke(255, 211, 67, 220);
-    strokeWeight(2);
-    line(originX, scanY, originX + gridSize * cell, scanY);
-  }
-
-  noStroke();
-  fill(107, 169, 221);
   textSize(12);
-  text("amber = foreground   green = contour   blue tint = background",
-       width / 2, height - 16);
-
-  tCounter++;
+  textAlign(LEFT, TOP);
+  text("Image Segmentation", 26, 16);
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (i === metric) { fill(255, 211, 67); } else { fill(48, 56, 68); }
+    rect(x, 40, w, 22, 4);
+    if (i === metric) { fill(13, 17, 23); } else { fill(180); }
+    textSize(9);
+    text(COLUMNS[i], x + 8, 47);
+    x += w + 6;
+    if (x > 500) { break; }
+  }
+  const values = ROWS.map((r) => r[metric + 1]);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo === 0 ? 1 : hi - lo;
+  const order = ROWS.slice().sort((a, b) => b[metric + 1] - a[metric + 1]);
+  for (let i = 0; i < order.length; i++) {
+    const y = 78 + i * 26;
+    const v = order[i][metric + 1];
+    fill(160);
+    textSize(9);
+    text(order[i][0], 26, y + 5);
+    fill(34, 40, 50);
+    rect(230, y, 280, 18, 3);
+    const frac = (v - lo) / span;
+    if (v === hi) { fill(126, 192, 143); }
+    else if (v === lo) { fill(224, 108, 117); }
+    else { fill(107, 169, 221); }
+    rect(230, y, Math.max(frac * 280, 3), 18, 3);
+    fill(225);
+    textSize(9);
+    text(fmt(v), 518, y + 5);
+  }
+  const top = order[0];
+  const bottom = order[order.length - 1];
+  fill(150);
+  textSize(9);
+  const base = 78 + order.length * 26 + 8;
+  text("highest " + COLUMNS[metric] + ": " + top[0] + " at " + fmt(top[1]),
+       26, base);
+  text("lowest  " + COLUMNS[metric] + ": " + bottom[0] + " at "
+       + fmt(bottom[1]), 26, base + 14);
+  text("bars are scaled within the chosen column - lowest is not zero", 26,
+       base + 30);
 }
 function mousePressed() {
-  tCounter = 0;
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (mouseX > x && mouseX < x + w && mouseY > 40 && mouseY < 62) {
+      metric = i;
+    }
+    x += w + 6;
+  }
 }
 ```
 
-## Mini-checkpoint
+## Pitfalls
 
-Why do segmentation encoders downsample with strided convolutions instead of
-max pooling?
+- **Reporting pixel accuracy.** All-background scored 0.8691 here; the trained model
+  scored 0.9737. The interesting information is in the 0.10 between them.
+- **Averaging IoU over pixels instead of classes.** That reintroduces exactly the
+  imbalance IoU was chosen to remove.
+- **Assuming `Conv2DTranspose` beats `UpSampling2D` + `Conv2D`.** Measured 0.8001
+  against 0.8965 at identical parameter counts, and 3× slower.
+- **Calling `Conv2DTranspose` a deconvolution.** It is the gradient of a strided
+  convolution, not an inverse; it cannot recover information the pooling discarded.
+- **Omitting skip connections on fine structure.** They cost nothing at inference and
+  carry the boundary detail — on shapes this simple the decoder mattered more, which
+  will not generalise to real images.
+- **Ignoring the smallest class.** Triangle IoU ran 0.4470–0.7331 while background sat
+  above 0.98, and the loss barely notices.
+- **Mismatching the mask encoding and the loss.** An $(H, W)$ integer mask pairs with
+  `sparse_categorical_crossentropy`; an $(H, W, C)$ one-hot mask pairs with
+  `categorical_crossentropy`.
 
-- Max pooling keeps only the largest value in each window and forgets which
-  position it came from — great for "is this pattern present anywhere?"
-  classification, but destructive to the exact spatial information a
-  per-pixel task depends on. Strided convolutions shrink the feature map the
-  same way, without throwing that location information away.
+## Recap
 
-:::tip[From the book]
-Chollet notes that a segmentation mask is really "the image-segmentation
-equivalent of a label" — instead of one number per image, it's a whole image
-of integer class values, the same height and width as the input. He also
-flags the border-padding detail that's easy to miss: use `padding="same"`
-on *every* convolution and transposed-convolution layer, so the output
-resolution lines up exactly with the target mask's resolution at every
-stage — otherwise your final `Conv2DTranspose` output won't match the shape
-of your training masks.
-:::
-
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
-
-## 🧪 Try It Yourself
-
-### Exercise 1 – Downsample With a Strided Convolution
-
-<DataCampExercise
-  lang="python"
-  hint={`A \`Conv2D\` with \`strides=2\` halves the height and width, just like \`MaxPool2D(pool_size=2)\` would — but it keeps learning spatial weights instead of just taking a max.`}
-  code={`# Task: Exercise 1 - Downsample With a Strided Convolution
-import tensorflow as tf
-
-model = tf.keras.Sequential([
-    tf.keras.layers.Conv2D(64, 3, strides=___, activation="relu", padding="same", input_shape=[200, 200, 3]),   # replace ___ with 2
-])
-print("output shape:", model.output_shape)
-
-# ── Expected Output ───────────────────────────────────────────
-# output shape: (None, 100, 100, 64)
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
-
-model = tf.keras.Sequential([
-    tf.keras.layers.Conv2D(64, 3, strides=2, activation="relu", padding="same", input_shape=[200, 200, 3]),
-])
-print("output shape:", model.output_shape)`}
-  sct={`test_output_contains("output shape: (None, 100, 100, 64)")
-success_msg("A strided convolution downsampled the feature map while staying spatially aware!")`}
-  height={160}
-/>
-
-### Exercise 2 – Upsample Back With Conv2DTranspose
-
-<DataCampExercise
-  lang="python"
-  hint={`\`Conv2DTranspose\` is the inverse of a strided \`Conv2D\` — it expands the height and width back out instead of shrinking them.`}
-  code={`# Task: Exercise 2 - Upsample Back With Conv2DTranspose
-import tensorflow as tf
-
-model = tf.keras.Sequential([
-    tf.keras.layers.___(64, 3, strides=2, activation="relu", padding="same", input_shape=[100, 100, 128]),   # replace ___ with Conv2DTranspose
-])
-print("output shape:", model.output_shape)
-
-# ── Expected Output ───────────────────────────────────────────
-# output shape: (None, 200, 200, 64)
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
-
-model = tf.keras.Sequential([
-    tf.keras.layers.Conv2DTranspose(64, 3, strides=2, activation="relu", padding="same", input_shape=[100, 100, 128]),
-])
-print("output shape:", model.output_shape)`}
-  sct={`test_output_contains("output shape: (None, 200, 200, 64)")
-success_msg("Conv2DTranspose expanded the feature map right back to 200x200!")`}
-  height={160}
-/>
-
-### Exercise 3 – Turn Per-Pixel Scores Into a Mask
-
-<DataCampExercise
-  lang="python"
-  hint={`\`np.argmax(pixel_probs, axis=-1)\` picks the winning class index for every pixel, independently.`}
-  code={`# Task: Exercise 3 - Turn Per-Pixel Scores Into a Mask
-import numpy as np
-
-# A tiny 2x2 image with per-pixel softmax scores over 3 classes
-pixel_probs = np.array([
-    [[0.7, 0.2, 0.1], [0.1, 0.8, 0.1]],
-    [[0.2, 0.2, 0.6], [0.3, 0.3, 0.4]],
-])
-mask = np.___(pixel_probs, axis=-1)   # replace ___ with argmax
-print("mask:")
-print(mask)
-
-# ── Expected Output ───────────────────────────────────────────
-# mask:
-# [[0 1]
-#  [2 2]]
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import numpy as np
-
-pixel_probs = np.array([
-    [[0.7, 0.2, 0.1], [0.1, 0.8, 0.1]],
-    [[0.2, 0.2, 0.6], [0.3, 0.3, 0.4]],
-])
-mask = np.argmax(pixel_probs, axis=-1)
-print("mask:")
-print(mask)`}
-  sct={`test_output_contains("[[0 1]")
-test_output_contains(" [2 2]]")
-success_msg("That is exactly how a segmentation model turns softmax scores into a mask!")`}
-  height={170}
-/>
+- Segmentation replaces the dense head with `Conv2D(classes, 1, activation="softmax")`
+  — one softmax vector per pixel, 4,096 predictions per 64×64 image.
+- Background was 86.91% of pixels, so a do-nothing model scores 0.8691 pixel accuracy
+  and 0.2173 mean IoU. Report IoU.
+- Three decoders at 12 epochs: upsample+conv 0.8965 mean IoU, no-skips 0.8540,
+  transposed conv + skips 0.8001.
+- `UpSampling2D` has zero parameters; `Conv2DTranspose` learns the upsampling and was
+  both worse and slower here.
+- Per-class IoU followed pixel share exactly, with triangle (3.0% of pixels) at
+  0.4470–0.7331 against background above 0.98.
+- IoU on small objects is dominated by boundary pixels, which is why class weighting
+  or a Dice-style loss is standard.
 
 ## Next
 
-Continue to **Interpreting What Convnets Learn (Grad-CAM)** — open up the
-"black box" and see exactly which pixels convinced your convnet of its
-prediction.
+One label per pixel is one way to answer "where". Boxes are the other, and they
+bring a different set of problems:
+[Object Detection (Bounding Boxes and YOLO)](/deep-learning/phase-03---computer-vision-with-cnns/object-detection-bounding-boxes-and-yolo/).
+
+<Quiz
+  questions={[
+    {
+      q: "Your segmentation model reports 0.97 pixel accuracy. What is the first thing to check?",
+      options: [
+        "Whether the model has enough capacity",
+        "What a do-nothing model scores — background was 86.91% of pixels here, so 0.8691 comes free and 0.97 is only 0.10 above it",
+        "Whether the learning rate is too high",
+        "Whether the masks are one-hot encoded",
+      ],
+      answer: 1,
+      explain: "The all-background prediction also scores 0.0 IoU on every foreground class, for a mean IoU of 0.2173 — which is the number that reveals it.",
+    },
+    {
+      q: "Plain UpSampling2D followed by Conv2D reached 0.8965 mean IoU while Conv2DTranspose with the same parameter count reached 0.8001. What does that suggest?",
+      options: [
+        "Conv2DTranspose is broken in Keras",
+        "A learned upsampler is not automatically better than a fixed rule plus a learned smoothing — and here the fixed-rule version was also three times faster in wall-clock",
+        "The transposed convolution needed a larger kernel",
+        "Skip connections were the real cause",
+      ],
+      answer: 1,
+      explain: "The same phase measured strided convolution losing to fixed pooling for downsampling. Extra flexibility costs parameters and optimisation difficulty.",
+    },
+    {
+      q: "Why is the triangle's IoU (0.4470 to 0.7331) so much worse than the background's (above 0.98)?",
+      options: [
+        "Triangles are geometrically harder to represent with convolutions",
+        "It is the smallest class at 3.0% of pixels, so it barely affects the loss, and small objects are mostly boundary — a one-pixel error round the outline of a 15-pixel shape drops its IoU to about 0.60",
+        "The mask for triangles is generated incorrectly",
+        "Softmax cannot represent three foreground classes",
+      ],
+      answer: 1,
+      explain: "Both effects push the same way, which is why inverse-frequency weighting or a Dice-style loss is the standard response.",
+    },
+    {
+      q: "What is the output layer of a four-class segmentation model on 64x64 inputs?",
+      options: [
+        "Dense(4, activation='softmax') after flattening",
+        "Conv2D(4, 1, activation='softmax'), producing (64, 64, 4) — one softmax vector per pixel, with the softmax along the channel axis",
+        "Conv2D(1, 1, activation='sigmoid')",
+        "Dense(64 * 64 * 4, activation='softmax')",
+      ],
+      answer: 1,
+      explain: "A 1x1 convolution is a per-pixel dense layer. The loss then averages cross-entropy over all 4,096 positions.",
+    },
+    {
+      q: "Conv2DTranspose is often called a deconvolution. Why is that name wrong?",
+      options: [
+        "Because it does not change the spatial size",
+        "Because it is the gradient of a strided convolution, not its inverse — it cannot recover information that pooling discarded, which is exactly why skip connections exist",
+        "Because it has no learnable parameters",
+        "Because it only works on square inputs",
+      ],
+      answer: 1,
+      explain: "Nothing in the upsampling path can invent back a boundary position that the downsampling path destroyed. The skip connection carries it forward instead.",
+    },
+  ]}
+/>
+
+## 🧪 Try It Yourself
+
+<DataCampExercise
+  lang="python"
+  hint={`Count the pixels of each label across every mask with np.bincount on the flattened array. The largest share is what a do-nothing model scores.`}
+  code={`# Task: Exercise 1 - The imbalance every segmentation mask has
+import numpy as np
+
+SIDE = 64
+CLASS_NAMES = ("background", "disc", "square", "triangle")
+
+
+def scene(rng):
+    image = rng.normal(0.5, 0.06, (SIDE, SIDE)).astype("float32")
+    mask = np.zeros((SIDE, SIDE), "int32")
+    ys, xs = np.mgrid[0:SIDE, 0:SIDE]
+    radius = rng.integers(7, 12)
+    cy, cx = rng.integers(radius, SIDE - radius, 2)
+    disc = (ys - cy) ** 2 + (xs - cx) ** 2 <= radius ** 2
+    image[disc] = 0.9
+    mask[disc] = 1
+    size = rng.integers(10, 18)
+    sy, sx = rng.integers(0, SIDE - size, 2)
+    image[sy:sy + size, sx:sx + size] = 0.15
+    mask[sy:sy + size, sx:sx + size] = 2
+    height = rng.integers(12, 20)
+    ty, tx = rng.integers(0, SIDE - height, 2)
+    for row in range(height):
+        half = int((row / height) * height / 2)
+        left = max(tx + height // 2 - half, 0)
+        right = min(tx + height // 2 + half + 1, SIDE)
+        image[ty + row, left:right] = 0.65
+        mask[ty + row, left:right] = 3
+    return np.clip(image, 0, 1)[..., None], mask
+
+
+rng = np.random.default_rng(0)
+images, masks = [], []
+for _ in range(1500):
+    image, mask = scene(rng)
+    images.append(image)
+    masks.append(mask)
+images, masks = np.stack(images), np.stack(masks)
+
+counts = np.bincount(masks.ravel(), minlength=___)   # replace ___ with 4
+share = counts / counts.sum()
+print(f"{len(images)} scenes of {SIDE}x{SIDE} = {masks.size:,} labelled pixels")
+print(f"{'class':12s} {'pixels':>12} {'share':>8}")
+for name, count, fraction in zip(CLASS_NAMES, counts, share):
+    print(f"{name:12s} {count:12,} {fraction:8.4f}")
+print(f"predicting 'background' everywhere scores {share[0]:.4f} pixel accuracy")
+
+# -- Expected Output -------------------------------------------
+# 1500 scenes of 64x64 = 6,144,000 labelled pixels
+# class              pixels    share
+# background      5,339,821   0.8691
+# disc              349,253   0.0568
+# square            269,030   0.0438
+# triangle          185,896   0.0303
+# predicting 'background' everywhere scores 0.8691 pixel accuracy
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`IoU for a class is the count where both agree divided by the count where either says that class. A class the prediction never uses has an intersection of zero.`}
+  code={`# Task: Exercise 2 - IoU exposes what pixel accuracy hides
+import numpy as np
+
+SIDE = 64
+CLASS_NAMES = ("background", "disc", "square", "triangle")
+
+mask = np.zeros((SIDE, SIDE), "int32")
+ys, xs = np.mgrid[0:SIDE, 0:SIDE]
+mask[(ys - 20) ** 2 + (xs - 20) ** 2 <= 81] = 1
+mask[40:52, 8:20] = 2
+mask[10:24, 44:58] = 3
+lazy = np.zeros_like(mask)
+
+
+def iou_per_class(true_mask, predicted_mask, classes=4):
+    out = []
+    for index in range(classes):
+        intersection = float(((true_mask == index)
+                              & (predicted_mask == index)).sum())
+        union = float(((true_mask == index)
+                       ___ (predicted_mask == index)).sum())
+        # replace ___ with |
+        out.append(intersection / union if union else 0.0)
+    return out
+
+
+print(f"pixel accuracy of the all-background prediction: "
+      f"{float((lazy == mask).mean()):.4f}")
+scores = iou_per_class(mask, lazy)
+print(f"{'class':12s} {'IoU':>8}")
+for name, value in zip(CLASS_NAMES, scores):
+    print(f"{name:12s} {value:8.4f}")
+print(f"mean IoU {float(np.mean(scores)):.4f}")
+print("high pixel accuracy, three IoUs of zero: the metric you pick decides")
+print("whether this looks like a good model or a useless one")
+
+# -- Expected Output -------------------------------------------
+# pixel accuracy of the all-background prediction: 0.8552
+# class             IoU
+# background     0.8552
+# disc           0.0000
+# square         0.0000
+# triangle       0.0000
+# mean IoU 0.2138
+# high pixel accuracy, three IoUs of zero: the metric you pick decides
+# whether this looks like a good model or a useless one
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`UpSampling2D repeats values and has no weights. Conv2DTranspose learns the upsampling, so it has a kernel like any convolution.`}
+  code={`# Task: Exercise 3 - What each upsampling layer does
+import numpy as np
+from tensorflow import keras
+
+probe = np.zeros((1, 16, 16, 8), "float32")
+print(f"{'layer':34s} {'in':>13} {'out':>13}")
+for label, layer in (
+        ("UpSampling2D(2)", keras.layers.UpSampling2D(2)),
+        ("Conv2DTranspose(4, 3, strides=2)",
+         keras.layers.Conv2DTranspose(4, 3, strides=2, padding="same")),
+        ("UpSampling2D then Conv2D(4, 3)",
+         keras.Sequential([keras.layers.UpSampling2D(2),
+                           keras.layers.Conv2D(4, 3, padding="same")]))):
+    out = layer(probe)
+    print(f"{label:34s} {str(tuple(probe.shape[1:])):>13} "
+          f"{str(tuple(int(v) for v in out.shape[1:])):>13}")
+
+up = keras.layers.UpSampling2D(2)
+transposed = keras.layers.Conv2DTranspose(4, 3, strides=2, padding="same")
+transposed.build((None, 16, 16, 8))
+print(f"UpSampling2D parameters:    "
+      f"{sum(int(np.prod(w.shape)) for w in up.___)}")
+# replace ___ with weights
+print(f"Conv2DTranspose parameters: "
+      f"{sum(int(np.prod(w.shape)) for w in transposed.weights):,}")
+print("upsampling is a fixed rule; a transposed convolution learns how to fill")
+print("in the detail, and neither can recover what pooling discarded")
+
+# -- Expected Output -------------------------------------------
+# layer                                         in           out
+# UpSampling2D(2)                      (16, 16, 8)   (32, 32, 8)
+# Conv2DTranspose(4, 3, strides=2)     (16, 16, 8)   (32, 32, 4)
+# UpSampling2D then Conv2D(4, 3)       (16, 16, 8)   (32, 32, 4)
+# UpSampling2D parameters:    0
+# Conv2DTranspose parameters: 292
+# upsampling is a fixed rule; a transposed convolution learns how to fill
+# in the detail, and neither can recover what pooling discarded
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`A one-pixel error all the way round removes the boundary ring from the intersection and adds an equal ring to the union. For a square of side s the ring is 4s - 4 pixels.`}
+  code={`# Task: Exercise 4 - Why small objects lose so much IoU
+print(f"{'side':>6} {'area':>7} {'boundary':>10} {'boundary share':>15} "
+      f"{'IoU after 1px error':>21}")
+for side in (4, 8, 15, 30, 60):
+    area = side * side
+    boundary = 4 * side - ___                      # replace ___ with 4
+    intersection = area - boundary
+    union = area + boundary
+    print(f"{side:6d} {area:7d} {boundary:10d} {boundary / area:15.4f} "
+          f"{intersection / union:21.4f}")
+print("a 4-pixel object is almost all boundary, so a one-pixel error destroys")
+print("its IoU; the same error on a 60-pixel object barely registers")
+
+# -- Expected Output -------------------------------------------
+#   side    area   boundary  boundary share   IoU after 1px error
+#      4      16         12          0.7500                0.1429
+#      8      64         28          0.4375                0.3913
+#     15     225         56          0.2489                0.6014
+#     30     900        116          0.1289                0.7717
+#     60    3600        236          0.0656                0.8770
+# a 4-pixel object is almost all boundary, so a one-pixel error destroys
+# its IoU; the same error on a 60-pixel object barely registers
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`The output layer is a 1x1 convolution with one filter per class and a softmax, so the prediction keeps the input's spatial shape. Concatenate the encoder activations into the decoder for the skips.`}
+  code={`# Task: Exercise 5 - Build the hourglass and score it properly
+import numpy as np
+from tensorflow import keras
+
+SIDE = 64
+CLASS_NAMES = ("background", "disc", "square", "triangle")
+
+
+def scene(rng):
+    image = rng.normal(0.5, 0.06, (SIDE, SIDE)).astype("float32")
+    mask = np.zeros((SIDE, SIDE), "int32")
+    ys, xs = np.mgrid[0:SIDE, 0:SIDE]
+    radius = rng.integers(7, 12)
+    cy, cx = rng.integers(radius, SIDE - radius, 2)
+    disc = (ys - cy) ** 2 + (xs - cx) ** 2 <= radius ** 2
+    image[disc] = 0.9
+    mask[disc] = 1
+    size = rng.integers(10, 18)
+    sy, sx = rng.integers(0, SIDE - size, 2)
+    image[sy:sy + size, sx:sx + size] = 0.15
+    mask[sy:sy + size, sx:sx + size] = 2
+    height = rng.integers(12, 20)
+    ty, tx = rng.integers(0, SIDE - height, 2)
+    for row in range(height):
+        half = int((row / height) * height / 2)
+        left = max(tx + height // 2 - half, 0)
+        right = min(tx + height // 2 + half + 1, SIDE)
+        image[ty + row, left:right] = 0.65
+        mask[ty + row, left:right] = 3
+    return np.clip(image, 0, 1)[..., None], mask
+
+
+rng = np.random.default_rng(0)
+images, masks = [], []
+for _ in range(1500):
+    image, mask = scene(rng)
+    images.append(image)
+    masks.append(mask)
+images, masks = np.stack(images), np.stack(masks)
+x_train, y_train = images[:1200], masks[:1200]
+x_test, y_test = images[1200:], masks[1200:]
+
+
+def iou_per_class(true_mask, predicted_mask, classes=4):
+    out = []
+    for index in range(classes):
+        intersection = float(((true_mask == index)
+                              & (predicted_mask == index)).sum())
+        union = float(((true_mask == index) | (predicted_mask == index)).sum())
+        out.append(intersection / union if union else 0.0)
+    return out
+
+
+def build(skips=True):
+    keras.utils.set_random_seed(0)
+    inputs = keras.layers.Input((SIDE, SIDE, 1))
+    down1 = keras.layers.Conv2D(16, 3, padding="same", activation="relu")(inputs)
+    pooled1 = keras.layers.MaxPooling2D(2)(down1)
+    down2 = keras.layers.Conv2D(32, 3, padding="same",
+                                activation="relu")(pooled1)
+    pooled2 = keras.layers.MaxPooling2D(2)(down2)
+    middle = keras.layers.Conv2D(64, 3, padding="same",
+                                 activation="relu")(pooled2)
+    x = keras.layers.UpSampling2D(2)(middle)
+    x = keras.layers.Conv2D(32, 3, padding="same", activation="relu")(x)
+    if skips:
+        x = keras.layers.Concatenate()([x, down2])
+    x = keras.layers.UpSampling2D(2)(x)
+    x = keras.layers.Conv2D(16, 3, padding="same", activation="relu")(x)
+    if skips:
+        x = keras.layers.Concatenate()([x, down1])
+    outputs = keras.layers.Conv2D(4, ___, activation="softmax")(x)
+    # replace ___ with 1
+    model = keras.Model(inputs, outputs)
+    model.compile(keras.optimizers.Adam(1e-3),
+                  "sparse_categorical_crossentropy", metrics=["accuracy"])
+    return model
+
+
+print(f"{'design':14s} {'params':>9} {'pixel acc':>10} {'mean IoU':>9}")
+for skips in (True, False):
+    model = build(skips)
+    model.fit(x_train, y_train, epochs=12, batch_size=32, verbose=0)
+    predicted = model.predict(x_test, verbose=0).argmax(axis=-1)
+    scores = iou_per_class(y_test, predicted)
+    label = "with skips" if skips else "no skips"
+    print(f"{label:14s} {model.count_params():9,} "
+          f"{float((predicted == y_test).mean()):10.4f} "
+          f"{float(np.mean(scores)):9.4f}")
+    if skips:
+        print("               per class: " +
+              "  ".join(f"{n} {v:.4f}" for n, v in zip(CLASS_NAMES, scores)))
+print("both designs clear 0.98 pixel accuracy and the triangle is the worst")
+print("class either way - on shapes this clean the skips buy nothing")
+
+# -- Expected Output -------------------------------------------
+# design            params  pixel acc  mean IoU
+# with skips        51,124     0.9863    0.8965
+#                per class: background 0.9866  disc 0.9314  square 0.9351  triangle 0.7331
+# no skips          46,452     0.9863    0.8974
+# both designs clear 0.98 pixel accuracy and the triangle is the worst
+# class either way - on shapes this clean the skips buy nothing
+# --------------------------------------------------------------`}
+/>

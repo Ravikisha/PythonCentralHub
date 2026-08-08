@@ -1,586 +1,1028 @@
 ---
 title: Generative Adversarial Networks (GANs)
-description: Learn how a generator and a discriminator compete in a minimax game to produce realistic data, why that adversarial training is famously unstable, and how DCGANs stabilize it.
+description: Four GAN configurations measured on this machine - the best covered 5 of 10 digit classes at KL 6.0163, the VAE on the same data covered all ten, and no setting reached a balanced game.
 sidebar:
   order: 453
 ---
 
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Figure from "../../../../components/Figure.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+The [VAE page](/deep-learning/phase-06---generative-deep-learning/variational-autoencoders-vae/)
+ended with a diagnosis: a per-pixel reconstruction loss is optimised by the *average* of all
+plausible images, so VAE samples are blurry by construction. A GAN removes that loss
+entirely. Instead of scoring pixels, it trains a second network — the **discriminator** — to
+tell real images from generated ones, and the generator's only job is to fool it.
+
+That change is genuinely powerful, and it is also where every GAN difficulty comes from,
+because now there is no loss that measures quality. Four configurations were trained on the
+same 12,000 MNIST digits on this machine, then scored by an independent classifier that never
+saw any of them. The best of the four, against the previous page's VAE:
+
+| Model | Classes produced | KL from uniform coverage | Judge confidence |
+| --- | --- | --- | --- |
+| Real digits | 10 of 10 | 0.0139 | 0.9497 |
+| **GAN**, best of four (24 epochs, 431s) | **5 of 10** | **6.0163** | 0.5798 |
+| GAN, the tutorial default | 2 of 10 | 14.4616 | 0.5520 |
+| VAE (same data) | 10 of 10 | 0.1161 | 0.8121 |
+
+The GAN lost on **both** axes even at its best. That is not the textbook result — the usual
+claim is that GANs trade coverage for sharpness — and this page reports what was measured. The
+explanation is in the training curves, and it is the most important thing to understand about
+GANs.
+
 ## What you'll learn
 
-- how a **generator** and a **discriminator** compete in a minimax game — the
-  generator tries to fool the discriminator, the discriminator tries not to be fooled
-- why training happens in **two separate phases** per step, and why the
-  discriminator's `trainable` attribute has to be toggled around `compile()`
-- why GAN training is famously unstable, what **mode collapse** is, and a couple of
-  techniques that help (experience replay, minibatch discrimination)
-- the **DCGAN** guidelines for building a stable convolutional GAN
+- Why a GAN has no loss that measures sample quality, and what its losses **do** measure.
+- How to read discriminator accuracy on real and fake batches — and why every configuration
+  here ended with the discriminator catching at least **99.66%** of fakes, far from the 0.5
+  the theory asks for.
+- **Mode collapse**, measured: the default configuration put 79.6% of 2,000 samples on one
+  digit; the best put 40.1% on one and produced 5 of 10 classes.
+- Which knob actually moved coverage — the ratio of generator to discriminator updates, not
+  the discriminator's learning rate.
+- Why a sample grid is not evidence, and what to compute instead.
+- The tricks that are load-bearing rather than folklore: one-sided label smoothing,
+  `LeakyReLU`, separate optimisers, and freezing the discriminator at the right moment.
 
-## The forger and the detective
+## The game
 
-A GAN is composed of two neural networks with opposite goals:
+Two networks, opposite objectives, one shared batch of data:
 
-- The **generator** takes random noise (a Gaussian vector, just like a VAE's coding)
-  and turns it into fake data — typically an image.
-- The **discriminator** takes an image, real or fake, and must guess which one it is.
+$$
+\min_G \max_D \; \mathbb{E}_{x \sim p_{\text{data}}}\big[\log D(x)\big]
++ \mathbb{E}_{z \sim p_z}\big[\log\big(1 - D(G(z))\big)\big]
+$$
 
-Géron's analogy: the generator is like a criminal trying to make convincing
-counterfeit money, while the discriminator is the police investigator trying to
-spot the fakes. Neither one "solves" the problem alone — they improve only by
-competing against each other, a training style called **adversarial training**.
-Remarkably, the generator never sees a single real image; all it ever gets is the
-gradients that flow back through the discriminator. As the discriminator gets
-better at spotting fakes, those gradients carry more useful information, so the
-generator can keep improving.
+The discriminator maximises its ability to separate real from fake; the generator minimises
+it. The equilibrium is where $D$ outputs 0.5 everywhere because the two distributions match
+— at which point the discriminator loss is $\log 2 = 0.6931$ and both accuracies sit at 0.5.
 
-## Two phases per training step
-
-Because the two networks have opposing objectives, you can't just call `.fit()` —
-each training iteration needs two separate phases:
-
-1. **Train the discriminator.** Sample a batch of real images, generate an equal
-   number of fake ones, label fakes `0` and real `1`, and train the discriminator
-   for one step with binary cross-entropy. Only the discriminator's weights update.
-2. **Train the generator.** Generate another batch of fake images, but this time set
-   *all* labels to `1` — you want the generator to fool the discriminator into
-   believing its output is real. The discriminator's weights are **frozen** during
-   this phase; only the gradients flow back into the generator.
-
-```mermaid title="The two-phase GAN training loop" desc="Each step alternates between teaching the discriminator to spot fakes and teaching the generator to fool it."
-flowchart TD
-  Z["Random noise z"] --> G["Generator"]
-  G --> F["Fake image"]
-  R["Real image (from dataset)"] --> P1
-  F --> P1["Phase 1: train Discriminator<br/>labels: fake=0, real=1"]
-  P1 --> DU["Discriminator weights updated"]
-  Z2["New noise z"] --> G
-  G --> F2["Fake image"]
-  F2 --> P2["Phase 2: train Generator<br/>labels: all=1, Discriminator frozen"]
-  P2 --> GU["Generator weights updated"]
+```mermaid
+flowchart LR
+  Z["z ~ N(0, I)"] --> G["generator"]
+  G --> F["fake images"]
+  X["real images"] --> D["discriminator"]
+  F --> D
+  D --> R["real / fake probability"]
+  R -->|"labels: real 0.9, fake 0"| DL["train D"]
+  R -->|"labels: fakes called real<br/>D frozen"| GL["train G"]
+  DL -.->|"D acc real 0.9863<br/>D acc fake 0.9999"| B["is the game balanced?"]
+  GL -.->|"KL 6.0163 from uniform"| M["did it cover the data?"]
 ```
 
-## Building and training a small GAN
+Note what is missing from that diagram: any path from a generated image to a measure of how
+good it is. The generator's gradient comes entirely from the discriminator's current opinion,
+and that opinion is a moving target.
 
-The generator looks like an autoencoder's decoder; the discriminator is a plain
-binary classifier. The combined `gan` model exists only so phase 2 can send
-gradients through the (frozen) discriminator back into the generator:
+## Building it in Keras
 
-```python title="Generator, discriminator, and the combined GAN" showLineNumbers{1}
-import tensorflow as tf
+Three models: the generator, the discriminator, and a **combined** model that stacks them so
+the generator can be trained through a frozen discriminator.
 
-codings_size = 8
-
-generator = tf.keras.models.Sequential([
-    tf.keras.layers.Dense(24, activation="selu", input_shape=[codings_size]),
-    tf.keras.layers.Dense(16, activation="sigmoid"),
-    tf.keras.layers.Reshape([4, 4]),
+```python title="The three models"
+generator = keras.Sequential([
+    keras.layers.Input((LATENT,)),
+    keras.layers.Dense(128), keras.layers.LeakyReLU(negative_slope=0.2),
+    keras.layers.Dense(256), keras.layers.LeakyReLU(negative_slope=0.2),
+    keras.layers.Dense(784, activation="sigmoid"),      # pixels in [0, 1]
 ])
-discriminator = tf.keras.models.Sequential([
-    tf.keras.layers.Flatten(input_shape=[4, 4]),
-    tf.keras.layers.Dense(16, activation="selu"),
-    tf.keras.layers.Dense(1, activation="sigmoid"),
-])
-gan = tf.keras.models.Sequential([generator, discriminator])
 
-discriminator.compile(loss="binary_crossentropy", optimizer="rmsprop")
-discriminator.trainable = False
-gan.compile(loss="binary_crossentropy", optimizer="rmsprop")
+discriminator.compile(keras.optimizers.Adam(2e-4), "binary_crossentropy")
 
-print("discriminator.trainable (after freezing):", discriminator.trainable)
+discriminator.trainable = False          # frozen while the combined model is built
+combined_input = keras.layers.Input((LATENT,))
+combined = keras.Model(combined_input, discriminator(generator(combined_input)))
+combined.compile(keras.optimizers.Adam(2e-4), "binary_crossentropy")
 ```
 
-```
-discriminator.trainable (after freezing): False
+:::danger[The freeze-at-compile-time idiom does not work in Keras 3]
+Nearly every GAN tutorial written for Keras 2 ends that block with
+`discriminator.trainable = True`, on the theory that `trainable` is captured at **compile**
+time so the combined model keeps a permanently frozen copy. That was true then. It is not true
+in Keras 3, and the difference is not cosmetic — it silently trains the discriminator to agree
+that fakes are real.
+
+Measured on Keras 3.15, building the combined model with the discriminator frozen and then
+setting the flag back:
+
+| Pattern | `combined.trainable_weights` | Largest discriminator weight change after 20 generator steps |
+| --- | --- | --- |
+| Freeze, compile, **set back to `True`** | **8** (the generator has 4) | **0.01170799** |
+| Freeze, compile, leave frozen | 4 | 0.00000000 |
+| **Toggle around each generator step** | 4 during the step | **0.00000000** |
+
+The first row is the bug. The generator's target is "call my fakes real", so a trainable
+discriminator inside that step is dragged towards exactly the opinion it exists to oppose.
+The working pattern toggles the flag around the call:
+
+```python
+def generator_step(combined, discriminator, noise):
+    """Train the generator with the discriminator genuinely frozen."""
+    discriminator.trainable = False
+    loss = combined.train_on_batch(noise, np.ones((len(noise), 1), "float32"))
+    discriminator.trainable = True      # so D can still train on its own batches
+    return float(loss)
 ```
 
-:::caution[Gotcha]
-Keras only applies the `trainable` attribute **at `compile()` time**. So the
-discriminator stays trainable when you call `discriminator.train_on_batch(...)`
-directly (it was `True` when *it* was compiled), even though the exact same layers
-are frozen inside `gan` (which was compiled after `trainable = False`). This is
-exactly why the custom loop below flips `discriminator.trainable` back and forth
-before each `train_on_batch()` call.
+This page's first run had the bug. Every number below comes from the corrected run, and the
+difference it made is reported at the end of this section.
 :::
 
-Since the training loop is unusual, you write it by hand instead of calling
-`.fit()`:
+`LeakyReLU` rather than `ReLU` is also load-bearing. A dead `ReLU` in the discriminator gives
+the generator zero gradient in that direction, and the generator has no other source of
+learning signal.
 
-```python title="The custom two-phase training loop" showLineNumbers{1}
-import numpy as np
-import tensorflow as tf
+```python title="One step of the game"
+fake = generator.predict(noise, verbose=0)
 
-# Toy dataset: 64 tiny random "images" (stand-ins for real Fashion MNIST images)
-X_train = np.random.rand(64, 4, 4).astype("float32")
-batch_size = 16
-dataset = tf.data.Dataset.from_tensor_slices(X_train).shuffle(64)
-dataset = dataset.batch(batch_size, drop_remainder=True).prefetch(1)
+# One-sided label smoothing: real labels at 0.9, fake labels left at 0.
+d_real = discriminator.train_on_batch(batch, np.full((len(batch), 1), 0.9))
+d_fake = discriminator.train_on_batch(fake, np.zeros((len(fake), 1)))
 
-def train_gan(gan, dataset, batch_size, codings_size, n_epochs=1):
-    generator, discriminator = gan.layers
-    for epoch in range(n_epochs):
-        for X_batch in dataset:
-            # phase 1: train the discriminator on real + fake
-            noise = tf.random.normal(shape=[batch_size, codings_size])
-            generated_images = generator(noise)
-            X_fake_and_real = tf.concat([generated_images, X_batch], axis=0)
-            y1 = tf.constant([[0.]] * batch_size + [[1.]] * batch_size)
-            discriminator.trainable = True
-            discriminator.train_on_batch(X_fake_and_real, y1)
-            # phase 2: train the generator to fool the (frozen) discriminator
-            noise = tf.random.normal(shape=[batch_size, codings_size])
-            y2 = tf.constant([[1.]] * batch_size)
-            discriminator.trainable = False
-            gan.train_on_batch(noise, y2)
-
-train_gan(gan, dataset, batch_size, codings_size)
-print("batches per epoch:", len(dataset))
-print("generator output shape:", generator.output_shape)
+# The generator wants the discriminator to call its fakes real - with D frozen.
+g_loss = generator_step(combined, discriminator, noise)
 ```
 
-```
-batches per epoch: 4
-generator output shape: (None, 4, 4)
-```
+Label smoothing on the real side stops the discriminator becoming perfectly confident, which
+would flatten the gradient the generator depends on. It also has a measurement consequence,
+described below.
 
-## Why GAN training is so unstable
+## Reading the curves
 
-In theory, a GAN converges to a **Nash equilibrium**: the generator produces
-perfectly realistic images, and the discriminator is reduced to a coin flip (50%
-real, 50% fake). In practice, nothing guarantees you'll ever reach it.
+<Figure
+  src="/images/dl/phase-06-generative/gans/training-curves"
+  alt="Two panels covering four configurations. Left: generator loss rising over 24 epochs in every configuration, from 6.63 for the default down to 2.86 for the most heavily regularised one. Right: discriminator accuracy on fake batches, which climbs above 0.98 within two epochs in all four configurations and stays there, far above the dashed equilibrium line at 0.5."
+  title="24 epochs per configuration, 12,000 MNIST digits, 374–461s each"
+  caption="A generator loss that rises for 24 straight epochs is a generator losing. The right panel says why: the discriminator identifies essentially every fake in every configuration — the best case still ends at 0.9966 against the 0.5 that equilibrium requires. Weakening the discriminator (lower learning rate, heavier dropout) narrowed the gap but never closed it, which is what makes GAN training different in kind from ordinary supervised training."
+/>
 
-The biggest failure mode is **mode collapse**: the generator discovers one type of
-output that reliably fools the discriminator (say, shoes) and starts producing
-*only* that, forgetting every other class. The discriminator, seeing nothing but
-fake shoes, eventually learns to catch them — so the generator is forced to jump to
-a different class, and the cycle repeats without either network ever getting
-consistently good. On top of that, because the two networks are constantly pushing
-against each other, their parameters can start oscillating and training can diverge
-for no obvious reason — which is why GANs are notoriously sensitive to
-hyperparameters.
+The best configuration by coverage, epoch by epoch:
 
-Two techniques that help:
+| Epoch | D loss | G loss | D accuracy on real | D accuracy on fake |
+| --- | --- | --- | --- | --- |
+| 1 | 0.2267 | 3.7070 | 0.9693 | 0.9879 |
+| 2 | 0.2178 | 4.1576 | 0.9672 | 0.9999 |
+| 23 | 0.1945 | 5.3003 | 0.9820 | 0.9999 |
+| **24** | **0.1885** | **5.4879** | **0.9863** | **0.9999** |
 
-- **Experience replay** — keep a buffer of recently generated fake images and train
-  the discriminator on a mix of real images, current fakes, and *older* fakes from
-  the buffer, so it can't just overfit to whatever the generator produces right now.
-- **Minibatch discrimination** — give the discriminator a statistic describing how
-  similar the images in a batch are to each other, so it can reject an entire batch
-  of fakes that all look alike, discouraging mode collapse.
+Every column points the same way. The discriminator loss falls towards zero rather than rising
+towards $\log 2 = 0.6931$; the generator loss climbs from 3.7070 to 5.4879; the discriminator
+catches 99.99% of fakes from epoch 2 onward. This is the **too-strong discriminator** failure,
+and it is not a subtle one.
 
-## Deep Convolutional GANs (DCGAN)
+Why it happens here is structural rather than accidental: the loop trains the discriminator
+**twice** per step — once on a real batch, once on a fake batch — against one generator update.
+That is what nearly every GAN tutorial does, so "as written" is a biased starting point, not a
+neutral one.
 
-Plain dense layers work for tiny toy images, but real images need convolutions.
-Radford et al.'s **DCGAN** guidelines for stable convolutional GANs:
+## The balance sweep
 
-- Replace pooling with **strided convolutions** (discriminator) and **transposed
-  convolutions** (generator).
-- Use **Batch Normalization** in both networks, except the generator's output layer
-  and the discriminator's input layer.
-- Drop fully connected hidden layers for deeper architectures.
-- Use **ReLU** in the generator (except **tanh** on the output layer).
-- Use **leaky ReLU** everywhere in the discriminator.
+Four ways of handing capacity back to the generator, each trained for 24 epochs:
 
-```python title="A small DCGAN for 28x28 images" showLineNumbers{1}
-import tensorflow as tf
+| Configuration | Classes | KL from uniform | Judge confidence | D accuracy on fake (last epoch) | Time |
+| --- | --- | --- | --- | --- | --- |
+| As written (D lr 2e-4) | 2 | 14.4616 | 0.5520 | 1.0000 | 402s |
+| D lr 5e-5 | 2 | 14.4384 | 0.5555 | 0.9999 | 461s |
+| **2 generator steps** | **5** | **6.0163** | 0.5798 | 0.9999 | 431s |
+| D lr 5e-5 + dropout 0.5 | 2 | 14.4149 | **0.6709** | **0.9966** | 374s |
 
-codings_size = 100
+Three things fall out of that table, and only the first was expected:
 
-generator = tf.keras.models.Sequential([
-    tf.keras.layers.Dense(7 * 7 * 8, input_shape=[codings_size]),
-    tf.keras.layers.Reshape([7, 7, 8]),
-    tf.keras.layers.BatchNormalization(),
-    tf.keras.layers.Conv2DTranspose(8, kernel_size=5, strides=2, padding="same", activation="selu"),
-    tf.keras.layers.BatchNormalization(),
-    tf.keras.layers.Conv2DTranspose(1, kernel_size=5, strides=2, padding="same", activation="tanh"),
-])
-discriminator = tf.keras.models.Sequential([
-    tf.keras.layers.Conv2D(8, kernel_size=5, strides=2, padding="same",
-                            activation=tf.keras.layers.LeakyReLU(0.2), input_shape=[28, 28, 1]),
-    tf.keras.layers.Dropout(0.4),
-    tf.keras.layers.Conv2D(16, kernel_size=5, strides=2, padding="same",
-                            activation=tf.keras.layers.LeakyReLU(0.2)),
-    tf.keras.layers.Dropout(0.4),
-    tf.keras.layers.Flatten(),
-    tf.keras.layers.Dense(1, activation="sigmoid"),
-])
-print("generator output shape:", generator.output_shape)
-print("discriminator output shape:", discriminator.output_shape)
+1. **Doubling the generator's updates more than doubled coverage** — 2 classes to 5, KL 14.4616
+   to 6.0163. The update *ratio* is the knob that mattered.
+2. **Lowering the discriminator's learning rate did essentially nothing** (14.4616 → 14.4384).
+   A slower discriminator is still a winning discriminator; it just gets there later.
+3. **The configuration with the best judge confidence had the worst coverage.** Heavier dropout
+   plus a slower discriminator gave the sharpest-looking samples (0.6709) and the lowest fake
+   accuracy (0.9966) while still producing only 2 classes. Optimising the metric that is easy to
+   look at would have selected exactly the wrong run.
+
+:::caution[The metric that lied to me]
+The first version of this experiment reported discriminator accuracy on real batches as
+**exactly 0.0000 at every epoch**, which is impossible for a network that was plainly
+learning. The cause was mine: real labels are smoothed to 0.9, and Keras's
+`metrics=["accuracy"]` compares the *rounded* prediction with `y_true`, so 0.9 matches
+neither 0 nor 1 and the metric reads zero forever. The fix is a metric that ignores the label
+and reports the decision:
+
+```python
+def called_real(y_true, y_pred):
+    del y_true                       # the smoothed label is not the question
+    return tf.reduce_mean(tf.cast(y_pred > 0.5, "float32"))
 ```
 
-```
-generator output shape: (None, 28, 28, 1)
-discriminator output shape: (None, 1)
-```
-
-Since the generator's output layer uses `tanh`, its outputs range from -1 to 1 —
-remember to rescale your real training images to that same range before training
-(`X_train = X_train * 2. - 1.`, assuming they start in `[0, 1]`).
-
-## More stabilization tricks (Chollet's "bag of tricks")
-
-Chollet's *Deep Learning with Python* adds a few more heuristics on top of the
-DCGAN guidelines above — none of them theory-backed, all of them known to help
-empirically:
-
-- **Add noise to the discriminator's labels.** Instead of hard `0`/`1` targets,
-  add a small amount of random noise to them. GAN training is a dynamic
-  equilibrium, easy to get stuck in — a bit of stochasticity in the labels
-  discourages the discriminator from ever becoming too confident, which keeps
-  gradients flowing to the generator.
-- **Avoid sparse gradients.** Both max pooling and plain `relu` zero out large
-  chunks of the gradient, which starves GAN training of the signal it needs.
-  That's exactly why the DCGAN guidelines above replace pooling with strided
-  convolutions and swap `relu` for **leaky ReLU** (which lets small negative
-  values through instead of clamping them to zero).
-- **Match kernel size to stride to avoid checkerboard artifacts.** When a
-  strided `Conv2DTranspose` or `Conv2D`'s kernel size isn't evenly divisible by
-  its stride, different pixels in the output get covered by a different number
-  of overlapping kernel applications — visible as a faint checkerboard pattern
-  in generated images. Notice the DCGAN code above uses `kernel_size=5` with
-  `strides=2`; picking sizes like this (or `kernel_size=4, strides=2`) sidesteps
-  the artifact.
-- **Dropout in the discriminator guards against a generator stuck on noise.**
-  One common GAN failure mode is the generator getting permanently stuck
-  producing images that look like pure static. Adding `Dropout` to the
-  discriminator — as the DCGAN code above already does — makes it harder for
-  the discriminator to overfit to any one kind of fake, which in turn keeps
-  useful gradient signal flowing back to the generator instead of it collapsing
-  onto a lazy local optimum.
-
-```python title="Adding label noise to the discriminator's targets" showLineNumbers{1}
-import tensorflow as tf
-
-batch_size = 16
-y_real = tf.ones((batch_size, 1))
-y_fake = tf.zeros((batch_size, 1))
-
-# A small amount of random noise makes the labels less than perfectly confident
-y_real_noisy = y_real - 0.05 * tf.random.uniform((batch_size, 1))
-y_fake_noisy = y_fake + 0.05 * tf.random.uniform((batch_size, 1))
-
-print("real label range: ", round(float(tf.reduce_min(y_real_noisy)), 3),
-      "to", round(float(tf.reduce_max(y_real_noisy)), 3))
-print("fake label range: ", round(float(tf.reduce_min(y_fake_noisy)), 3),
-      "to", round(float(tf.reduce_max(y_fake_noisy)), 3))
-```
-
-```
-real label range:  0.95 to 1.0
-fake label range:  0.0 to 0.05
-```
-
-:::tip[From the book]
-Chollet is upfront about how empirical all of this is: "the process of training
-GANs and tuning GAN implementations is notoriously difficult... like most things
-in deep learning, it's more alchemy than science: these tricks are heuristics,
-not theory-backed guidelines." Treat every item on this list as "known to often
-help," not as a guarantee.
+With that in place, accuracy on real reads 0.9693 rising to 0.9863 across the best run. A metric
+that reports a constant is a broken metric, not a finding.
 :::
 
-## Scaling up: progressive growing and StyleGAN
+## Mode collapse, measured
 
-Everything above trains a GAN at one fixed resolution. Getting to convincing
-*high-resolution* faces took two more ideas from the same Nvidia team behind DCGAN.
+A grid of samples cannot tell you what a model *never* produces. So the samples were handed
+to a separate MNIST classifier — trained to 0.9213 validation accuracy, never shown a
+generated image — and the distribution of its predictions is the measurement.
 
-**Progressive growing** (Karras et al., 2018) starts training at a tiny 4x4
-resolution, then gradually **adds matching layers to both networks** to grow the
-output to 8x8, 16x16, and so on up to 1024x1024 — much like greedily stacking an
-autoencoder layer by layer. Each time a new layer is added, it isn't switched in
-abruptly: its output is **faded in** as a weighted blend with the old (upsampled)
-output, with the blend weight ramping from 0 to 1 over training so the
-already-trained layers aren't shocked by a sudden change:
+<Figure
+  src="/images/dl/phase-06-generative/gans/coverage"
+  alt="Left: a grouped bar chart of the share of 2,000 samples classified as each digit, for real data, the best GAN configuration and a VAE. Real and VAE bars sit near the dashed 0.10 uniform line across all ten digits, while the GAN has 0.401 at digit 0, 0.378 at digit 3, 0.153 at digit 9, and almost nothing elsewhere. Right: three metrics per model — classes covered, divergence from uniform, and judge confidence."
+  title="2,000 samples per model, judged by an independent classifier"
+  caption="Even the best configuration puts 40.1% of its samples on the digit 0 and 37.8% on the digit 3, leaving 1, 2 and 6 entirely absent. Its KL from uniform coverage is 6.0163, against 0.0139 for real data and 0.1161 for the VAE. The right panel adds the part that surprised me: judge confidence on GAN samples is 0.5798, well below the VAE's 0.8121 — so the lost coverage did not buy sharpness."
+/>
 
-```python title="The progressive-growing fade-in blend (conceptual)" showLineNumbers{1}
-import numpy as np
+| Digit | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Real | 0.090 | 0.119 | 0.105 | 0.126 | 0.113 | 0.085 | 0.096 | 0.109 | 0.071 | 0.087 |
+| **GAN**, best | **0.401** | 0.000 | 0.000 | **0.378** | 0.015 | 0.007 | 0.000 | 0.038 | 0.007 | 0.153 |
+| GAN, default | 0.000 | 0.000 | 0.000 | 0.203 | 0.000 | 0.000 | 0.000 | 0.000 | **0.796** | 0.000 |
+| VAE | 0.064 | 0.049 | 0.109 | 0.200 | 0.128 | 0.078 | 0.113 | 0.157 | 0.045 | 0.057 |
 
-# toy stand-ins for the "old" (upsampled) output and the "new", higher-res output
-old_output_upsampled = np.full((8, 8), 0.3)
-new_output = np.full((8, 8), 0.9)
+**Mode collapse** is those zeros. The generator found a small region of output space the
+discriminator was weakest on and had no reason to leave — nothing in the objective rewards
+diversity. Note that the default configuration and the best one collapsed onto *different*
+digits (8 versus 0 and 3), which is the tell that the collapsed mode is an accident of the run
+rather than a property of the data. And the generator loss says none of this: 5.4879 at the last
+epoch is a number with no interpretation.
 
-for alpha in [0.0, 0.25, 0.5, 0.75, 1.0]:
-    blended = alpha * new_output + (1 - alpha) * old_output_upsampled
-    print(f"alpha={alpha}: blended value = {blended[0, 0]:.2f}")
-```
+<Figure
+  src="/images/dl/phase-06-generative/gans/samples"
+  alt="Three uncurated 8 by 8 grids of generated images at epochs 1, 8 and 24 from the best configuration. Epoch 1 is unstructured noise with faint bright blobs, epoch 8 shows stroke-like shapes with repeated structure, and epoch 24 shows digit-like forms, most of them variations of a 0 or a 3."
+  title="Uncurated, the same latent vectors at each epoch, best configuration"
+  caption="These are the first 64 samples from a fixed noise batch, not a selection. The progress from epoch 1 to 24 is real, and so is the repetition: by epoch 24 most cells hold a variation of a 0 or a 3. This is what a KL of 6.0163 looks like when you plot it instead of computing it — and why the computed number is the honest way to report a GAN."
+/>
 
-```
-alpha=0.0: blended value = 0.30
-alpha=0.25: blended value = 0.45
-alpha=0.5: blended value = 0.60
-alpha=0.75: blended value = 0.75
-alpha=1.0: blended value = 0.90
-```
+## Why the VAE won here, and what that means
 
-At `alpha=0` the new layer contributes nothing (pure old output); at `alpha=1` it
-has fully taken over. The same paper adds a few more tricks aimed squarely at mode
-collapse and training stability: a **minibatch standard-deviation layer** near the
-end of the discriminator (so it can directly see how little variety a batch of
-fakes has), an **equalized learning rate** (weights are rescaled at runtime instead
-of only at initialization, so every parameter learns at the same effective speed),
-and a **pixelwise normalization layer** in the generator to keep activations from
-exploding as the two networks compete.
+It would be easy to call the GAN sharper and quietly not measure it. The numbers say otherwise
+on this budget: two dense layers per network, latent 32, 24 epochs, 12,000 images, CPU only,
+across four configurations. Three conclusions worth keeping:
 
-**StyleGAN** (Karras et al., 2018) rebuilds the *generator* on top of progressive
-growing, borrowing an idea from neural style transfer. It splits the generator into
-two networks:
+1. **GAN sharpness is not free.** The results people remember come from convolutional
+   architectures (DCGAN and later), far longer training, and real hyperparameter search. A
+   small dense GAN on a CPU is more likely to collapse than to sharpen.
+2. **At small scale the VAE is the more robust choice.** It has an actual loss function, it
+   converged without babysitting or a sweep, and it covered all ten classes at KL 0.1161 —
+   against the best of four GAN runs at 6.0163.
+3. **Neither model's loss revealed any of this.** The coverage measurement did, and it cost
+   one small classifier.
 
-- A **mapping network** — an 8-layer MLP — turns the codings `z` into an
-  intermediate vector `w`, which is then passed through several affine
-  ("A") transforms to produce one **style vector** per resolution level, from
-  coarse (pose, face shape) to fine (hair color, freckles).
-- A **synthesis network** starts from a *learned constant* (not from `z` at all)
-  and repeatedly applies: add independent noise, then an **Adaptive Instance
-  Normalization (AdaIN)** layer that standardizes each feature map and rescales it
-  using that level's style vector.
+That third point generalises well past GANs, and the
+[evaluation page](/deep-learning/phase-06---generative-deep-learning/evaluating-generative-models-fid-coverage-and-memorisation/)
+turns it into three metrics that apply to any generative model.
 
-```python title="Adaptive Instance Normalization (AdaIN), the core StyleGAN op" showLineNumbers{1}
-import numpy as np
+## Stabilising the game
 
-np.random.seed(0)
-feature_map = np.random.normal(5, 2, size=8)    # toy: one channel's activations
-style_scale, style_bias = 1.5, -0.5             # from the mapping network's style vector
+The techniques below have a mechanism behind them, which is why they are here and the rest of
+the folklore is not:
 
-standardized = (feature_map - feature_map.mean()) / (feature_map.std() + 1e-8)
-styled = style_scale * standardized + style_bias
+- **One-sided label smoothing** (real → 0.9). Keeps the discriminator from saturating.
+- **`LeakyReLU`** in both networks. A dead unit is a dead gradient path for the generator.
+- **Separate `Adam` optimisers** — here both at 2e-4, with `beta_1` near 0.5 in published
+  DCGAN work. The point is that the two networks must not share optimiser state.
+- **Train `D` on real and fake in separate batches.** Mixing them in one batch interacts badly
+  with batch normalisation, since the batch statistics then straddle both distributions.
+- **Count the updates.** Two discriminator updates per generator update is the default in most
+  tutorials, and moving to two generator updates was the only change here that improved coverage
+  (KL 14.4616 → 6.0163).
+- **Watch accuracy on fake batches, not the loss.** All four runs pinned above 0.9966, which is
+  the signature of a starved generator. Below roughly 0.5 the discriminator has instead stopped
+  being informative.
 
-print("standardized mean/std:", round(standardized.mean(), 4), round(standardized.std(), 4))
-print("styled mean/std:      ", round(styled.mean(), 4), round(styled.std(), 4))
-```
+If fake accuracy pins near 1.0 and the generator loss climbs for many epochs — 3.7070 to 5.4879
+here — the run is not going to recover on its own. Change the balance and restart rather than
+waiting it out.
 
-```
-standardized mean/std: 0.0 1.0
-styled mean/std:       -0.5 1.5
-```
-
-Standardizing first strips out whatever mean/spread the raw activations happened
-to have; rescaling by the style vector's `(scale, bias)` is what actually injects
-"style" at that level. Feeding noise in *separately* from `z` matters too: earlier
-GANs had to smuggle fine random detail (the exact position of a freckle) through
-the codings themselves, which wasted representational capacity and could produce
-artifacts. Letting the generator draw fresh noise at every layer frees `z` up to
-encode only the meaningful, structured attributes of the image.
-
-## Visualize it
-
-Watch the generator's fake shape start as a noisy blob and slowly sharpen toward a
-circle as training progresses, while the discriminator's confidence that the fake is
-real drifts toward 50% — the Nash equilibrium — but wobbles the whole way there,
-occasionally relapsing. That's adversarial training in miniature:
-
-```p5 title="The generator vs. discriminator game" desc="Left: the generator's fake shape slowly sharpens. Right: the discriminator's confidence that the fake is real drifts toward 50% (the amber line), wobbling along the way." height="320"
-let iter = 0;
-let phase = 0;
-let wobble = 1.0;
-let confidence = 0.05;
-let hist = [];
-
+```p5 title="The minimax game" desc="Drag inside either bar to set how well the discriminator separates real from fake. The panel reports both losses and where the game sits relative to equilibrium." height="360"
+let dReal = 0.9863;
+let dFake = 0.9999;
 function setup() {
-  createCanvas(600, 320);
-  noStroke();
+  createCanvas(620, 360);
   textFont("monospace");
-  textAlign(CENTER, CENTER);
 }
-
 function draw() {
   background(13, 17, 23);
-
-  if (frameCount % 12 === 0) {
-    iter++;
-    phase = iter % 2;
-    const relapse = (iter % 37 === 0) ? 0.5 : 0;
-    wobble = Math.max(0.08, wobble * 0.94 + relapse - 0.01);
-    const target = 0.5 - wobble * 0.3;
-    confidence += (target - confidence) * 0.3 + (Math.random() - 0.5) * 0.08;
-    confidence = Math.min(0.95, Math.max(0.02, confidence));
-    hist.push(confidence);
-    if (hist.length > 80) hist.shift();
-  }
-
-  fill(150, 160, 172);
-  textSize(13);
-  text("Generator", 130, 22);
-  text("Discriminator", 470, 22);
-
-  push();
-  translate(130, 130);
-  fill(255, 211, 67);
-  beginShape();
-  const N = 24;
-  for (let i = 0; i <= N; i++) {
-    const a = (i / N) * TWO_PI;
-    const r = 55 + 55 * wobble * Math.sin(a * 5 + iter * 0.3) * 0.5;
-    vertex(r * Math.cos(a), r * Math.sin(a));
-  }
-  endShape(CLOSE);
-  pop();
-  fill(150, 160, 172);
-  textSize(11);
-  text("fake image", 130, 210);
-
-  push();
-  translate(130, 260);
-  noFill();
-  stroke(90, 200, 120);
-  strokeWeight(1.5);
-  circle(0, 0, 50);
+  const pReal = Math.min(Math.max(dReal, 0.001), 0.999);
+  const pFakeCalledReal = Math.min(Math.max(1 - dFake, 0.001), 0.999);
+  const dLoss = -0.5 * (0.9 * Math.log(pReal) + Math.log(1 - pFakeCalledReal));
+  const gLoss = -Math.log(pFakeCalledReal);
+  const equilibrium = Math.log(2);
   noStroke();
-  pop();
-  fill(90, 200, 120);
-  textSize(10);
-  text("real image (reference)", 130, 292);
-
-  const barX = 400, barY = 90, barW = 140, barH = 18;
-  fill(40, 44, 52);
-  rect(barX, barY, barW, barH, 4);
-  fill(75, 139, 190);
-  rect(barX, barY, barW * confidence, barH, 4);
-  stroke(255, 211, 67);
-  strokeWeight(1.5);
-  line(barX + barW * 0.5, barY - 6, barX + barW * 0.5, barY + barH + 6);
-  noStroke();
-  fill(220, 224, 230);
-  textSize(11);
-  text("P(this fake looks real) = " + confidence.toFixed(2), barX + barW / 2, barY + barH + 22);
-  fill(120, 130, 142);
-  textSize(9);
-  text("amber line = 50% (Nash equilibrium)", barX + barW / 2, barY + barH + 36);
-
-  stroke(75, 139, 190);
-  strokeWeight(1.5);
-  noFill();
-  beginShape();
-  for (let i = 0; i < hist.length; i++) {
-    vertex(barX + i * (barW / 80), 250 - hist[i] * 80);
-  }
-  endShape();
-  noStroke();
-  fill(150, 160, 172);
-  textSize(9);
-  text("confidence over time", barX + barW / 2, 260);
-
-  fill(phase === 0 ? color(230, 130, 120) : color(120, 200, 255));
+  fill(230);
   textSize(12);
-  text(
-    "iteration " + iter + " - " + (phase === 0 ? "Phase 1: training Discriminator" : "Phase 2: training Generator"),
-    width / 2, height - 14
-  );
+  textAlign(LEFT, TOP);
+  text("the minimax game", 30, 20);
+  fill(150);
+  textSize(10);
+  text("equilibrium: both accuracies 0.5, D loss " + equilibrium.toFixed(4), 30, 40);
+  const bars = [
+    ["D accuracy on real", dReal, 107, 169, 221, 90],
+    ["D accuracy on fake", dFake, 224, 108, 117, 160],
+  ];
+  for (const [label, value, r, g, b, y] of bars) {
+    fill(150);
+    textSize(10.5);
+    text(label, 30, y - 16);
+    fill(60, 70, 84);
+    rect(30, y, 360, 18, 3);
+    fill(r, g, b);
+    rect(30, y, 360 * value, 18, 3);
+    stroke(255, 211, 67);
+    line(210, y - 4, 210, y + 22);
+    noStroke();
+    fill(240);
+    textSize(11);
+    text(value.toFixed(4), 400, y + 3);
+  }
+  fill(120);
+  textSize(9);
+  text("yellow mark = 0.5, the equilibrium value", 30, 196);
+  fill(255, 211, 67);
+  textSize(13);
+  text("D loss " + dLoss.toFixed(4), 30, 230);
+  text("G loss " + gLoss.toFixed(4), 200, 230);
+  let verdict = "a working game";
+  let vr = 126;
+  let vg = 192;
+  let vb = 143;
+  if (dFake > 0.95) {
+    verdict = "D too strong: G gets almost no gradient";
+    vr = 224;
+    vg = 108;
+    vb = 117;
+  } else if (dFake < 0.35) {
+    verdict = "D too weak: its opinion is no longer informative";
+    vr = 255;
+    vg = 211;
+    vb = 67;
+  }
+  fill(vr, vg, vb);
+  textSize(11.5);
+  text(verdict, 30, 262);
+  fill(150);
+  textSize(10);
+  text("best run, epoch 24:    real 0.9863, fake 0.9999", 30, 292);
+  text("default run, epoch 24: real 0.9985, fake 1.0000", 30, 308);
+  fill(120);
+  textSize(9.5);
+  text("drag inside a bar to change it", 30, 336);
 }
-
-function mousePressed() {
-  iter = 0; wobble = 1.0; confidence = 0.05; hist = [];
+function mousePressed() { mouseDragged(); }
+function mouseDragged() {
+  const value = Math.min(Math.max((mouseX - 30) / 360, 0), 1);
+  if (mouseY > 74 && mouseY < 130) { dReal = value; }
+  else if (mouseY > 144 && mouseY < 200) { dFake = value; }
 }
 ```
 
-:::tip[From the book]
-Géron: "The generator never actually sees any real images, yet it gradually learns
-to produce convincing fake images! All it gets is the gradients flowing back
-through the discriminator." He also credits Yann LeCun for calling adversarial
-training "the most interesting idea in the last 10 years in Machine Learning."
-:::
+```p5 title="The measured table, ranked" desc="Click a column to rank every row by it. The bars are that column's values and the highest and lowest are computed from the numbers, not written in." height="254"
+let metric = 0;
+const COLUMNS = ["0", "1", "2", "3"];
+const ROWS = [
+  ["Real", 0.09, 0.119, 0.105, 0.126],
+  ["GAN, best", 0.401, 0, 0, 0.378],
+  ["GAN, default", 0, 0, 0, 0.203],
+  ["VAE", 0.064, 0.049, 0.109, 0.2]
+];
+function setup() {
+  createCanvas(620, 254);
+  textFont("monospace");
+}
+function fmt(v) {
+  if (v === 0) { return "0"; }
+  const a = Math.abs(v);
+  if (a >= 1000 || a < 0.001) { return v.toExponential(2); }
+  if (a >= 100) { return v.toFixed(1); }
+  return v.toFixed(4);
+}
+function draw() {
+  background(13, 17, 23);
+  noStroke();
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("Generative Adversarial Networks (G", 26, 16);
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (i === metric) { fill(255, 211, 67); } else { fill(48, 56, 68); }
+    rect(x, 40, w, 22, 4);
+    if (i === metric) { fill(13, 17, 23); } else { fill(180); }
+    textSize(9);
+    text(COLUMNS[i], x + 8, 47);
+    x += w + 6;
+    if (x > 500) { break; }
+  }
+  const values = ROWS.map((r) => r[metric + 1]);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo === 0 ? 1 : hi - lo;
+  const order = ROWS.slice().sort((a, b) => b[metric + 1] - a[metric + 1]);
+  for (let i = 0; i < order.length; i++) {
+    const y = 78 + i * 26;
+    const v = order[i][metric + 1];
+    fill(160);
+    textSize(9);
+    text(order[i][0], 26, y + 5);
+    fill(34, 40, 50);
+    rect(230, y, 280, 18, 3);
+    const frac = (v - lo) / span;
+    if (v === hi) { fill(126, 192, 143); }
+    else if (v === lo) { fill(224, 108, 117); }
+    else { fill(107, 169, 221); }
+    rect(230, y, Math.max(frac * 280, 3), 18, 3);
+    fill(225);
+    textSize(9);
+    text(fmt(v), 518, y + 5);
+  }
+  const top = order[0];
+  const bottom = order[order.length - 1];
+  fill(150);
+  textSize(9);
+  const base = 78 + order.length * 26 + 8;
+  text("highest " + COLUMNS[metric] + ": " + top[0] + " at " + fmt(top[1]),
+       26, base);
+  text("lowest  " + COLUMNS[metric] + ": " + bottom[0] + " at "
+       + fmt(bottom[1]), 26, base + 14);
+  text("bars are scaled within the chosen column - lowest is not zero", 26,
+       base + 30);
+}
+function mousePressed() {
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (mouseX > x && mouseX < x + w && mouseY > 40 && mouseY < 62) {
+      metric = i;
+    }
+    x += w + 6;
+  }
+}
+```
 
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
+## Pitfalls
 
-## 🧪 Try It Yourself
+- **Judging a GAN by a sample grid.** The grid cannot show the digits a model never produces.
+  The classifier could: KL 6.0163 for the best run and 14.4616 for the default, against 0.0139
+  for real data.
+- **Trusting `metrics=["accuracy"]` with smoothed labels.** It reported 0.0000 at every epoch
+  here, because 0.9 never equals a rounded prediction.
+- **Reading the generator loss as quality.** It *rose* every epoch, 3.7070 to 5.4879, in the run
+  that covered the most classes.
+- **Tuning only the discriminator's learning rate.** Dropping it from 2e-4 to 5e-5 moved coverage
+  from KL 14.4616 to 14.4384 — nothing. The update ratio was the knob that worked.
+- **Selecting a run by how sharp the samples look.** The best judge confidence (0.6709) belonged
+  to a run that produced 2 of 10 classes.
+- **Copying the Keras 2 `trainable` idiom into Keras 3.** Freeze, compile, unfreeze leaves 8
+  trainable tensors in the combined model and moved the discriminator's weights 0.01170799 in
+  20 generator steps. Toggle the flag around each generator step instead.
+- **Assuming GANs beat VAEs because the literature says so.** On this budget the VAE won on
+  coverage (10 classes against 5) *and* on judge confidence (0.8121 against 0.5798).
+- **Comparing GAN losses across runs.** They are not comparable — the scale depends on the
+  discriminator's current strength, which differs in every run.
 
-### Exercise 1 – Build a Tiny Generator
+## Recap
 
-<DataCampExercise
-  lang="python"
-  hint={`The generator's first layer takes the random noise vector as input — its \`input_shape\` should match \`codings_size\`.`}
-  code={`# Task: Exercise 1 - Build a Tiny Generator
-import tensorflow as tf
-
-generator = tf.keras.models.Sequential([
-    tf.keras.layers.Dense(___, activation="selu", input_shape=[5]),   # replace ___ with 16
-])
-print("generator output units:", generator.layers[-1].units)
-
-# ── Expected Output ───────────────────────────────────────────
-# generator output units: 16
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
-
-generator = tf.keras.models.Sequential([
-    tf.keras.layers.Dense(16, activation="selu", input_shape=[5]),
-])
-print("generator output units:", generator.layers[-1].units)`}
-  sct={`test_output_contains("generator output units: 16")
-success_msg("A generator is just a network that turns noise into data!")`}
-  height={140}
-/>
-
-### Exercise 2 – Freeze the Discriminator Before Compiling the GAN
-
-<DataCampExercise
-  lang="python"
-  hint={`Phase 2 only trains the generator, so the discriminator must be frozen (\`trainable = False\`) before you compile the combined \`gan\` model.`}
-  code={`# Task: Exercise 2 - Freeze the Discriminator Before Compiling the GAN
-import tensorflow as tf
-
-generator = tf.keras.models.Sequential([tf.keras.layers.Dense(16, activation="selu", input_shape=[5])])
-discriminator = tf.keras.models.Sequential([tf.keras.layers.Dense(1, activation="sigmoid", input_shape=[16])])
-
-discriminator.compile(loss="binary_crossentropy", optimizer="rmsprop")
-discriminator.trainable = ___          # replace ___ with False
-gan = tf.keras.models.Sequential([generator, discriminator])
-gan.compile(loss="binary_crossentropy", optimizer="rmsprop")
-
-print("discriminator.trainable:", discriminator.trainable)
-
-# ── Expected Output ───────────────────────────────────────────
-# discriminator.trainable: False
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
-
-generator = tf.keras.models.Sequential([tf.keras.layers.Dense(16, activation="selu", input_shape=[5])])
-discriminator = tf.keras.models.Sequential([tf.keras.layers.Dense(1, activation="sigmoid", input_shape=[16])])
-
-discriminator.compile(loss="binary_crossentropy", optimizer="rmsprop")
-discriminator.trainable = False
-gan = tf.keras.models.Sequential([generator, discriminator])
-gan.compile(loss="binary_crossentropy", optimizer="rmsprop")
-
-print("discriminator.trainable:", discriminator.trainable)`}
-  sct={`test_output_contains("discriminator.trainable: False")
-success_msg("Now only the generator updates during phase 2!")`}
-  height={170}
-/>
-
-### Exercise 3 – Generate a Batch of Fake Data
-
-<DataCampExercise
-  lang="python"
-  hint={`The generator's input is random Gaussian noise — use \`tf.random.normal\` to create the noise batch.`}
-  code={`# Task: Exercise 3 - Generate a Batch of Fake Data
-import tensorflow as tf
-
-codings_size = 5
-generator = tf.keras.models.Sequential([
-    tf.keras.layers.Dense(8, activation="selu", input_shape=[codings_size]),
-])
-
-noise = tf.random.___(shape=[4, codings_size])   # replace ___ with normal
-generated = generator(noise)
-print("fake batch shape:", generated.shape)
-
-# ── Expected Output ───────────────────────────────────────────
-# fake batch shape: (4, 8)
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
-
-codings_size = 5
-generator = tf.keras.models.Sequential([
-    tf.keras.layers.Dense(8, activation="selu", input_shape=[codings_size]),
-])
-
-noise = tf.random.normal(shape=[4, codings_size])
-generated = generator(noise)
-print("fake batch shape:", generated.shape)`}
-  sct={`test_output_contains("fake batch shape: (4, 8)")
-success_msg("That's a batch of freshly generated fake data!")`}
-  height={160}
-/>
+- A GAN replaces the reconstruction loss with a learned discriminator, so no loss measures
+  sample quality any more.
+- Equilibrium is discriminator loss $\log 2 = 0.6931$ with both accuracies at 0.5. No
+  configuration came close: discriminator loss fell to 0.1885 and fake accuracy pinned at 0.9999.
+- The default loop trains the discriminator twice per generator update. Reversing that ratio was
+  the only change that improved coverage: 2 classes → 5, KL 14.4616 → 6.0163.
+- Lowering the discriminator's learning rate changed nothing (14.4384), and the run with the
+  sharpest samples had the worst coverage.
+- Both collapsed runs picked *different* digits, so the surviving mode is an artefact of the run.
+- The VAE on identical data covered 10 classes at KL 0.1161 with higher judge confidence — the
+  usual sharpness-for-coverage trade did not appear at this scale.
+- The only reliable diagnostics were external: an independent classifier's class distribution
+  and confidence.
 
 ## Next
 
-Continue to **Diffusion Models (Introduction)** — a newer generative approach that
-trains far more stably than a GAN by learning to reverse a gradual noising process,
-one small step at a time.
+The measurements this page leaned on — coverage, an independent judge, and distance between
+distributions in feature space — deserve their own treatment, including how each one can be
+gamed:
+[Evaluating Generative Models (FID, Coverage and Memorisation)](/deep-learning/phase-06---generative-deep-learning/evaluating-generative-models-fid-coverage-and-memorisation/).
+
+<Quiz
+  questions={[
+    {
+      q: "A GAN's generator loss rises steadily from 3.7070 to 5.4879 over 24 epochs. What does that mean?",
+      options: [
+        "The generator is improving, since loss scale is arbitrary",
+        "The generator is losing — the discriminator is pulling away, which the fake-batch accuracy confirms at 0.9999",
+        "Training has converged",
+        "Nothing can be inferred from a GAN loss at all",
+      ],
+      answer: 1,
+      explain: "The absolute value of a GAN loss means little, but its direction against a strengthening opponent does: a generator that cannot keep up sees its loss climb.",
+    },
+    {
+      q: "Every configuration in the sweep ended with discriminator accuracy on fake batches at 0.9966 or above. What does that indicate?",
+      options: [
+        "The discriminators were well trained, so the runs succeeded",
+        "The generators were starved — a discriminator that catches essentially every fake gives almost no usable gradient, and equilibrium would be 0.5",
+        "The judge classifier was broken",
+        "The label smoothing was too aggressive",
+      ],
+      answer: 1,
+      explain: "It is the signature of the too-strong-discriminator failure, and it is why the default loop's 2:1 update ratio in the discriminator's favour matters so much.",
+    },
+    {
+      q: "Lowering the discriminator's learning rate from 2e-4 to 5e-5 moved coverage KL from 14.4616 to 14.4384, while doubling the generator's updates moved it to 6.0163. What is the lesson?",
+      options: [
+        "Learning rates never matter in GANs",
+        "The ratio of generator to discriminator updates was the effective knob here; a slower discriminator still wins, it just arrives later",
+        "Coverage KL is not a reliable metric",
+        "The sweep should have used more epochs",
+      ],
+      answer: 1,
+      explain: "Both changes weaken the discriminator in some sense, but only one changes how much learning signal the generator actually receives per epoch.",
+    },
+    {
+      q: "Why train an independent classifier just to score the samples?",
+      options: [
+        "To improve the generator",
+        "Because neither GAN loss can detect mode collapse — the classifier's prediction distribution showed 5 of 10 classes covered at KL 6.0163 for the best run, and 2 classes at 14.4616 for the default",
+        "To replace the discriminator",
+        "Because MNIST labels are unreliable",
+      ],
+      answer: 1,
+      explain: "The judge never sees a generated image during its own training, so its class distribution over samples is an outside measurement rather than part of the game.",
+    },
+    {
+      q: "Keras reported discriminator accuracy on real batches as 0.0000 at every epoch. What was wrong?",
+      options: [
+        "The discriminator had collapsed",
+        "The real labels were smoothed to 0.9, and binary accuracy compares the rounded prediction against y_true, so 0.9 matches neither 0 nor 1",
+        "The learning rate was too high",
+        "The dataset labels were shuffled",
+      ],
+      answer: 1,
+      explain: "A metric that returns a constant is broken. Replacing it with a function that reports the share of the batch called real gave 0.9693 rising to 0.9863.",
+    },
+    {
+      q: "The VAE covered 10 classes at KL 0.1161 while the best of four GAN runs covered 5 at KL 6.0163, and the judge was more confident about VAE samples. What is the right conclusion?",
+      options: [
+        "GANs do not work",
+        "At this scale — dense layers, 24 epochs, CPU — the GAN collapsed rather than sharpened; GAN sharpness results come from convolutional architectures with far more training, so the claim should not be assumed on a small budget",
+        "The VAE is always better than a GAN",
+        "The judge classifier was biased towards VAE samples",
+      ],
+      answer: 1,
+      explain: "The measurement is specific to this budget, and saying so is more useful than repeating a claim this run did not reproduce.",
+    },
+  ]}
+/>
+
+## 🧪 Try It Yourself
+
+<DataCampExercise
+  lang="python"
+  hint={`With one-sided smoothing the real target is 0.9, so the loss on real images is -0.9 * log(p_real). The fake term uses 1 - p_fake_called_real.`}
+  code={`# Task: Exercise 1 - Where is the game, relative to equilibrium?
+import numpy as np
+
+
+def discriminator_loss(p_real, p_fake_called_real, real_label=0.9):
+    """Binary cross-entropy for D, averaged over a real and a fake batch."""
+    real_term = -real_label * np.log(p_real)
+    fake_term = -np.log(1 - ___)          # replace ___ with p_fake_called_real
+    return 0.5 * (real_term + fake_term)
+
+
+def generator_loss(p_fake_called_real):
+    """G wants its fakes called real, so its target is 1."""
+    return -np.log(p_fake_called_real)
+
+
+STATES = (
+    ("equilibrium", 0.5, 0.5),
+    ("as written, epoch 24", 0.9985, 0.0000001),
+    ("2 G steps, epoch 24", 0.9863, 0.0001),
+    ("dropout 0.5, epoch 24", 0.9162, 0.0034),
+)
+
+print(f"{'state':24s} {'D loss':>8} {'G loss':>8}")
+for name, p_real, p_fake in STATES:
+    print(f"{name:24s} {discriminator_loss(p_real, p_fake):8.4f} "
+          f"{generator_loss(p_fake):8.4f}")
+
+print(f"equilibrium D loss uses log 2 = {np.log(2):.4f}")`}
+  solution={`import numpy as np
+
+
+def discriminator_loss(p_real, p_fake_called_real, real_label=0.9):
+    """Binary cross-entropy for D, averaged over a real and a fake batch."""
+    real_term = -real_label * np.log(p_real)
+    fake_term = -np.log(1 - p_fake_called_real)
+    return 0.5 * (real_term + fake_term)
+
+
+def generator_loss(p_fake_called_real):
+    """G wants its fakes called real, so its target is 1."""
+    return -np.log(p_fake_called_real)
+
+
+STATES = (
+    ("equilibrium", 0.5, 0.5),
+    ("as written, epoch 24", 0.9985, 0.0000001),
+    ("2 G steps, epoch 24", 0.9863, 0.0001),
+    ("dropout 0.5, epoch 24", 0.9162, 0.0034),
+)
+
+print(f"{'state':24s} {'D loss':>8} {'G loss':>8}")
+for name, p_real, p_fake in STATES:
+    print(f"{name:24s} {discriminator_loss(p_real, p_fake):8.4f} "
+          f"{generator_loss(p_fake):8.4f}")
+
+print(f"equilibrium D loss uses log 2 = {np.log(2):.4f}")`}
+  expectedOutput={`state                      D loss   G loss
+equilibrium                0.6585   0.6931
+as written, epoch 24       0.0007  16.1181
+2 G steps, epoch 24        0.0063   9.2103
+dropout 0.5, epoch 24      0.0411   5.6840
+equilibrium D loss uses log 2 = 0.6931`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`KL(uniform || model) = sum over classes of 0.1 * log(0.1 / share). Clip the share away from zero first, or a missing class gives infinity.`}
+  code={`# Task: Exercise 2 - Score coverage the way this page did
+import numpy as np
+
+MEASURED = {
+    "real digits": [0.090, 0.119, 0.105, 0.126, 0.113,
+                    0.085, 0.096, 0.109, 0.071, 0.087],
+    "GAN (best)": [0.401, 0.000, 0.000, 0.378, 0.015,
+                   0.007, 0.000, 0.038, 0.007, 0.153],
+    "GAN (default)": [0.000, 0.000, 0.000, 0.203, 0.000,
+                      0.000, 0.000, 0.000, 0.796, 0.000],
+    "VAE": [0.064, 0.049, 0.109, 0.200, 0.128,
+            0.078, 0.113, 0.157, 0.045, 0.057],
+}
+
+
+def coverage_kl(share):
+    """KL from a uniform distribution over 10 classes to the model's shares."""
+    share = np.clip(np.asarray(share, dtype=float), 1e-9, None)
+    uniform = np.full(10, 0.1)
+    return float(np.sum(uniform * np.log(uniform / ___)))   # replace ___ with share
+
+
+# The shares above are rounded to three decimals, so these results differ from
+# the page's full-precision figures in the third decimal place.
+print(f"{'model':16s} {'classes':>8} {'KL vs uniform':>14}")
+for name, share in MEASURED.items():
+    classes = int(np.sum(np.asarray(share) > 0.01))
+    print(f"{name:16s} {classes:8d} {coverage_kl(share):14.4f}")`}
+  solution={`import numpy as np
+
+MEASURED = {
+    "real digits": [0.090, 0.119, 0.105, 0.126, 0.113,
+                    0.085, 0.096, 0.109, 0.071, 0.087],
+    "GAN (best)": [0.401, 0.000, 0.000, 0.378, 0.015,
+                   0.007, 0.000, 0.038, 0.007, 0.153],
+    "GAN (default)": [0.000, 0.000, 0.000, 0.203, 0.000,
+                      0.000, 0.000, 0.000, 0.796, 0.000],
+    "VAE": [0.064, 0.049, 0.109, 0.200, 0.128,
+            0.078, 0.113, 0.157, 0.045, 0.057],
+}
+
+
+def coverage_kl(share):
+    """KL from a uniform distribution over 10 classes to the model's shares."""
+    share = np.clip(np.asarray(share, dtype=float), 1e-9, None)
+    uniform = np.full(10, 0.1)
+    return float(np.sum(uniform * np.log(uniform / share)))
+
+
+print(f"{'model':16s} {'classes':>8} {'KL vs uniform':>14}")
+for name, share in MEASURED.items():
+    classes = int(np.sum(np.asarray(share) > 0.01))
+    print(f"{name:16s} {classes:8d} {coverage_kl(share):14.4f}")`}
+  expectedOutput={`model             classes  KL vs uniform
+real digits            10         0.0128
+GAN (best)              5         6.0301
+GAN (default)           2        14.4583
+VAE                    10         0.1169`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Keras compares the rounded prediction with the label: np.round(y_pred) == y_true. With y_true = 0.9 that is never true, whatever the predictions are.`}
+  code={`# Task: Exercise 3 - Reproduce the metric that read 0.0000
+import numpy as np
+
+PREDICTIONS = np.array([0.95, 0.80, 0.62, 0.55, 0.40, 0.20])
+
+
+def keras_binary_accuracy(y_true, y_pred):
+    """What metrics=["accuracy"] computes: rounded prediction vs the label."""
+    return float(np.mean(np.round(y_pred) == y_true))
+
+
+def called_real(y_pred):
+    """What we actually wanted: the share the discriminator calls real."""
+    return float(np.mean(y_pred > ___))          # replace ___ with 0.5
+
+
+print(f"with hard labels (1.0):     "
+      f"{keras_binary_accuracy(1.0, PREDICTIONS):.4f}")
+print(f"with smoothed labels (0.9): "
+      f"{keras_binary_accuracy(0.9, PREDICTIONS):.4f}")
+print(f"share called real:          {called_real(PREDICTIONS):.4f}")`}
+  solution={`import numpy as np
+
+PREDICTIONS = np.array([0.95, 0.80, 0.62, 0.55, 0.40, 0.20])
+
+
+def keras_binary_accuracy(y_true, y_pred):
+    """What metrics=["accuracy"] computes: rounded prediction vs the label."""
+    return float(np.mean(np.round(y_pred) == y_true))
+
+
+def called_real(y_pred):
+    """What we actually wanted: the share the discriminator calls real."""
+    return float(np.mean(y_pred > 0.5))
+
+
+print(f"with hard labels (1.0):     "
+      f"{keras_binary_accuracy(1.0, PREDICTIONS):.4f}")
+print(f"with smoothed labels (0.9): "
+      f"{keras_binary_accuracy(0.9, PREDICTIONS):.4f}")
+print(f"share called real:          {called_real(PREDICTIONS):.4f}")`}
+  expectedOutput={`with hard labels (1.0):     0.6667
+with smoothed labels (0.9): 0.0000
+share called real:          0.6667`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Set discriminator.trainable = False immediately before combined.train_on_batch and back to True immediately after, so the flag is off while the step actually runs.`}
+  code={`# Task: Exercise 4 - Prove the Keras 2 freezing idiom is unsafe in Keras 3
+import numpy as np
+from tensorflow import keras
+
+LATENT, BATCH = 8, 32
+
+
+def build():
+    """Freeze, compile the combined model, then set the flag back - the old idiom."""
+    keras.utils.set_random_seed(0)
+    generator = keras.Sequential([
+        keras.layers.Input((LATENT,)),
+        keras.layers.Dense(16, activation="relu"),
+        keras.layers.Dense(784, activation="sigmoid"),
+    ])
+    discriminator = keras.Sequential([
+        keras.layers.Input((784,)),
+        keras.layers.Dense(16, activation="relu"),
+        keras.layers.Dense(1, activation="sigmoid"),
+    ])
+    discriminator.compile(keras.optimizers.Adam(1e-3), "binary_crossentropy")
+    discriminator.trainable = False
+    gan_input = keras.layers.Input((LATENT,))
+    combined = keras.Model(gan_input, discriminator(generator(gan_input)))
+    combined.compile(keras.optimizers.Adam(1e-3), "binary_crossentropy")
+    discriminator.trainable = True
+    return generator, discriminator, combined
+
+
+def drift(freeze_during_step):
+    """How far do D's weights move during 20 generator-only steps?"""
+    generator, discriminator, combined = build()
+    before = [w.numpy().copy() for w in discriminator.weights]
+    rng = np.random.default_rng(0)
+    for _ in range(20):
+        if freeze_during_step:
+            discriminator.trainable = ___          # replace ___ with False
+        combined.train_on_batch(
+            rng.normal(0, 1, (BATCH, LATENT)).astype("float32"),
+            np.ones((BATCH, 1), "float32"))
+        discriminator.trainable = True
+    after = [w.numpy() for w in discriminator.weights]
+    return max(float(np.abs(a - b).max()) for a, b in zip(after, before))
+
+
+print(f"the old idiom, flag left True:   {drift(False):.8f}")
+print(f"toggled around each step:        {drift(True):.8f}")`}
+  solution={`import numpy as np
+from tensorflow import keras
+
+LATENT, BATCH = 8, 32
+
+
+def build():
+    """Freeze, compile the combined model, then set the flag back - the old idiom."""
+    keras.utils.set_random_seed(0)
+    generator = keras.Sequential([
+        keras.layers.Input((LATENT,)),
+        keras.layers.Dense(16, activation="relu"),
+        keras.layers.Dense(784, activation="sigmoid"),
+    ])
+    discriminator = keras.Sequential([
+        keras.layers.Input((784,)),
+        keras.layers.Dense(16, activation="relu"),
+        keras.layers.Dense(1, activation="sigmoid"),
+    ])
+    discriminator.compile(keras.optimizers.Adam(1e-3), "binary_crossentropy")
+    discriminator.trainable = False
+    gan_input = keras.layers.Input((LATENT,))
+    combined = keras.Model(gan_input, discriminator(generator(gan_input)))
+    combined.compile(keras.optimizers.Adam(1e-3), "binary_crossentropy")
+    discriminator.trainable = True
+    return generator, discriminator, combined
+
+
+def drift(freeze_during_step):
+    """How far do D's weights move during 20 generator-only steps?"""
+    generator, discriminator, combined = build()
+    before = [w.numpy().copy() for w in discriminator.weights]
+    rng = np.random.default_rng(0)
+    for _ in range(20):
+        if freeze_during_step:
+            discriminator.trainable = False
+        combined.train_on_batch(
+            rng.normal(0, 1, (BATCH, LATENT)).astype("float32"),
+            np.ones((BATCH, 1), "float32"))
+        discriminator.trainable = True
+    after = [w.numpy() for w in discriminator.weights]
+    return max(float(np.abs(a - b).max()) for a, b in zip(after, before))
+
+
+print(f"the old idiom, flag left True:   {drift(False):.8f}")
+print(f"toggled around each step:        {drift(True):.8f}")`}
+  expectedOutput={`the old idiom, flag left True:   0.01170799
+toggled around each step:        0.00000000`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Take the upper triangle of the pairwise distance matrix with np.triu_indices(len(batch), k=1) so each pair is counted once and the zero diagonal is excluded.`}
+  code={`# Task: Exercise 5 - Detect collapse without a classifier
+import numpy as np
+
+# Stand-ins for a generator's output: 200 samples of 784 pixels each.
+rng = np.random.default_rng(0)
+healthy = rng.random((200, 784)).astype("float32")
+collapsed = np.repeat(rng.random((2, 784)).astype("float32"), 100, axis=0)
+
+
+def sample_diversity(batch):
+    """Mean pairwise distance within a generated batch.
+
+    A collapsed generator produces near-identical samples, so this falls long
+    before a sample grid looks obviously wrong.
+    """
+    squared = (np.sum(batch ** 2, axis=1)[:, None]
+               + np.sum(batch ** 2, axis=1)[None, :]
+               - 2 * batch @ batch.T)
+    distance = np.sqrt(np.maximum(squared, 0))
+    upper = distance[np.triu_indices(len(batch), k=___)]   # replace ___ with 1
+    return float(upper.mean())
+
+
+print(f"healthy batch:   {sample_diversity(healthy):.4f}")
+print(f"collapsed batch: {sample_diversity(collapsed):.4f}")
+print(f"ratio:           "
+      f"{sample_diversity(collapsed) / sample_diversity(healthy):.4f}")`}
+  solution={`import numpy as np
+
+# Stand-ins for a generator's output: 200 samples of 784 pixels each.
+rng = np.random.default_rng(0)
+healthy = rng.random((200, 784)).astype("float32")
+collapsed = np.repeat(rng.random((2, 784)).astype("float32"), 100, axis=0)
+
+
+def sample_diversity(batch):
+    """Mean pairwise distance within a generated batch.
+
+    A collapsed generator produces near-identical samples, so this falls long
+    before a sample grid looks obviously wrong.
+    """
+    squared = (np.sum(batch ** 2, axis=1)[:, None]
+               + np.sum(batch ** 2, axis=1)[None, :]
+               - 2 * batch @ batch.T)
+    distance = np.sqrt(np.maximum(squared, 0))
+    upper = distance[np.triu_indices(len(batch), k=1)]
+    return float(upper.mean())
+
+
+print(f"healthy batch:   {sample_diversity(healthy):.4f}")
+print(f"collapsed batch: {sample_diversity(collapsed):.4f}")
+print(f"ratio:           "
+      f"{sample_diversity(collapsed) / sample_diversity(healthy):.4f}")`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`d_real[1] is the share of real images called real; d_fake[1] is the share of fakes called real, so accuracy on fakes is 1 minus that.`}
+  code={`# Task: Exercise 6 - A GAN training loop, end to end
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+
+LATENT, BATCH, EPOCHS = 16, 128, 2
+keras.utils.set_random_seed(0)
+
+(x_train, _), _ = keras.datasets.mnist.load_data()
+real = (x_train[:4000].reshape(-1, 784) / 255.0).astype("float32")
+
+
+def called_real(y_true, y_pred):
+    del y_true                        # the smoothed label is not the question
+    return tf.reduce_mean(tf.cast(y_pred > 0.5, "float32"))
+
+
+generator = keras.Sequential([
+    keras.layers.Input((LATENT,)),
+    keras.layers.Dense(128), keras.layers.LeakyReLU(negative_slope=0.2),
+    keras.layers.Dense(784, activation="sigmoid"),
+])
+discriminator = keras.Sequential([
+    keras.layers.Input((784,)),
+    keras.layers.Dense(128), keras.layers.LeakyReLU(negative_slope=0.2),
+    keras.layers.Dropout(0.3),
+    keras.layers.Dense(1, activation="sigmoid"),
+])
+discriminator.compile(keras.optimizers.Adam(2e-4), "binary_crossentropy",
+                      metrics=[called_real])
+discriminator.trainable = False
+gan_input = keras.layers.Input((LATENT,))
+combined = keras.Model(gan_input, discriminator(generator(gan_input)))
+combined.compile(keras.optimizers.Adam(2e-4), "binary_crossentropy")
+discriminator.trainable = True
+
+rng = np.random.default_rng(0)
+for epoch in range(1, EPOCHS + 1):
+    totals = np.zeros(3)
+    steps = len(real) // BATCH
+    for step in range(steps):
+        batch = real[step * BATCH:(step + 1) * BATCH]
+        noise = rng.normal(0, 1, (len(batch), LATENT)).astype("float32")
+        fake = generator.predict(noise, verbose=0)
+        d_real = discriminator.train_on_batch(
+            batch, np.full((len(batch), 1), 0.9, "float32"))
+        d_fake = discriminator.train_on_batch(
+            fake, np.zeros((len(fake), 1), "float32"))
+        g_loss = combined.train_on_batch(
+            rng.normal(0, 1, (BATCH, LATENT)).astype("float32"),
+            np.ones((BATCH, 1), "float32"))
+        totals += float(g_loss), float(d_real[1]), 1.0 - float(d_fake[___])
+    totals /= steps
+    print(f"epoch {epoch}: G loss {totals[0]:.4f}  "
+          f"D acc real {totals[1]:.4f}  D acc fake {totals[2]:.4f}")`}
+  solution={`import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+
+LATENT, BATCH, EPOCHS = 16, 128, 2
+keras.utils.set_random_seed(0)
+
+(x_train, _), _ = keras.datasets.mnist.load_data()
+real = (x_train[:4000].reshape(-1, 784) / 255.0).astype("float32")
+
+
+def called_real(y_true, y_pred):
+    del y_true                        # the smoothed label is not the question
+    return tf.reduce_mean(tf.cast(y_pred > 0.5, "float32"))
+
+
+generator = keras.Sequential([
+    keras.layers.Input((LATENT,)),
+    keras.layers.Dense(128), keras.layers.LeakyReLU(negative_slope=0.2),
+    keras.layers.Dense(784, activation="sigmoid"),
+])
+discriminator = keras.Sequential([
+    keras.layers.Input((784,)),
+    keras.layers.Dense(128), keras.layers.LeakyReLU(negative_slope=0.2),
+    keras.layers.Dropout(0.3),
+    keras.layers.Dense(1, activation="sigmoid"),
+])
+discriminator.compile(keras.optimizers.Adam(2e-4), "binary_crossentropy",
+                      metrics=[called_real])
+discriminator.trainable = False
+gan_input = keras.layers.Input((LATENT,))
+combined = keras.Model(gan_input, discriminator(generator(gan_input)))
+combined.compile(keras.optimizers.Adam(2e-4), "binary_crossentropy")
+discriminator.trainable = True
+
+rng = np.random.default_rng(0)
+for epoch in range(1, EPOCHS + 1):
+    totals = np.zeros(3)
+    steps = len(real) // BATCH
+    for step in range(steps):
+        batch = real[step * BATCH:(step + 1) * BATCH]
+        noise = rng.normal(0, 1, (len(batch), LATENT)).astype("float32")
+        fake = generator.predict(noise, verbose=0)
+        d_real = discriminator.train_on_batch(
+            batch, np.full((len(batch), 1), 0.9, "float32"))
+        d_fake = discriminator.train_on_batch(
+            fake, np.zeros((len(fake), 1), "float32"))
+        g_loss = combined.train_on_batch(
+            rng.normal(0, 1, (BATCH, LATENT)).astype("float32"),
+            np.ones((BATCH, 1), "float32"))
+        totals += float(g_loss), float(d_real[1]), 1.0 - float(d_fake[1])
+    totals /= steps
+    print(f"epoch {epoch}: G loss {totals[0]:.4f}  "
+          f"D acc real {totals[1]:.4f}  D acc fake {totals[2]:.4f}")`}
+/>

@@ -1,457 +1,893 @@
 ---
 title: Backpropagation and Optimizers (Adam, SGD)
-description: Understand how gradients flow backward and how optimizers update weights to reduce loss.
+description: Backprop derived and matched to TensorFlow at 7e-09, then seven optimizers measured on one problem — where RMSprop beat Adam and AdaGrad never arrived.
 sidebar:
   order: 411
 ---
 
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Figure from "../../../../components/Figure.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+Backpropagation is the chain rule applied in one particular order. Optimizers are
+what you do with the result. This page derives the first from scratch, checks it
+against TensorFlow to eight decimal places, then measures all seven Keras
+optimizers on the same problem — where the answer is not the one the folklore
+gives.
+
+## What you'll learn
+
+- Backpropagation derived layer by layer and matched to `GradientTape` within
+  **7.45e-09**.
+- Why softmax and cross-entropy collapse into $\hat{p} - y$, so the output layer
+  needs no chain rule at all.
+- Momentum implemented by hand, matching Keras to **0.00e+00**, and why it can
+  take steps **10×** the size of plain SGD.
+- Adam implemented by hand to **1.97e-06**, and what bias correction fixes: a
+  first step **3.16× too large**, growing to **6.5×** by step 10.
+- Seven optimizers measured: **RMSprop 0.8565, Nadam 0.8525, Adam 0.8445, SGD
+  0.8425, AdaGrad 0.8265**.
+- The real difference: **epochs to reach 0.84 ranged from 5 to never**.
+- What optimizer state costs — measured at **0, 1× and 2×** the parameter count.
+
 ## The training loop
 
-Neural networks learn by minimizing a loss function — a single number that
-scores how wrong the model's current predictions are. Every training step
-repeats the same four-stage loop, one mini-batch of data at a time:
-
-1. forward pass → compute predictions
-2. compute loss
-3. backpropagation → compute gradients
-4. optimizer step → update weights
-
 ```mermaid
-flowchart TD
-  X[Batch of data] --> F[Forward pass]
-  F --> L[Loss]
-  L --> B[Backprop: gradients]
-  B --> O[Optimizer update]
-  O --> F
+flowchart LR
+  A["mini-batch"] --> B["forward pass<br/>store every intermediate"]
+  B --> C["loss<br/>one number"]
+  C --> D["backward pass<br/>chain rule, output to input"]
+  D --> E["gradients<br/>one per parameter"]
+  E --> F["optimizer<br/>gradient -> update"]
+  F --> G["new weights"]
+  G --> A
 ```
 
-Run that loop once for every mini-batch in the training set and you've
-completed one **epoch**. A real training run is usually dozens to hundreds of
-epochs, with the loss (hopefully) getting smaller each time.
+The forward pass has to keep its intermediate activations, because the backward
+pass needs them. That is why training a model costs several times the memory of
+running one.
 
-## Backpropagation (intuition)
+## Backpropagation, one layer at a time
 
-Backpropagation applies the **chain rule** from calculus to answer one
-question for every single weight in the network, no matter how deep: *if I
-nudge this weight by a tiny amount, how much does the final loss change?*
-Multiply the local derivative of each operation along the path from that
-weight to the loss, and you get the answer — that product is the weight's
-gradient.
+Take a two-layer classifier: $\mathbf{z}_1 = \mathbf{x}W_1 + \mathbf{b}_1$,
+$\mathbf{a}_1 = \text{relu}(\mathbf{z}_1)$,
+$\mathbf{z}_2 = \mathbf{a}_1 W_2 + \mathbf{b}_2$, then softmax and cross-entropy.
+Differentiating from the loss backwards:
 
-### A tiny worked example
+$$
+\frac{\partial L}{\partial \mathbf{z}_2} = \frac{\hat{p} - y}{N}
+\qquad
+\frac{\partial L}{\partial W_2} = \mathbf{a}_1^{\top} \frac{\partial L}{\partial \mathbf{z}_2}
+\qquad
+\frac{\partial L}{\partial \mathbf{a}_1} = \frac{\partial L}{\partial \mathbf{z}_2} W_2^{\top}
+$$
 
-Take the smallest possible case: one input `x`, one weight `w`, one bias `b`,
-chained as `x1 = x·w`, `x2 = x1 + b`, and a loss `loss = |y_true − x2|`. With
-`x=2`, `w=3`, `b=1`, `y_true=4`, the forward pass gives `x1=6`, `x2=7`, and
-`loss=|4−7|=3`. Backpropagation walks that same chain **backward**, computing
-one local derivative per edge, then multiplies them along the path from the
-loss back to each weight:
+$$
+\frac{\partial L}{\partial \mathbf{z}_1}
+= \frac{\partial L}{\partial \mathbf{a}_1} \odot \mathbb{1}[\mathbf{z}_1 > 0]
+\qquad
+\frac{\partial L}{\partial W_1} = \mathbf{x}^{\top} \frac{\partial L}{\partial \mathbf{z}_1}
+$$
 
-```python title="Backprop by hand vs. tf.GradientTape" showLineNumbers{1}
-import tensorflow as tf
+The first expression is the one worth staring at. Softmax's Jacobian is a full
+matrix and cross-entropy's derivative is $-1/\hat{p}$; multiplied together they
+collapse to $\hat{p} - y$. **The output layer's gradient is just the prediction
+error**, which is the same cancellation that makes sigmoid pair with binary
+cross-entropy on the [loss
+functions](/deep-learning/phase-02---training-deep-neural-networks/loss-functions---choosing-what-to-minimise/)
+page.
 
-x, w, b, y_true = 2.0, 3.0, 1.0, 4.0
+Implemented in twelve lines of NumPy and checked against TensorFlow on four rows:
 
-# forward pass: x1 = x * w, x2 = x1 + b, loss = |y_true - x2|
-x1 = x * w                       # 6.0
-x2 = x1 + b                      # 7.0
-loss_value = abs(y_true - x2)    # 3.0
+| Quantity | max \|mine − TensorFlow\| |
+| --- | --- |
+| loss | 0.763195 vs 0.763195 |
+| $\partial L/\partial W_1$ | **7.45e−09** |
+| $\partial L/\partial \mathbf{b}_1$ | 7.45e−09 |
+| $\partial L/\partial W_2$ | 1.49e−08 |
+| $\partial L/\partial \mathbf{b}_2$ | 2.98e−08 |
 
-# chain rule, one edge of the graph at a time
-u = y_true - x2
-grad_loss_x2 = -1 if u >= 0 else 1   # d|u|/dx2 = -sign(u)
-grad_x2_x1 = 1                       # d(x1 + b)/dx1
-grad_x2_b = 1                        # d(x1 + b)/db
-grad_x1_w = x                        # d(x * w)/dw
+Those residuals are float32 rounding, not disagreement. If you have worked through
+[Autograd from
+Scratch](/deep-learning/phase-01---neural-network-foundations/autograd-from-scratch/),
+this is the same machinery specialised to a known architecture — hand-written
+backprop is what autodiff generates for you.
 
-grad_loss_w = grad_loss_x2 * grad_x2_x1 * grad_x1_w
-grad_loss_b = grad_loss_x2 * grad_x2_b
-print("by hand:  dloss/dw =", grad_loss_w, " dloss/db =", grad_loss_b)
+Two properties of this recipe matter later:
 
-# let TensorFlow's autodiff confirm the same numbers
-x_t, w_t, b_t = tf.constant(x), tf.Variable(w), tf.Variable(b)
-with tf.GradientTape() as tape:
-    x1_t = x_t * w_t
-    x2_t = x1_t + b_t
-    loss_t = tf.abs(y_true - x2_t)
+- **Every layer's gradient is a product of the layers above it.** Twenty layers
+  means a product of twenty terms, which is why depth causes
+  [vanishing and exploding gradients](/deep-learning/phase-02---training-deep-neural-networks/vanishing--exploding-gradients/).
+- **Cost is one forward pass plus roughly two forward passes' worth of backward
+  work**, independent of the parameter count — the property that makes training
+  large models possible at all.
 
-dw, db = tape.gradient(loss_t, [w_t, b_t])
-print("autodiff: dloss/dw =", dw.numpy(), " dloss/db =", db.numpy())
-```
+## From gradient to update
 
-Both routes agree: `dloss/dw = 2.0` and `dloss/db = 1.0`. That's the entire
-idea, just repeated millions of times across every weight and every layer in
-a real network — which is exactly why frameworks like TensorFlow implement it
-once, generically, as `tf.GradientTape` (or automatically inside
-`model.fit()`), instead of every layer author deriving it by hand.
+### SGD
 
-Once every weight has its gradient, adjust it to reduce the loss — that's the
-optimizer's job, starting with the simplest one below.
+$$
+\theta \leftarrow \theta - \eta \, \nabla_\theta L
+$$
 
-## SGD (Stochastic Gradient Descent)
+No state, one hyperparameter, and the behaviour derived on the [gradient descent
+page](/deep-learning/phase-01---neural-network-foundations/how-neural-networks-learn-gradient-based-optimization/):
+stable while $\eta < 2/c$ for curvature $c$, and one rate has to satisfy the
+tightest direction.
 
-The plain update rule subtracts the loss gradient from every weight, scaled
-by the learning rate `η`:
+### Momentum
 
-`θ ← θ − η·∇J(θ)`
+$$
+\mathbf{v} \leftarrow \beta \mathbf{v} - \eta \nabla_\theta L
+\qquad
+\theta \leftarrow \theta + \mathbf{v}
+$$
 
-In deep learning, "SGD" almost always means **mini-batch** gradient descent
-in practice: compute the gradient over the *entire* training set and each
-step is accurate but painfully slow (one update per full pass over the data);
-compute it from a *single* random instance and each step is nearly free but
-wildly noisy. A small mini-batch (say, 32 samples) is the practical middle
-ground Keras uses by default — fast per step, only moderately noisy.
+Implemented by hand and compared to `SGD(0.05, momentum=0.9)` step by step on
+$L(a,b) = a^2 + 10b^2$:
 
-```python title="Plain SGD optimizer" showLineNumbers{1}
-import tensorflow as tf
+| Step | my $a$ | my $b$ | Keras $a$ | Keras $b$ |
+| --- | --- | --- | --- | --- |
+| 1 | 2.340000 | 0.000000 | 2.340000 | 0.000000 |
+| 2 | 1.872000 | −0.900000 | 1.872000 | −0.900000 |
+| 3 | 1.263600 | −0.810000 | 1.263600 | −0.810000 |
+| 5 | −0.075816 | 0.801900 | −0.075816 | 0.801900 |
 
-optimizer = tf.keras.optimizers.SGD(learning_rate=0.01)
-```
+Difference: **0.00e+00**. Look at the $b$ column: it goes 0.000, −0.900, −0.810,
+then back positive. Momentum has overshot the minimum and is oscillating. With a
+constant gradient the velocity converges to
+$\eta g / (1 - \beta)$, so at $\beta = 0.9$ steps grow up to **10× plain SGD's**.
+That is the whole point — and the whole risk.
 
-Pros:
+### Nesterov
 
-- simple and well understood — given enough time, it reliably finds a good
-  minimum
-- cheap per step: no extra state to track beyond the current batch's gradient
+Evaluate the gradient at $\theta + \beta\mathbf{v}$ instead of $\theta$: measure
+the slope where the momentum is about to put you, not where you already are. It
+is a one-line change and usually converges slightly faster.
 
-Cons:
+### AdaGrad
 
-- can be painfully slow to cross flat stretches of the loss surface (Momentum,
-  next, fixes exactly this)
-- sensitive to the learning rate: too high and the loss bounces around
-  forever without settling; too low and training crawls
+$$
+\mathbf{s} \leftarrow \mathbf{s} + (\nabla_\theta L)^2
+\qquad
+\theta \leftarrow \theta - \frac{\eta}{\sqrt{\mathbf{s}} + \epsilon} \nabla_\theta L
+$$
 
-## Momentum optimization
+Per-parameter rates: directions with big gradients get scaled down. The flaw is
+structural — $\mathbf{s}$ only ever grows, so the effective learning rate decays
+monotonically toward zero and the run can stop before it arrives. The measurement
+below shows exactly that.
 
-Plain SGD takes small, regular steps, so it can be painfully slow to cross a flat
-valley. **Momentum optimization** fixes this by remembering previous gradients:
-instead of using the gradient directly to update the weights, it accumulates a
-*momentum vector* `m`, and uses that to move the weights. Think of a bowling ball
-rolling down a slope — it starts slowly, but keeps picking up speed.
+### RMSprop
 
-`m ← β·m − η·∇J(θ)`
-`θ ← θ + m`
+$$
+\mathbf{s} \leftarrow \rho \mathbf{s} + (1 - \rho)(\nabla_\theta L)^2
+$$
 
-The hyperparameter `β` (momentum, typically `0.9`) acts like friction: `0` is
-full friction (no momentum, same as plain SGD) and `1` is no friction at all. In
-Keras it's just one extra argument to `SGD`:
+The same idea with a decaying average instead of a running sum, so the effective
+rate can recover. One character of maths, and it is the difference between
+finishing and stalling.
 
-```python title="Momentum optimizer" showLineNumbers{1}
-import tensorflow as tf
+### Adam
 
-optimizer = tf.keras.optimizers.SGD(learning_rate=0.001, momentum=0.9)
-```
+Momentum and RMSprop together, each with bias correction:
 
-## Nesterov Accelerated Gradient (NAG)
+$$
+\mathbf{m} \leftarrow \beta_1 \mathbf{m} + (1-\beta_1)\nabla_\theta L
+\qquad
+\mathbf{s} \leftarrow \beta_2 \mathbf{s} + (1-\beta_2)(\nabla_\theta L)^2
+$$
 
-NAG is a small but nearly-free tweak to momentum: instead of measuring the
-gradient at the current position `θ`, it measures it slightly ahead, at
-`θ + β·m` — where momentum is already about to carry the weights. Since the
-momentum vector usually points roughly toward the optimum, this "look-ahead"
-gradient is a little more accurate, and NAG consistently converges faster than
-plain momentum:
+$$
+\hat{\mathbf{m}} = \frac{\mathbf{m}}{1 - \beta_1^t}
+\qquad
+\hat{\mathbf{s}} = \frac{\mathbf{s}}{1 - \beta_2^t}
+\qquad
+\theta \leftarrow \theta - \eta \frac{\hat{\mathbf{m}}}{\sqrt{\hat{\mathbf{s}}} + \epsilon}
+$$
 
-```python title="Nesterov momentum" showLineNumbers{1}
-import tensorflow as tf
+Hand-implemented, it matches `keras.optimizers.Adam` to **1.97e-06** over five
+steps — float32 against float64, not a disagreement.
 
-optimizer = tf.keras.optimizers.SGD(learning_rate=0.001, momentum=0.9, nesterov=True)
-```
+**What bias correction is for.** Both $\mathbf{m}$ and $\mathbf{s}$ start at zero,
+so early estimates are biased low — but by *different* factors, because
+$\beta_1 = 0.9$ and $\beta_2 = 0.999$. With a constant gradient of 1.0 and
+$\eta = 0.05$:
 
-## AdaGrad and RMSProp
+| Step | Uncorrected step size | Corrected step size |
+| --- | --- | --- |
+| 1 | 0.158113 (**3.16× η**) | 0.050000 |
+| 2 | 0.212479 (4.25× η) | 0.050000 |
+| 5 | 0.289857 (5.80× η) | 0.050000 |
+| 10 | 0.326394 (**6.53× η**) | 0.050000 |
 
-**AdaGrad** tries to point updates more directly toward the optimum by scaling
-down the gradient along steep dimensions faster than along gentle ones — an
-*adaptive learning rate*. It accumulates the square of every past gradient, which
-solves the "elongated bowl" problem, but the accumulated sum only ever grows, so
-the effective learning rate keeps shrinking — often so much that training stops
-before it reaches a good solution. AdaGrad is rarely a good choice for deep nets.
+Without the correction the first update is over three times the requested learning
+rate, and it keeps growing for dozens of steps. With it, a constant gradient gives
+exactly the learning rate. Bias correction is not a refinement; it is what makes
+$\eta$ mean what it says during the early steps when the model is most fragile.
 
-**RMSProp** fixes exactly that flaw: instead of accumulating *all* past squared
-gradients, it uses exponential decay so it only remembers the most recent ones.
+### Nadam
 
-```python title="RMSProp optimizer" showLineNumbers{1}
-import tensorflow as tf
+Adam with the Nesterov look-ahead. Same state, same cost.
 
-optimizer = tf.keras.optimizers.RMSprop(learning_rate=0.001, rho=0.9)
-```
+## What they actually do on a real problem
 
-## Adam and Nadam
+Fashion-MNIST, 8,000 rows, one hidden layer of 128 ReLU units (101,770
+parameters), batch 128, 15 epochs, one seed, everything else identical.
 
-**Adam** ("adaptive moment estimation") combines the two ideas above: it keeps an
-exponentially decaying average of past gradients (like momentum) *and* an
-exponentially decaying average of past squared gradients (like RMSProp), with a
-bias-correction step for the first few iterations. **Nadam** is Adam plus the
-Nesterov trick, and it often converges a touch faster still.
+<Figure
+  src="/images/dl/phase-02-training/optimizers/optimizer-comparison"
+  alt="Two panels. Left: training loss on a log axis for seven optimizers, with AdaGrad clearly highest and Nesterov lowest. Right: validation accuracy per epoch, where the adaptive methods rise fastest in the first five epochs, plain SGD catches up by epoch 14, and AdaGrad trails everything."
+  title="Seven optimizers, one architecture, one seed"
+  caption="Blue is the SGD family, amber the accumulating methods, green the Adam family. In the accuracy panel every optimizer except AdaGrad finishes inside a 0.014 band — but they arrive at very different times. Nesterov reaches the lowest training loss (0.2108) while finishing joint-lowest on validation accuracy, which is overfitting, not superiority."
+/>
 
-Pros:
+| Optimizer | Final training loss | Final val accuracy | Best val accuracy | Epochs to 0.84 | Seconds |
+| --- | --- | --- | --- | --- | --- |
+| SGD | 0.388167 | 0.8425 | 0.8425 | 14 | 5.91 |
+| momentum 0.9 | 0.287497 | 0.8440 | 0.8525 | 7 | 5.94 |
+| Nesterov | **0.210798** | 0.8420 | 0.8470 | 7 | 6.19 |
+| AdaGrad | 0.493285 | **0.8265** | 0.8265 | **never** | 6.30 |
+| RMSprop | 0.299386 | **0.8565** | **0.8580** | 6 | 6.21 |
+| Adam | 0.282805 | 0.8445 | 0.8445 | 7 | 6.59 |
+| Nadam | 0.267235 | 0.8525 | 0.8560 | **5** | 6.81 |
 
-- usually faster convergence
-- strong default choice — the default learning rate `0.001` works well almost
-  everywhere
+Four honest readings:
 
-```python title="Adam optimizer" showLineNumbers{1}
-import tensorflow as tf
+1. **Adam did not win.** RMSprop finished 0.0120 ahead of it and Nadam 0.0080
+   ahead. Adam beat plain SGD by 0.0020 — a difference no one should act on from a
+   single run.
+2. **The real gap is speed, not accuracy.** Nadam reached 0.84 in 5 epochs; plain
+   SGD needed 14. If your budget is 5 epochs, that gap is the entire result. If it
+   is 15, most of it has evaporated.
+3. **AdaGrad never arrived.** Its accumulating denominator drove the effective
+   rate toward zero, and it finished 0.0300 behind everything else. This is the
+   textbook failure, reproduced exactly.
+4. **The lowest training loss lost.** Nesterov's 0.2108 was the best training loss
+   and its validation accuracy was joint-lowest. Training loss ranks how well an
+   optimiser descends, which is not the question you are asking.
 
-optimizer = tf.keras.optimizers.Adam(learning_rate=0.001, beta_1=0.9, beta_2=0.999)
-```
+### Why the adaptive methods move differently
 
-## Putting it in a real training run
+<Figure
+  src="/images/dl/phase-02-training/optimizers/optimizer-paths"
+  alt="Four contour plots of an elliptical bowl. SGD drops straight down the steep axis then crawls along the flat one. Momentum zig-zags widely across the steep axis before spiralling in. RMSprop and Adam both take smooth diagonal routes to the centre."
+  title="The same bowl, four update rules, 60 steps each"
+  caption="L(a,b) = a² + 10b², so the b direction is ten times steeper. SGD kills b immediately and then crawls along a, reaching 2.18e-05. Momentum overshoots b repeatedly and ends at 1.91e-02. RMSprop and Adam scale each axis by its own gradient history and take almost straight paths — yet finish at 1.25e-02 and 9.71e-02, worse than plain SGD on this clean quadratic."
+/>
 
-```python title="Comparing optimizers on Fashion MNIST" showLineNumbers{1}
-import tensorflow as tf
+| Update rule | Final loss after 60 steps |
+| --- | --- |
+| SGD 0.05 | **2.1830e−05** |
+| momentum 0.9 | 1.9110e−02 |
+| RMSprop 0.05 | 1.2478e−02 |
+| Adam 0.05 | 9.7094e−02 |
 
-(X_train, y_train), (X_test, y_test) = tf.keras.datasets.fashion_mnist.load_data()
-X_train, X_test = X_train / 255.0, X_test / 255.0
+On a perfectly conditioned two-parameter quadratic with a well-chosen rate, plain
+SGD wins by three orders of magnitude. Adaptive methods pay for their robustness
+with a floor on how precisely they converge — the $\epsilon$ in the denominator and
+the momentum term both keep them moving near the optimum. Their advantage appears
+when curvature varies wildly *between parameters* and you cannot tune a rate per
+axis by hand, which is every real network and no toy quadratic.
 
-def build_model():
-    return tf.keras.models.Sequential([
-        tf.keras.layers.Flatten(input_shape=[28, 28]),
-        tf.keras.layers.Dense(300, activation="relu", kernel_initializer="he_normal"),
-        tf.keras.layers.Dense(100, activation="relu", kernel_initializer="he_normal"),
-        tf.keras.layers.Dense(10, activation="softmax"),
-    ])
-
-optimizers = {
-    "sgd": tf.keras.optimizers.SGD(learning_rate=0.01),
-    "momentum": tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9, nesterov=True),
-    "adam": tf.keras.optimizers.Adam(learning_rate=0.001),
-}
-
-for name, opt in optimizers.items():
-    model = build_model()
-    model.compile(loss="sparse_categorical_crossentropy", optimizer=opt, metrics=["accuracy"])
-    history = model.fit(X_train, y_train, epochs=3, validation_split=0.1, verbose=0)
-    print(name, "final val_accuracy:", round(history.history["val_accuracy"][-1], 4))
-```
-
-## Batch size: the other lever besides the optimizer
-
-When a training loop is stuck — loss barely moving, epoch after epoch — it's
-tempting to blame the optimizer and start swapping SGD for Adam for Nadam.
-Chollet's advice in *Deep Learning with Python* is to check something cheaper
-first: the learning rate and the **batch size**. They're the two parameters
-that control the gradient descent process most directly, and they're usually
-enough on their own to get a stalled run moving again.
-
-A bigger batch means each gradient estimate averages over more samples, so
-it's *less noisy* — a more reliable direction to step in, at the cost of more
-memory and slower-per-step training:
-
-```python title="Same optimizer, three batch sizes" showLineNumbers{1}
-import numpy as np
-import tensorflow as tf
-
-np.random.seed(0)
-X = np.random.rand(300, 20).astype("float32")
-y = (X.sum(axis=1) > 10).astype("float32")
-
-def train(batch_size, epochs=5):
-    model = tf.keras.models.Sequential([
-        tf.keras.layers.Dense(32, activation="relu", input_shape=(20,)),
-        tf.keras.layers.Dense(1, activation="sigmoid"),
-    ])
-    model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
-    history = model.fit(X, y, epochs=epochs, batch_size=batch_size, verbose=0)
-    return history.history["loss"][-1]
-
-for bs in (8, 32, 128):
-    print(f"batch_size={bs}: final loss={round(train(bs), 3)}")
-```
-
-If lowering the learning rate and raising the batch size still doesn't get
-training started, the problem usually isn't the optimizer at all — see
-**Vanishing & Exploding Gradients**, next in this phase, for the other common
-culprit: a gradient that's already near zero before it even reaches the
-optimizer step.
-
-## Visualize it
-
-Every optimizer is trying to reach the bottom of the same loss surface, but they
-take very different paths. Plain SGD creeps down step by step, momentum
-overshoots and oscillates before settling, and Adam adapts its step size per
-dimension to cut almost straight across:
-
-```p5 title="SGD vs Momentum vs Adam on a loss surface" desc="Three optimizers starting from the same point on an elongated bowl-shaped loss surface, leaving a fading trail as they descend to the minimum at very different speeds." height="300"
-let paths = [];
-let t = 0;
-function loss(x, y) { return 0.05 * x * x + 0.9 * y * y; }
-function grad(x, y) { return [0.1 * x, 1.8 * y]; }
-function reset() {
-  paths = [
-    { x: -4.2, y: 2.6, m: [0, 0], col: [240, 150, 90], label: "SGD", lr: 0.02, mom: 0, trail: [] },
-    { x: -4.2, y: 2.6, m: [0, 0], col: [255, 211, 67], label: "Momentum", lr: 0.02, mom: 0.85, trail: [] },
-    { x: -4.2, y: 2.6, s: [0, 0], col: [120, 200, 120], label: "Adam-ish", lr: 0.15, mom: 0, trail: [] },
-  ];
-  t = 0;
-}
+```p5 title="Momentum, one slider" desc="Gradient descent on the same anisotropic bowl. Drag the beta slider from 0 (plain SGD) upward and watch the path change from a slow crawl to an overshooting zig-zag." height="330"
+let beta = 0.9;
+let path = [];
 function setup() {
-  createCanvas(600, 300);
+  createCanvas(600, 330);
   textFont("monospace");
-  reset();
+  recompute();
 }
-function px(x) { return width / 2 + x * 60; }
-function py(y) { return height / 2 - 10 + y * 60; }
-function runLength() { return 260; }
-function envelope() {
-  // fade dots/trails in at the start of a run and out at the end, so the
-  // loop restart reads as a smooth cut rather than an abrupt teleport
-  const fadeFrames = 18, total = runLength();
-  if (t < fadeFrames) return t / fadeFrames;
-  if (t > total - fadeFrames) return Math.max(0, (total - t) / fadeFrames);
-  return 1;
+function recompute() {
+  const rate = 0.05;
+  let point = [2.6, 1.0];
+  let velocity = [0, 0];
+  path = [point.slice()];
+  for (let i = 0; i < 70; i++) {
+    const gradient = [2 * point[0], 20 * point[1]];
+    velocity = [beta * velocity[0] - rate * gradient[0],
+                beta * velocity[1] - rate * gradient[1]];
+    point = [point[0] + velocity[0], point[1] + velocity[1]];
+    if (!isFinite(point[0]) || Math.abs(point[0]) > 40) break;
+    path.push(point.slice());
+  }
+}
+function draw() {
+  background(13, 17, 23);
+  const gx = 60, gy = 46, gw = width - 130, gh = 190;
+  const px = (v) => gx + gw / 2 + (v / 4) * (gw / 2);
+  const py = (v) => gy + gh / 2 - (v / 2.2) * (gh / 2);
+  stroke(60, 70, 84);
+  strokeWeight(1);
+  line(gx, py(0), gx + gw, py(0));
+  line(px(0), gy, px(0), gy + gh);
+  noFill();
+  strokeWeight(0.7);
+  for (let level = 1; level <= 6; level++) {
+    beginShape();
+    for (let t = 0; t <= TWO_PI + 0.1; t += 0.08) {
+      const r = level * 0.7;
+      vertex(px(r * Math.cos(t)), py(r * Math.sin(t) / Math.sqrt(10)));
+    }
+    endShape(CLOSE);
+  }
+  stroke(120, 200, 120);
+  strokeWeight(1.5);
+  beginShape();
+  for (const q of path) vertex(px(q[0]), py(q[1]));
+  endShape();
+  noStroke();
+  fill(255, 211, 67);
+  ellipse(px(0), py(0), 11, 11);
+  const last = path[path.length - 1];
+  const finalLoss = last[0] * last[0] + 10 * last[1] * last[1];
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("L(a, b) = a^2 + 10 b^2      learning rate 0.05", 60, 24);
+  fill(150);
+  textSize(11);
+  text("beta = " + beta.toFixed(2) + "     steps drawn: " + (path.length - 1)
+    + " of 70", 60, 250);
+  text("final loss " + finalLoss.toExponential(2)
+    + "     max step multiplier 1/(1-beta) = "
+    + (1 / (1 - beta)).toFixed(1) + "x", 60, 266);
+  fill(90, 100, 114);
+  rect(60, 296, 300, 12, 6);
+  fill(75, 139, 190);
+  ellipse(60 + beta / 0.98 * 300, 302, 18, 18);
+  fill(150);
+  textSize(10);
+  textAlign(LEFT, CENTER);
+  text("0 = plain SGD", 376, 302);
+}
+function mouseDragged() {
+  if (mouseY > 284 && mouseY < 320 && mouseX > 50 && mouseX < 370) {
+    beta = Math.max(0, Math.min(0.98, (mouseX - 60) / 300 * 0.98));
+    recompute();
+  }
+}
+```
+
+## What the optimizer costs in memory
+
+Measured on the 101,770-parameter model by counting the optimizer's own variables
+after one step:
+
+| Optimizer | Slot values stored | Ratio to parameters |
+| --- | --- | --- |
+| SGD | 0 | 0.00 |
+| momentum | 101,770 | 1.00 |
+| RMSprop | 101,770 | 1.00 |
+| Adam | 203,540 | **2.00** |
+
+<Figure
+  src="/images/dl/phase-02-training/optimizers/optimizer-memory"
+  alt="Stacked bar chart for seven optimizers showing weight memory in blue and optimizer state in amber for a 100-million-parameter model. SGD totals 0.40 GB, the one-slot methods 0.80 GB, and Adam and Nadam 1.20 GB."
+  title="What the optimizer costs before a single activation is stored"
+  caption="A 100M-parameter model is 0.40 GB of float32 weights. Momentum, AdaGrad and RMSprop double that to 0.80 GB; Adam and Nadam triple it to 1.20 GB. Add gradients and stored activations and this is why the batch size you can fit depends on which optimizer you chose."
+/>
+
+Wall-clock time barely noticed the difference — 5.91s for SGD against 6.81s for
+Nadam, a 15% spread, on a model this small. Memory is the constraint that
+actually bites: choosing Adam over SGD costs 0.80 GB on a 100M-parameter model
+before a single activation is stored.
+
+## Choosing one
+
+- **Start with Adam** at its defaults (`1e-3`, $\beta_1=0.9$, $\beta_2=0.999$).
+  It is the most forgiving of a badly chosen learning rate, which is the failure
+  mode you are most likely to hit.
+- **Try RMSprop and Nadam** if you have budget for a second run. Here they were
+  the best two, and they cost nothing to test.
+- **Reach for SGD with momentum** when you can afford to tune the rate and a
+  schedule. Well-tuned SGD is still the state of the art for large vision models,
+  and it is the cheapest in memory.
+- **Skip AdaGrad** for deep networks. Its accumulating denominator is the failure
+  reproduced above.
+- **Do not act on 0.002 accuracy differences.** Above, SGD-versus-Adam is 0.0020
+  from one seed. Run several seeds before believing any ranking.
+
+```p5 title="The measured table, ranked" desc="Click a column to rank every row by it. The bars are that column's values and the highest and lowest are computed from the numbers, not written in." height="332"
+let metric = 0;
+const COLUMNS = ["Final training loss", "Final val accuracy", "Best val accuracy", "Seconds"];
+const ROWS = [
+  ["SGD", 0.388167, 0.8425, 0.8425, 5.91],
+  ["momentum 0.9", 0.287497, 0.844, 0.8525, 5.94],
+  ["Nesterov", 0.210798, 0.842, 0.847, 6.19],
+  ["AdaGrad", 0.493285, 0.8265, 0.8265, 6.3],
+  ["RMSprop", 0.299386, 0.8565, 0.858, 6.21],
+  ["Adam", 0.282805, 0.8445, 0.8445, 6.59],
+  ["Nadam", 0.267235, 0.8525, 0.856, 6.81]
+];
+function setup() {
+  createCanvas(620, 332);
+  textFont("monospace");
+}
+function fmt(v) {
+  if (v === 0) { return "0"; }
+  const a = Math.abs(v);
+  if (a >= 1000 || a < 0.001) { return v.toExponential(2); }
+  if (a >= 100) { return v.toFixed(1); }
+  return v.toFixed(4);
 }
 function draw() {
   background(13, 17, 23);
   noStroke();
-  for (let gx = -5; gx <= 5; gx += 0.25) {
-    for (let gy = -2.5; gy <= 2.5; gy += 0.25) {
-      const l = loss(gx, gy);
-      fill(30 + l * 4, 34 + l * 2, 44, 140);
-      rect(px(gx) - 8, py(gy) - 8, 9, 9);
-    }
+  fill(230);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("Backpropagation and Optimizers (Ad", 26, 16);
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (i === metric) { fill(255, 211, 67); } else { fill(48, 56, 68); }
+    rect(x, 40, w, 22, 4);
+    if (i === metric) { fill(13, 17, 23); } else { fill(180); }
+    textSize(9);
+    text(COLUMNS[i], x + 8, 47);
+    x += w + 6;
+    if (x > 500) { break; }
   }
-  fill(255, 211, 67);
-  ellipse(px(0), py(0), 8, 8);
-
-  const env = envelope();
-  for (const p of paths) {
-    const [gx, gy] = grad(p.x, p.y);
-    if (p.label === "SGD") {
-      p.x -= p.lr * gx; p.y -= p.lr * gy;
-    } else if (p.label === "Momentum") {
-      p.m[0] = p.mom * p.m[0] - p.lr * gx;
-      p.m[1] = p.mom * p.m[1] - p.lr * gy;
-      p.x += p.m[0]; p.y += p.m[1];
-    } else {
-      p.s[0] = 0.9 * p.s[0] + 0.1 * gx * gx;
-      p.s[1] = 0.9 * p.s[1] + 0.1 * gy * gy;
-      p.x -= p.lr * gx / (Math.sqrt(p.s[0]) + 0.15);
-      p.y -= p.lr * gy / (Math.sqrt(p.s[1]) + 0.15);
-    }
-    p.trail.push([p.x, p.y]);
-    if (p.trail.length > 14) p.trail.shift();
-    for (let i = 0; i < p.trail.length; i++) {
-      const [hx, hy] = p.trail[i];
-      noStroke();
-      fill(p.col[0], p.col[1], p.col[2], (i / p.trail.length) * 140 * env);
-      ellipse(px(hx), py(hy), 5, 5);
-    }
-    fill(p.col[0], p.col[1], p.col[2], 255 * env);
-    ellipse(px(p.x), py(p.y), 9, 9);
+  const values = ROWS.map((r) => r[metric + 1]);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo === 0 ? 1 : hi - lo;
+  const order = ROWS.slice().sort((a, b) => b[metric + 1] - a[metric + 1]);
+  for (let i = 0; i < order.length; i++) {
+    const y = 78 + i * 26;
+    const v = order[i][metric + 1];
+    fill(160);
+    textSize(9);
+    text(order[i][0], 26, y + 5);
+    fill(34, 40, 50);
+    rect(230, y, 280, 18, 3);
+    const frac = (v - lo) / span;
+    if (v === hi) { fill(126, 192, 143); }
+    else if (v === lo) { fill(224, 108, 117); }
+    else { fill(107, 169, 221); }
+    rect(230, y, Math.max(frac * 280, 3), 18, 3);
+    fill(225);
+    textSize(9);
+    text(fmt(v), 518, y + 5);
   }
-  let ly = 20;
-  for (const p of paths) {
-    fill(p.col[0], p.col[1], p.col[2], 255 * env);
-    textSize(12);
-    textAlign(LEFT, CENTER);
-    text(p.label, 14, ly);
-    ly += 16;
-  }
-  t++;
-  if (t > runLength()) reset();
+  const top = order[0];
+  const bottom = order[order.length - 1];
+  fill(150);
+  textSize(9);
+  const base = 78 + order.length * 26 + 8;
+  text("highest " + COLUMNS[metric] + ": " + top[0] + " at " + fmt(top[1]),
+       26, base);
+  text("lowest  " + COLUMNS[metric] + ": " + bottom[0] + " at "
+       + fmt(bottom[1]), 26, base + 14);
+  text("bars are scaled within the chosen column - lowest is not zero", 26,
+       base + 30);
 }
-function mousePressed() { reset(); }
+function mousePressed() {
+  let x = 26;
+  for (let i = 0; i < COLUMNS.length; i++) {
+    const w = COLUMNS[i].length * 6.6 + 16;
+    if (mouseX > x && mouseX < x + w && mouseY > 40 && mouseY < 62) {
+      metric = i;
+    }
+    x += w + 6;
+  }
+}
 ```
 
-## Mini-checkpoint
+## Pitfalls
 
-If training loss oscillates wildly:
+- **Assuming Adam is always best.** RMSprop beat it by 0.0120 and Nadam by 0.0080
+  in the run above.
+- **Comparing optimizers by training loss.** Nesterov had the lowest training loss
+  and the joint-lowest validation accuracy.
+- **Using AdaGrad on a deep network.** The effective rate decays monotonically; it
+  never reached 0.84 here.
+- **Reusing SGD's learning rate for Adam or vice versa.** SGD wanted 0.1 in these
+  runs; Adam wanted 0.001 — a factor of 100.
+- **Forgetting momentum's step multiplier.** At $\beta = 0.9$, steps reach 10×
+  plain SGD's. A rate that was stable without momentum can diverge with it.
+- **Implementing Adam without bias correction.** The first step comes out 3.16×
+  too large and stays inflated for dozens of steps.
+- **Budgeting memory for weights only.** Adam needs 3× the weight memory, before
+  gradients and activations.
+- **Reusing an optimizer object across models.** Its slots are shaped to the
+  parameters it first saw. Build a fresh one per model.
 
-- try lowering learning rate.
+## Recap
 
-:::tip[From the book]
-Géron's optimizer comparison table (Table 11-2) is a handy cheat sheet: plain
-`SGD` has the slowest convergence speed but the best convergence quality;
-`SGD(momentum=..., nesterov=True)` is a solid middle ground; `Adagrad` converges
-fast but often stops too early; and `RMSProp`, `Adam`, and `Nadam` all converge
-fast with good-to-great quality. When in doubt, Adam with its default
-`learning_rate=0.001` is the easiest place to start.
-:::
-
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
-
-## 🧪 Try It Yourself
-
-### Exercise 1 – Momentum SGD
-
-<DataCampExercise
-  lang="python"
-  hint={`Pass \`momentum=0.9\` and \`nesterov=True\` to \`tf.keras.optimizers.SGD\`.`}
-  code={`# Task: Exercise 1 - Momentum SGD
-import tensorflow as tf
-
-optimizer = tf.keras.optimizers.SGD(learning_rate=0.01, ___=0.9, nesterov=True)   # replace ___ with momentum
-print("momentum:", optimizer.momentum.numpy())
-
-# ── Expected Output ───────────────────────────────────────────
-# momentum: 0.9
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
-
-optimizer = tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9, nesterov=True)
-print("momentum:", optimizer.momentum.numpy())`}
-  sct={`test_output_contains("momentum: 0.9")
-success_msg("Nesterov momentum configured correctly!")`}
-  height={140}
-/>
-
-### Exercise 2 – Build an Adam Optimizer
-
-<DataCampExercise
-  lang="python"
-  hint={`Adam is created with \`tf.keras.optimizers.Adam(learning_rate=..., beta_1=..., beta_2=...)\`.`}
-  code={`# Task: Exercise 2 - Build an Adam Optimizer
-import tensorflow as tf
-
-optimizer = tf.keras.optimizers.___(learning_rate=0.001, beta_1=0.9, beta_2=0.999)   # replace ___ with Adam
-print(type(optimizer).__name__)
-
-# ── Expected Output ───────────────────────────────────────────
-# Adam
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
-
-optimizer = tf.keras.optimizers.Adam(learning_rate=0.001, beta_1=0.9, beta_2=0.999)
-print(type(optimizer).__name__)`}
-  sct={`test_output_contains("Adam")
-success_msg("Adam optimizer created!")`}
-  height={140}
-/>
-
-### Exercise 3 – Compile a Model With RMSProp
-
-<DataCampExercise
-  lang="python"
-  hint={`Pass the optimizer instance (or the string "rmsprop") to \`model.compile(optimizer=...)\`.`}
-  code={`# Task: Exercise 3 - Compile a Model With RMSProp
-import tensorflow as tf
-
-model = tf.keras.models.Sequential([
-    tf.keras.layers.Dense(10, activation="relu", input_shape=(4,)),
-    tf.keras.layers.Dense(1),
-])
-
-model.___(loss="mse", optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.001))   # replace ___ with compile
-print("optimizer:", model.optimizer.__class__.__name__)
-
-# ── Expected Output ───────────────────────────────────────────
-# optimizer: RMSprop
-# ──────────────────────────────────────────────────────────────`}
-  solution={`import tensorflow as tf
-
-model = tf.keras.models.Sequential([
-    tf.keras.layers.Dense(10, activation="relu", input_shape=(4,)),
-    tf.keras.layers.Dense(1),
-])
-
-model.compile(loss="mse", optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.001))
-print("optimizer:", model.optimizer.__class__.__name__)`}
-  sct={`test_output_contains("optimizer: RMSprop")
-success_msg("Model compiled with RMSProp!")`}
-  height={150}
-/>
+- Backpropagation is the chain rule evaluated output-to-input; softmax with
+  cross-entropy collapses to $\hat{p} - y$, verified against TensorFlow to
+  7.45e-09.
+- Momentum accumulates a velocity, taking steps up to $1/(1-\beta)$ times plain
+  SGD's, and can overshoot.
+- AdaGrad's denominator only grows, so its effective rate decays to zero; RMSprop
+  replaces the sum with a decaying average and fixes it.
+- Adam is momentum plus RMSprop plus bias correction; without the correction the
+  first step is 3.16× the requested rate.
+- Measured on Fashion-MNIST: RMSprop 0.8565, Nadam 0.8525, Adam 0.8445, SGD
+  0.8425, AdaGrad 0.8265 — a 0.014 band excluding AdaGrad.
+- Epochs to reach 0.84 ranged from 5 (Nadam) to 14 (SGD) to never (AdaGrad). That
+  is the difference worth caring about.
+- On a clean quadratic, plain SGD beat all three adaptive methods by orders of
+  magnitude. Adaptivity buys robustness, not precision.
+- Optimizer state costs 0, 1× or 2× the parameter count: 0.40, 0.80 or 1.20 GB for
+  a 100M-parameter model.
 
 ## Next
 
-Continue to **Vanishing & Exploding Gradients** — the optimizer only helps if the
-gradient it's following hasn't already vanished on its way back through the network.
+Every gradient above was a product of the layers above it. Stack twenty layers and
+that product either collapses or explodes:
+[Vanishing & Exploding Gradients](/deep-learning/phase-02---training-deep-neural-networks/vanishing--exploding-gradients/).
+
+<Quiz
+  questions={[
+    {
+      q: "Why does the output layer's gradient for softmax + cross-entropy reduce to (p - y), with no chain-rule product?",
+      options: [
+        "Because softmax has no derivative",
+        "Because softmax's Jacobian and cross-entropy's -1/p derivative cancel exactly when multiplied, leaving the plain prediction error",
+        "Because Keras special-cases that combination internally",
+        "Because the loss is averaged over the batch",
+      ],
+      answer: 1,
+      explain: "The same cancellation makes sigmoid pair with binary cross-entropy. It is why these pairings are standard rather than arbitrary.",
+    },
+    {
+      q: "AdaGrad never reached 0.84 validation accuracy in 15 epochs while every other optimizer did. What is the mechanism?",
+      options: [
+        "Its learning rate was set too low at 0.01",
+        "AdaGrad accumulates the sum of squared gradients, and since that sum only grows, the effective learning rate decays monotonically toward zero and training stalls",
+        "AdaGrad cannot handle ReLU activations",
+        "It needs a larger batch size to work",
+      ],
+      answer: 1,
+      explain: "RMSprop replaces the running sum with a decaying average, which lets the effective rate recover. That single change is the fix.",
+    },
+    {
+      q: "Nadam reached 0.84 accuracy in 5 epochs and plain SGD needed 14, yet their final accuracies were 0.8525 and 0.8425. What should you conclude?",
+      options: [
+        "Nadam is strictly better and SGD should not be used",
+        "Adaptive methods mainly buy time-to-target rather than final accuracy — which matters enormously on a 5-epoch budget and much less on a 15-epoch one",
+        "The SGD run was misconfigured",
+        "Final accuracy is the only number that matters",
+      ],
+      answer: 1,
+      explain: "Both readings are in the same table. Which one is decisive depends entirely on your compute budget.",
+    },
+    {
+      q: "Adam without bias correction takes a first step 3.16x larger than the learning rate. Why?",
+      options: [
+        "Because the gradient is largest at the start of training",
+        "Because m and s both start at zero and are therefore biased low, but by different factors since beta_1 = 0.9 and beta_2 = 0.999 — the ratio m/sqrt(s) is inflated until both have warmed up",
+        "Because epsilon is too small in the denominator",
+        "Because the learning rate is applied twice on the first step",
+      ],
+      answer: 1,
+      explain: "Dividing each by (1 - beta^t) removes the bias, so a constant gradient produces a step of exactly the learning rate from step one.",
+    },
+    {
+      q: "You are fine-tuning a 100M-parameter model and running out of memory. What does switching from Adam to SGD with momentum save?",
+      options: [
+        "Nothing — optimizer choice does not affect memory",
+        "0.40 GB: Adam stores two float32 slots per parameter (0.80 GB) against momentum's one (0.40 GB), on top of the 0.40 GB of weights",
+        "It halves the activation memory",
+        "It reduces the gradient memory to zero",
+      ],
+      answer: 1,
+      explain: "Measured on the small model: SGD 0 slots, momentum and RMSprop 1x the parameter count, Adam 2x. That scales linearly.",
+    },
+  ]}
+/>
+
+## 🧪 Try It Yourself
+
+<DataCampExercise
+  lang="python"
+  hint={`For softmax plus cross-entropy the gradient with respect to the pre-softmax scores is (probabilities - one_hot), divided by the batch size because the loss is a mean.`}
+  code={`# Task: Exercise 1 - Backpropagation by hand, checked against GradientTape
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+
+rng = np.random.default_rng(0)
+x = rng.standard_normal((4, 3)).astype("float32")
+y = np.array([0, 1, 1, 0])
+
+W1 = rng.standard_normal((3, 5)).astype("float32") * 0.5
+b1 = np.zeros(5, dtype="float32")
+W2 = rng.standard_normal((5, 2)).astype("float32") * 0.5
+b2 = np.zeros(2, dtype="float32")
+
+# forward
+z1 = x @ W1 + b1
+a1 = np.maximum(z1, 0.0)
+z2 = a1 @ W2 + b2
+shifted = z2 - z2.max(axis=1, keepdims=True)
+probabilities = np.exp(shifted) / np.exp(shifted).sum(axis=1, keepdims=True)
+loss = float(-np.log(probabilities[np.arange(len(y)), y]).mean())
+
+# backward
+one_hot = np.eye(2, dtype="float32")[y]
+dz2 = (probabilities - ___) / len(y)      # replace ___ with one_hot
+dW2 = a1.T @ dz2
+db2 = dz2.sum(axis=0)
+da1 = dz2 @ W2.T
+dz1 = da1 * (z1 > 0)
+dW1 = x.T @ dz1
+db1 = dz1.sum(axis=0)
+
+model = keras.Sequential([
+    keras.layers.Input((3,)),
+    keras.layers.Dense(5, activation="relu"),
+    keras.layers.Dense(2, activation="softmax"),
+])
+model.set_weights([W1, b1, W2, b2])
+with tf.GradientTape() as tape:
+    predictions = model(x, training=True)
+    tf_loss = tf.reduce_mean(
+        keras.losses.sparse_categorical_crossentropy(y, predictions))
+grads = tape.gradient(tf_loss, model.trainable_variables)
+
+print(f"my loss  {loss:.6f}   tensorflow {float(tf_loss.numpy()):.6f}")
+for name, mine, theirs in (("dW1", dW1, grads[0].numpy()),
+                           ("db1", db1, grads[1].numpy()),
+                           ("dW2", dW2, grads[2].numpy()),
+                           ("db2", db2, grads[3].numpy())):
+    print(f"{name}: max |mine - tensorflow| = "
+          f"{np.abs(mine - theirs).max():.2e}")
+print("softmax and cross-entropy combine to (p - y): that one simplification is")
+print("why the output layer's gradient needs no chain rule at all")
+
+# -- Expected Output -------------------------------------------
+# my loss  0.763195   tensorflow 0.763195
+# dW1: max |mine - tensorflow| = 7.45e-09
+# db1: max |mine - tensorflow| = 7.45e-09
+# dW2: max |mine - tensorflow| = 1.49e-08
+# db2: max |mine - tensorflow| = 2.98e-08
+# softmax and cross-entropy combine to (p - y): that one simplification is
+# why the output layer's gradient needs no chain rule at all
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Keras stores velocity with the learning rate already folded in: v = beta*v - rate*gradient, then theta = theta + v. Getting the sign convention right is what makes the two match exactly.`}
+  code={`# Task: Exercise 2 - Momentum by hand, matched step for step
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+
+
+def quadratic_gradient(point):
+    return np.array([2 * point[0], 20 * point[1]], dtype="float32")
+
+
+rate, beta = 0.05, 0.9
+point = np.array([2.6, 1.0], dtype="float32")
+velocity = np.zeros(2, dtype="float32")
+manual = []
+for _ in range(5):
+    gradient = quadratic_gradient(point)
+    velocity = beta * velocity - rate * gradient
+    point = point + ___                      # replace ___ with velocity
+    manual.append(point.copy())
+
+variable = tf.Variable([2.6, 1.0])
+optimizer = keras.optimizers.SGD(rate, momentum=beta)
+keras_path = []
+for _ in range(5):
+    with tf.GradientTape() as tape:
+        loss = variable[0] ** 2 + 10 * variable[1] ** 2
+    optimizer.apply_gradients([(tape.gradient(loss, variable), variable)])
+    keras_path.append(variable.numpy().copy())
+
+print(f"{'step':>5} {'my a':>10} {'my b':>10} {'keras a':>10} {'keras b':>10}")
+for i, (mine, theirs) in enumerate(zip(manual, keras_path), start=1):
+    print(f"{i:5d} {mine[0]:10.6f} {mine[1]:10.6f} "
+          f"{theirs[0]:10.6f} {theirs[1]:10.6f}")
+print(f"max difference {np.abs(np.array(manual) - np.array(keras_path)).max():.2e}")
+print("velocity accumulates: a repeated gradient produces steps up to")
+print(f"1/(1-beta) = {1 / (1 - beta):.1f}x the plain SGD step")
+
+# -- Expected Output -------------------------------------------
+#  step       my a       my b    keras a    keras b
+#     1   2.340000   0.000000   2.340000   0.000000
+#     2   1.872000  -0.900000   1.872000  -0.900000
+#     3   1.263600  -0.810000   1.263600  -0.810000
+#     4   0.589680   0.081000   0.589680   0.081000
+#     5  -0.075816   0.801900  -0.075816   0.801900
+# max difference 0.00e+00
+# velocity accumulates: a repeated gradient produces steps up to
+# 1/(1-beta) = 10.0x the plain SGD step
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Bias correction divides each moment by (1 - beta ** step), where step counts from 1. Both moments need it, with their own beta.`}
+  code={`# Task: Exercise 3 - Adam by hand, with bias correction
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+
+
+def quadratic_gradient(point):
+    return np.array([2 * point[0], 20 * point[1]], dtype="float32")
+
+
+rate, beta1, beta2, epsilon = 0.05, 0.9, 0.999, 1e-7
+point = np.array([2.6, 1.0], dtype="float64")
+m = np.zeros(2)
+v = np.zeros(2)
+manual = []
+for step in range(1, 6):
+    gradient = quadratic_gradient(point).astype("float64")
+    m = beta1 * m + (1 - beta1) * gradient
+    v = beta2 * v + (1 - beta2) * gradient ** 2
+    m_hat = m / (1 - beta1 ** ___)            # replace ___ with step
+    v_hat = v / (1 - beta2 ** step)
+    point = point - rate * m_hat / (np.sqrt(v_hat) + epsilon)
+    manual.append(point.copy())
+
+variable = tf.Variable([2.6, 1.0])
+optimizer = keras.optimizers.Adam(rate, beta_1=beta1, beta_2=beta2,
+                                  epsilon=epsilon)
+keras_path = []
+for _ in range(5):
+    with tf.GradientTape() as tape:
+        loss = variable[0] ** 2 + 10 * variable[1] ** 2
+    optimizer.apply_gradients([(tape.gradient(loss, variable), variable)])
+    keras_path.append(variable.numpy().copy())
+
+print(f"{'step':>5} {'my a':>10} {'my b':>10} {'keras a':>10} {'keras b':>10}")
+for i, (mine, theirs) in enumerate(zip(manual, keras_path), start=1):
+    print(f"{i:5d} {mine[0]:10.6f} {mine[1]:10.6f} "
+          f"{theirs[0]:10.6f} {theirs[1]:10.6f}")
+print(f"max difference {np.abs(np.array(manual) - np.array(keras_path)).max():.2e}")
+print("the residual is float64 against float32, not a disagreement")
+
+# -- Expected Output -------------------------------------------
+#  step       my a       my b    keras a    keras b
+#     1   2.550000   0.950000   2.550000   0.950000
+#     2   2.500028   0.900083   2.500028   0.900084
+#     3   2.450102   0.850312   2.450103   0.850313
+#     4   2.400243   0.800752   2.400244   0.800754
+#     5   2.350470   0.751478   2.350472   0.751480
+# max difference 1.97e-06
+# the residual is float64 against float32, not a disagreement
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Feed a constant gradient of 1.0 and track the step size with and without dividing by (1 - beta ** t). The two betas are very different, so the two moments warm up at very different rates.`}
+  code={`# Task: Exercise 4 - What bias correction actually fixes
+import numpy as np
+
+rate, beta1, beta2, epsilon = 0.05, 0.9, 0.999, 1e-7
+gradient = 1.0
+m = v = 0.0
+print(f"constant gradient of {gradient}, learning rate {rate}")
+print(f"{'step':>5} {'uncorrected':>13} {'x rate':>8} {'corrected':>11}")
+for step in range(1, 11):
+    m = beta1 * m + (1 - beta1) * gradient
+    v = beta2 * v + (1 - beta2) * gradient ** 2
+    uncorrected = rate * m / (np.sqrt(v) + epsilon)
+    corrected = rate * (m / (1 - beta1 ** step)) / (
+        np.sqrt(v / (1 - beta2 ** ___)) + epsilon)     # replace ___ with step
+    if step in (1, 2, 5, 10):
+        print(f"{step:5d} {uncorrected:13.6f} {uncorrected / rate:8.2f} "
+              f"{corrected:11.6f}")
+print("uncorrected, the first step is 3.16x the requested rate and keeps")
+print("growing; corrected, a constant gradient gives exactly the rate")
+
+# -- Expected Output -------------------------------------------
+# constant gradient of 1.0, learning rate 0.05
+#  step   uncorrected   x rate   corrected
+#     1      0.158113     3.16    0.050000
+#     2      0.212479     4.25    0.050000
+#     5      0.289857     5.80    0.050000
+#    10      0.326394     6.53    0.050000
+# uncorrected, the first step is 3.16x the requested rate and keeps
+# growing; corrected, a constant gradient gives exactly the rate
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`Everything except the optimizer is held fixed, including the seed, so the comparison isolates one variable. Wall-clock seconds will differ on your machine; the accuracies will not.`}
+  code={`# Task: Exercise 5 - Seven optimizers on one problem
+import time
+import numpy as np
+from tensorflow import keras
+
+(x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()
+x_train = x_train[:8000].reshape(8000, -1).astype("float32") / 255.0
+y_train = y_train[:8000]
+x_test = x_test[:2000].reshape(2000, -1).astype("float32") / 255.0
+y_test = y_test[:2000]
+
+recipes = {
+    "SGD": lambda: keras.optimizers.SGD(0.1),
+    "momentum 0.9": lambda: keras.optimizers.SGD(0.1, momentum=0.9),
+    "Nesterov": lambda: keras.optimizers.SGD(0.1, momentum=0.9, nesterov=___),
+    # replace ___ with True
+    "AdaGrad": lambda: keras.optimizers.Adagrad(0.01),
+    "RMSprop": lambda: keras.optimizers.RMSprop(0.001),
+    "Adam": lambda: keras.optimizers.Adam(0.001),
+    "Nadam": lambda: keras.optimizers.Nadam(0.001),
+}
+print(f"{'optimizer':14s} {'final val acc':>14} {'best':>7} "
+      f"{'epochs to 0.84':>15}")
+for name, factory in recipes.items():
+    keras.utils.set_random_seed(0)
+    model = keras.Sequential([
+        keras.layers.Input((784,)),
+        keras.layers.Dense(128, activation="relu"),
+        keras.layers.Dense(10, activation="softmax"),
+    ])
+    model.compile(factory(), "sparse_categorical_crossentropy",
+                  metrics=["accuracy"])
+    history = model.fit(x_train, y_train, epochs=15, batch_size=128, verbose=0,
+                        validation_data=(x_test, y_test))
+    accuracies = history.history["val_accuracy"]
+    hit = next((i + 1 for i, v in enumerate(accuracies) if v >= 0.84), None)
+    print(f"{name:14s} {accuracies[-1]:14.4f} {max(accuracies):7.4f} "
+          f"{str(hit) if hit else 'never':>15}")
+print("the spread in final accuracy is smaller than the spread in how fast")
+print("they get there - adaptive methods buy epochs, not accuracy, here")
+
+# -- Expected Output -------------------------------------------
+# optimizer       final val acc    best  epochs to 0.84
+# SGD                    0.8425  0.8425              14
+# momentum 0.9           0.8440  0.8525               7
+# Nesterov               0.8420  0.8470               7
+# AdaGrad                0.8265  0.8265           never
+# RMSprop                0.8565  0.8580               6
+# Adam                   0.8445  0.8445               7
+# Nadam                  0.8525  0.8560               5
+# the spread in final accuracy is smaller than the spread in how fast
+# they get there - adaptive methods buy epochs, not accuracy, here
+# --------------------------------------------------------------`}
+/>
+
+<DataCampExercise
+  lang="python"
+  hint={`optimizer.variables holds the slot tensors once the optimizer has run at least one step. Scalars like the iteration counter have size 1, so filter those out.`}
+  code={`# Task: Exercise 6 - What the optimizer stores
+import numpy as np
+from tensorflow import keras
+
+(x_train, y_train), _ = keras.datasets.fashion_mnist.load_data()
+x_train = x_train[:256].reshape(256, -1).astype("float32") / 255.0
+y_train = y_train[:256]
+
+for name, factory in (("SGD", lambda: keras.optimizers.SGD(0.1)),
+                      ("momentum", lambda: keras.optimizers.SGD(0.1, momentum=0.9)),
+                      ("RMSprop", lambda: keras.optimizers.RMSprop(0.001)),
+                      ("Adam", lambda: keras.optimizers.Adam(0.001))):
+    keras.utils.set_random_seed(0)
+    model = keras.Sequential([keras.layers.Input((784,)),
+                              keras.layers.Dense(128, activation="relu"),
+                              keras.layers.Dense(10, activation="softmax")])
+    optimizer = factory()
+    model.compile(optimizer, "sparse_categorical_crossentropy")
+    model.fit(x_train, y_train, epochs=1, batch_size=128, verbose=0)
+    slot_values = sum(int(np.prod(v.shape)) for v in optimizer.___
+                      if np.prod(v.shape) > 1)      # replace ___ with variables
+    params = model.count_params()
+    print(f"{name:9s} parameters {params:,}  optimizer slot values "
+          f"{slot_values:,}  ratio {slot_values / params:.2f}")
+print(f"for a 100M-parameter model in float32: weights "
+      f"{100e6 * 4 / 1e9:.2f} GB, and Adam adds "
+      f"{100e6 * 4 * 2 / 1e9:.2f} GB of state before any activation is stored")
+
+# -- Expected Output -------------------------------------------
+# SGD       parameters 101,770  optimizer slot values 0  ratio 0.00
+# momentum  parameters 101,770  optimizer slot values 101,770  ratio 1.00
+# RMSprop   parameters 101,770  optimizer slot values 101,770  ratio 1.00
+# Adam      parameters 101,770  optimizer slot values 203,540  ratio 2.00
+# for a 100M-parameter model in float32: weights 0.40 GB, and Adam adds 0.80 GB of state before any activation is stored
+# --------------------------------------------------------------`}
+/>
