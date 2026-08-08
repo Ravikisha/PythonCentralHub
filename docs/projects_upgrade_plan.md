@@ -581,3 +581,57 @@ reports them rather than guessing.
 | needs a display | 36 | a headless mode, or a captured screenshot committed once |
 | blocks until stopped | 23 | 7 camera loops need a synthetic-frame fallback; 15 Flask apps need reading individually |
 | failed | 13 | real bugs — missing data files, `DataFrame.append`, required argparse arguments |
+
+---
+
+## 13. Wave 3, fifth pass — the projects that were actually broken (2026-08-08)
+
+The 13 runtime failures were the only category that was *wrong* rather than
+merely unrunnable here. **13 → 5.** Four were genuine bugs in the code:
+
+- **`portfoliowebsite`** imported `MimeText` and `MimeMultipart`. The stdlib
+  spells them `MIMEText` and `MIMEMultipart`, so the file could never have run.
+  Fixing it uncovered a second bug underneath: a `null` in a Python dict
+  literal, pasted from JSON.
+- **`automatic_file_organizer`** crashed with `FileExistsError` on a file
+  named `no_extension`, because that is exactly the name of the folder it
+  creates for extensionless files. Found by giving it a demo folder to
+  organise — the collision does not occur unless someone actually runs it.
+- **`wordcounter`** opened `text.txt` and died if it was absent. It now writes
+  a sample when the file is missing, and checks its hand-written tally against
+  `collections.Counter`.
+- **`credit_card_fraud_detection`** read a 150 MB Kaggle CSV that is not in the
+  repo. It now generates a set with the property that matters — 0.17% fraud —
+  and the result is worth more than the fix: **99.85% accuracy while catching
+  0 of 6 frauds**. The project now says so, because that is the entire lesson
+  of an imbalanced problem.
+
+Two more were unblocked rather than fixed:
+`automatic_file_organizer`, `bulk_image_compressor_and_resizer` and
+`image_segmentation` declared `required=True` arguments, so running them
+produced `error: the following arguments are required` and nothing else. Each
+now builds its own sample — a scratch folder of files, three generated JPEGs,
+a scene with known regions — when given no arguments.
+
+**`cv2.imshow` and `cv2.waitKey` were rewritten in 19 projects.** Headless
+OpenCV has no GUI, and neither does a container or an SSH session, so both
+raise. They now save the frame and print the path, with the window behind
+`--show` — the same change `plt.show()` needed in wave 2, for the same reason.
+
+Projects running **77 → 85**. Pages carrying real output **74 → 80**. Section
+figures **31 → 34**.
+
+### The five that remain, and why
+
+| Project | Cause | Honest status |
+| --- | --- | --- |
+| `advanced_image_processing_with_opencv` | required `--input` | needs a sample image, same pattern as the other three |
+| `object_detection_tensorflow` | wants a SavedModel that is not in the repo | needs a download, or a smaller model trained here |
+| `automatedfilemover` | hardcoded Windows path | needs the demo-folder treatment |
+| `basicwebscrapper` | the page it scrapes changed its markup | brittle by nature; needs a fixture or a stated live dependency |
+| `amazon_price_drop_email_notifier` | the product URL 404s | same |
+
+The last two are worth saying plainly: a project that scrapes a live site will
+break whenever that site changes, and no amount of local fixing prevents it.
+The right answer is a saved fixture for the test and a clear note that the live
+version depends on someone else's HTML.

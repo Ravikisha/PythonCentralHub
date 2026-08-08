@@ -933,6 +933,38 @@ the in-place extend succeeds because the *list* is mutable, and the write-back f
 
 **Backlog after tutorials batch 2: 342 pages.**
 
+### Tutorials, batch 3 — 5 diagrams + 4 verified notes
+
+| Page | Verified |
+| --- | --- |
+| `Array / Python Array` | 1000 ints: `list` **36,056 B** deep against `array('i')` **4,200 B** — **8.6x**, and identical for values `0..999` and `1000000..1000999` |
+| `OOPS / Methods` | `C.m` is a plain function, `c.m` is bound with `__self__ is c`; `C.m()` raises `TypeError: missing 'self'`; **`c.m is c.m` is `False`** |
+| `Control Statement / For Loop` | `else` after completion -> runs; after `break` -> **skipped**; over an **empty** iterable -> **still runs** |
+| `Control Statement / Assert` | flow only — `-O` strips asserts; documented, not exercised here |
+| `MultiProcessing / Common Pitfalls` | **flow only, no numbers** — see below |
+
+**Something I could not measure, and did not pretend to.** The multiprocessing page was meant to
+carry a measured demonstration of memory isolation. Spawning a process in this environment fails
+with `PermissionError: [WinError 5] Access is denied`, so there is no measurement. That page got
+a flow diagram describing what the text already says and **no numeric claims**. Worth recording
+so a future session does not assume the number is simply missing.
+
+**A correction to how the memory figure is usually explained.** The `list` against `array` ratio
+came out **identical** for small and large integers, which contradicts the common shorthand that
+"small ints are cached so a list of them is cheaper". Caching means those objects are shared with
+the *rest of the program*; the list still stores 1000 pointers and there are still 1000 distinct
+integer objects. The note says that rather than the shorthand.
+
+**`c.m is c.m` being `False`** is the most practically useful line in the batch: each attribute
+access builds a fresh bound method, so a bound method cannot be removed from a callback list by
+identity, and storing `obj.method` keeps `obj` alive through `__self__`.
+
+**One page in this batch does not move the backlog.** `For Loop.mdx` already had a visual; the
+for/else content belongs there regardless, so it was added anyway. Batch of 5 files, backlog
+down 4.
+
+**Backlog after tutorials batch 3: 338 pages.**
+
 ### `scripts/lint-p5.mjs` — new, wired into `npm run dsa`
 
 Nothing on the build path ever parses a p5 sketch: `lib/p5/remake.ts` base64-encodes it and

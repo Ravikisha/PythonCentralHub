@@ -11,6 +11,7 @@ Regenerate with `python scripts/projects_audit.py --progress`. One row per run; 
 | 2026-08-08 wave 3b | 203 | 0 | 330 | 41 | 27 | 67 | 31 | 2 | 2 | 62 | 10 | 0 |
 | 2026-08-08 wave 3c | 203 | 0 | 330 | 41 | 27 | 71 | 31 | 5 | 5 | 64 | 10 | 0 |
 | 2026-08-08 wave 3d | 203 | 0 | 330 | 41 | 27 | 74 | 31 | 5 | 5 | 64 | 10 | 0 |
+| 2026-08-08 wave 3e | 203 | 0 | 330 | 40 | 28 | 80 | 34 | 5 | 5 | 64 | 10 | 0 |
 
 Notes on the columns, so later rows stay comparable:
 

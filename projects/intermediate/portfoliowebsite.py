@@ -7,8 +7,8 @@ import json
 from datetime import datetime
 from werkzeug.utils import secure_filename
 import smtplib
-from email.mime.text import MimeText
-from email.mime.multipart import MimeMultipart
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'
@@ -95,7 +95,7 @@ class PortfolioData:
                     "company": "Tech Solutions Inc.",
                     "location": "New York, NY",
                     "start_date": "2022-01-15",
-                    "end_date": null,
+                    "end_date": None,
                     "current": True,
                     "description": "Led development of scalable web applications serving 100K+ users. Mentored junior developers and implemented DevOps best practices."
                 },
