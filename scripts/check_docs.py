@@ -60,7 +60,10 @@ def main() -> int:
     all_routes = {route_for(p) for p in walk(DOCS)}
     pages = walk(target)
     problems: list[str] = []
-    orders: dict[float, list[str]] = {}
+    # Keyed by (directory, order): Starlight autogenerates the sidebar per
+    # folder, so two pages in different folders may share an order value
+    # without ever competing for a position.
+    orders: dict[tuple[str, float], list[str]] = {}
 
     for path in pages:
         rel = os.path.relpath(path, DOCS).replace(os.sep, "/")
@@ -71,7 +74,8 @@ def main() -> int:
         # pages as 401.5 or 473.3 rather than renumbering their neighbours.
         m = re.search(r"^\s+order:\s*(\d+(?:\.\d+)?)\s*$", text, re.M)
         if m:
-            orders.setdefault(float(m.group(1)), []).append(rel)
+            folder = rel.rsplit('/', 1)[0] if '/' in rel else ''
+            orders.setdefault((folder, float(m.group(1))), []).append(rel)
         else:
             problems.append(f"{rel}: no sidebar.order in frontmatter")
 
@@ -170,6 +174,10 @@ def main() -> int:
         scan = re.sub(r"(?<!\\)\$[^$]{1,300}?\$", _blank, scan)
         scan = re.sub(r"^---\n.*?\n---", _blank, scan, flags=re.S)
         scan = re.sub(r"^<[A-Z]\w*[\s\S]*?^/>", _blank, scan, flags=re.M)
+        # Single-line self-closing components too. `showLineNumbers={1}`
+        # on a one-line <FileCode ... /> is a JSX attribute, not a prose
+        # brace, and the multi-line rule above never sees it.
+        scan = re.sub(r"<[A-Z]\w*[^<>]*?/>", _blank, scan)
         scan = re.sub(r"^import .*$", _blank, scan, flags=re.M)
         src_lines = text.splitlines()
         seen_lines: set[int] = set()
@@ -236,9 +244,10 @@ def main() -> int:
                     f"{text.splitlines()[lineno - 1].strip()[:70]}"
                 )
 
-    for order, files in sorted(orders.items()):
+    for (folder, order), files in sorted(orders.items()):
         if len(files) > 1:
-            problems.append(f"duplicate sidebar.order {order:g}: {', '.join(files)}")
+            problems.append(f"duplicate sidebar.order {order:g} in {folder}: "
+                            f"{', '.join(files)}")
 
     print(f"checked {len(pages)} page(s) under {os.path.relpath(target, REPO)}")
     if problems:

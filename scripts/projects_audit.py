@@ -117,6 +117,18 @@ def measure(path: str, ledger: dict) -> dict:
                 source_code = handle.read()
 
     snippets = snippet_report(text, source_code)
+    # Which way has the page drifted from its file? A page that teaches more
+    # symbols than the file defines is ahead of the code -- the fix is to
+    # write the code, not to downgrade the page.
+    page_names, file_names = set(), set()
+    if source_code:
+        file_names = defined_names(source_code)
+        for snippet in SNIPPET.findall(text):
+            page_names |= defined_names(snippet)
+    drift = "none"
+    if page_names - file_names:
+        drift = ("page ahead" if len(page_names) > len(file_names)
+                 else "page behind")
     headings = set(HEADING.findall(text))
     run = ledger.get(source) if source else None
 
@@ -136,6 +148,9 @@ def measure(path: str, ledger: dict) -> dict:
         "snippets_checked": snippets["checked"],
         "snippets_missing": snippets["missing"],
         "missing_names": snippets["names"],
+        "drift": drift,
+        "page_symbols": len(page_names),
+        "file_symbols": len(file_names),
         "sections": sorted(headings & set(TARGETS["sections"])),
         "order": int(m.group(1)) if (m := re.search(r"order:\s*(\d+)", text))
         else None,
@@ -173,8 +188,11 @@ def collect() -> list[dict]:
 
 
 def totals(rows: list[dict]) -> dict:
+    # Starlight autogenerates the sidebar per folder, so only collisions
+    # inside one folder actually compete for a position.
     duplicates = collections.Counter(
-        row["order"] for row in rows if row["order"] is not None)
+        (os.path.dirname(row["path"]), row["order"])
+        for row in rows if row["order"] is not None)
     return {
         "pages": len(rows),
         "words": sum(row["words"] for row in rows),
@@ -187,6 +205,10 @@ def totals(rows: list[dict]) -> dict:
             1 for row in rows if row["snippets_missing"]),
         "stale_snippets": sum(row["snippets_missing"] for row in rows),
         "pages_that_run": sum(1 for row in rows if row["runs"]),
+        "drift_page_ahead": sum(1 for row in rows
+                                if row["drift"] == "page ahead"),
+        "drift_page_behind": sum(1 for row in rows
+                                 if row["drift"] == "page behind"),
         "pages_missing_source": sum(
             1 for row in rows if not row["source_exists"]),
         "duplicate_orders": sum(count - 1
@@ -224,11 +246,14 @@ def render_summary(rows: list[dict], numbers: dict) -> list[str]:
 
 def write_progress(rows: list[dict], numbers: dict) -> None:
     stamp = datetime.date.today().isoformat()
-    header = ("| Date | Pages | At target | Stale snippets | Pages that run | "
-              "Figures | Quizzes | Exercises | mermaid | p5 | Dup orders |")
-    divider = "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+    header = ("| Date | Pages | At target | Stale snippets | Page ahead | "
+              "Page behind | Pages that run | Figures | Quizzes | Exercises | "
+              "mermaid | p5 | Dup orders |")
+    divider = ("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | "
+               "--- | --- | --- |")
     row = (f"| {stamp} | {numbers['pages']} | {numbers['pages_at_target']} | "
-           f"{numbers['stale_snippets']} | {numbers['pages_that_run']} | "
+           f"{numbers['stale_snippets']} | {numbers['drift_page_ahead']} | "
+           f"{numbers['drift_page_behind']} | {numbers['pages_that_run']} | "
            f"{numbers['figures']} | {numbers['quizzes']} | "
            f"{numbers['exercises']} | {numbers['mermaid']} | "
            f"{numbers['sketches']} | {numbers['duplicate_orders']} |")

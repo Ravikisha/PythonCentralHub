@@ -3,6 +3,21 @@
 Regenerate with `python scripts/projects_audit.py --progress`. One row per run; the plan is in
 `docs/projects_upgrade_plan.md`.
 
-| Date | Pages | At target | Stale snippets | Pages that run | Figures | Quizzes | Exercises | mermaid | p5 | Dup orders |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2026-08-08 | 203 | 0 | 570 | 60 | 0 | 0 | 0 | 41 | 10 | 86 |
+| Date | Pages | At target | Stale snippets | Page ahead | Page behind | Pages that run | Figures | Quizzes | Exercises | mermaid | p5 | Dup orders |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-08-08 baseline (wave 0) | 203 | 0 | 570 | — | — | 60 | 0 | 0 | 0 | 41 | 10 | 16 |
+| 2026-08-08 | 203 | 0 | 336 | 42 | 26 | 60 | 0 | 0 | 0 | 41 | 10 | 0 |
+
+Notes on the columns, so later rows stay comparable:
+
+- **Stale snippets** — walkthrough code blocks defining a function or class that
+  the shipped `.py` does not contain. Wave 1 rewrote the 117 templated Advance
+  walkthroughs from their source files, taking 570 to 336.
+- **Page ahead / page behind** — the direction the remaining drift runs in.
+  *Page ahead* means the page teaches more than the file implements, so the fix
+  is to write the code; *page behind* means the file has moved on. Wave 0 did
+  not separate these, hence the dashes.
+- **Dup orders** — `sidebar.order` collisions **within one folder**, which is
+  the only kind Starlight can act on. The wave-0 row said 86 because the audit
+  counted collisions across folders too; the real figure at baseline was 16,
+  and that is what is shown here.
