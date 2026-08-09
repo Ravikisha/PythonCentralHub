@@ -244,6 +244,21 @@ class JSONDataValidator:
     def batch_validate(self, file_pattern: str, schema_name: str) -> Dict[str, Tuple[bool, List[ValidationError]]]:
         """Validate multiple files matching pattern"""
         from glob import glob
+
+
+def ask(prompt="", default=""):
+    """Read a line, or fall back to `default` when nobody is there to type.
+
+    Without this the script raises EOFError the moment it runs unattended — in
+    a test, a scheduled job, or the build that captures this output for the
+    docs. The fallback is printed rather than silent, so a reader can always
+    tell which answers were typed and which were assumed.
+    """
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        print(f"{default}   (no input available, using the default)")
+        return default
         
         results = {}
         files = glob(file_pattern)
@@ -497,15 +512,15 @@ def main():
         print("0. Exit")
         
         try:
-            choice = input("\nEnter your choice: ").strip()
+            choice = ask("\nEnter your choice: ", '0').strip()
             
             if choice == '1':
-                json_file = input("Enter JSON file path: ").strip()
+                json_file = ask("Enter JSON file path: ", '0').strip()
                 print("\nAvailable schemas:")
                 for schema_name in validator.schemas.keys():
                     print(f"  • {schema_name}")
                 
-                schema_name = input("Enter schema name: ").strip()
+                schema_name = ask("Enter schema name: ", 'Demo').strip()
                 
                 if schema_name in validator.schemas:
                     is_valid, errors = validator.validate_file(json_file, schema_name)
@@ -524,7 +539,7 @@ def main():
                 print("Enter JSON string (end with empty line):")
                 json_lines = []
                 while True:
-                    line = input()
+                    line = ask("", '0')
                     if line.strip() == "":
                         break
                     json_lines.append(line)
@@ -535,7 +550,7 @@ def main():
                 for schema_name in validator.schemas.keys():
                     print(f"  • {schema_name}")
                 
-                schema_name = input("Enter schema name: ").strip()
+                schema_name = ask("Enter schema name: ", 'Demo').strip()
                 
                 if schema_name in validator.schemas:
                     is_valid, errors = validator.validate_json_string(json_string, schema_name)
@@ -551,13 +566,13 @@ def main():
                     print("Schema not found!")
             
             elif choice == '3':
-                file_pattern = input("Enter file pattern (e.g., *.json, data/*.json): ").strip()
+                file_pattern = ask("Enter file pattern (e.g., *.json, data/*.json): ", '0').strip()
                 
                 print("\nAvailable schemas:")
                 for schema_name in validator.schemas.keys():
                     print(f"  • {schema_name}")
                 
-                schema_name = input("Enter schema name: ").strip()
+                schema_name = ask("Enter schema name: ", 'Demo').strip()
                 
                 if schema_name in validator.schemas:
                     results = validator.batch_validate(file_pattern, schema_name)
@@ -573,8 +588,8 @@ def main():
                     print("Schema not found!")
             
             elif choice == '4':
-                schema_file = input("Enter schema file path: ").strip()
-                schema_name = input("Enter schema name (optional): ").strip()
+                schema_file = ask("Enter schema file path: ", '0').strip()
+                schema_name = ask("Enter schema name (optional): ", '0').strip()
                 
                 if validator.load_schema_from_file(schema_file, schema_name or None):
                     print("Schema loaded successfully!")
@@ -582,11 +597,11 @@ def main():
                     print("Failed to load schema.")
             
             elif choice == '5':
-                schema_name = input("Enter schema name: ").strip()
+                schema_name = ask("Enter schema name: ", 'Demo').strip()
                 print("Enter schema JSON (end with empty line):")
                 schema_lines = []
                 while True:
-                    line = input()
+                    line = ask("", '0')
                     if line.strip() == "":
                         break
                     schema_lines.append(line)
@@ -607,7 +622,7 @@ def main():
                 for schema_name in validator.schemas.keys():
                     print(f"  • {schema_name}")
                 
-                schema_name = input("Enter schema name: ").strip()
+                schema_name = ask("Enter schema name: ", 'Demo').strip()
                 
                 info = validator.get_schema_info(schema_name)
                 if info:
@@ -621,7 +636,7 @@ def main():
                 for schema_name in validator.schemas.keys():
                     print(f"  • {schema_name}")
                 
-                schema_name = input("Enter schema name: ").strip()
+                schema_name = ask("Enter schema name: ", 'Demo').strip()
                 
                 sample_data = validator.create_sample_data(schema_name)
                 if sample_data is not None:
@@ -650,7 +665,7 @@ def main():
                     print("No validation statistics available.")
             
             elif choice == '9':
-                filename = input("Enter report filename (e.g., validation_report.json): ").strip()
+                filename = ask("Enter report filename (e.g., validation_report.json): ", 'demo.txt').strip()
                 if not filename:
                     filename = f"validation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
                 

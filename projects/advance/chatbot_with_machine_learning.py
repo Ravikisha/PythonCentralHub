@@ -10,6 +10,21 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 import joblib
 import nltk
+
+
+def ask(prompt="", default=""):
+    """Read a line, or fall back to `default` when nobody is there to type.
+
+    Without this the script raises EOFError the moment it runs unattended — in
+    a test, a scheduled job, or the build that captures this output for the
+    docs. The fallback is printed rather than silent, so a reader can always
+    tell which answers were typed and which were assumed.
+    """
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        print(f"{default}   (no input available, using the default)")
+        return default
 nltk.download('punkt')
 
 # Example intents dataset
@@ -46,7 +61,7 @@ def get_response(intent):
 def chat(model, vectorizer):
     print("Chatbot is ready! Type 'quit' to exit.")
     while True:
-        user_input = input('You: ')
+        user_input = ask('You: ', '1')
         if user_input.lower() == 'quit':
             break
         X_vec = vectorizer.transform([user_input])

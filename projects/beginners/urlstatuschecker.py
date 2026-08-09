@@ -6,6 +6,21 @@ import csv
 from datetime import datetime
 from urllib.parse import urlparse
 
+
+def ask(prompt="", default=""):
+    """Read a line, or fall back to `default` when nobody is there to type.
+
+    Without this the script raises EOFError the moment it runs unattended — in
+    a test, a scheduled job, or the build that captures this output for the
+    docs. The fallback is printed rather than silent, so a reader can always
+    tell which answers were typed and which were assumed.
+    """
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        print(f"{default}   (no input available, using the default)")
+        return default
+
 class URLStatusChecker:
     def __init__(self):
         self.results = []
@@ -160,10 +175,10 @@ def main():
         print("5. Save results to CSV")
         print("6. Exit")
         
-        choice = input("\nSelect an option (1-6): ").strip()
+        choice = ask("\nSelect an option (1-6): ", '6').strip()
         
         if choice == '1':
-            url = input("Enter URL to check: ").strip()
+            url = ask("Enter URL to check: ", 'https://example.com').strip()
             if url:
                 print(f"\nChecking: {url}")
                 result = checker.check_single_url(url)
@@ -181,7 +196,7 @@ def main():
             urls = []
             print("Enter URLs (one per line, empty line to finish):")
             while True:
-                url = input().strip()
+                url = ask("", '6').strip()
                 if not url:
                     break
                 urls.append(url)
@@ -191,7 +206,7 @@ def main():
                 checker.generate_summary()
         
         elif choice == '3':
-            filename = input("Enter filename (default: urls.txt): ").strip()
+            filename = ask("Enter filename (default: urls.txt): ", 'demo.txt').strip()
             if not filename:
                 filename = "urls.txt"
             
@@ -204,7 +219,7 @@ def main():
             checker.generate_summary()
         
         elif choice == '5':
-            filename = input("Enter CSV filename (default: url_status_results.csv): ").strip()
+            filename = ask("Enter CSV filename (default: url_status_results.csv): ", 'demo.txt').strip()
             if not filename:
                 filename = "url_status_results.csv"
             checker.save_results_to_csv(filename)

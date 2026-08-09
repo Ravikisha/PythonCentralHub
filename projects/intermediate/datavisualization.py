@@ -9,6 +9,21 @@ import json
 from typing import List, Dict, Optional
 import random
 
+
+def ask(prompt="", default=""):
+    """Read a line, or fall back to `default` when nobody is there to type.
+
+    Without this the script raises EOFError the moment it runs unattended — in
+    a test, a scheduled job, or the build that captures this output for the
+    docs. The fallback is printed rather than silent, so a reader can always
+    tell which answers were typed and which were assumed.
+    """
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        print(f"{default}   (no input available, using the default)")
+        return default
+
 class DataVisualizer:
     def __init__(self):
         # Set style
@@ -485,7 +500,7 @@ def main():
         print("0. Exit")
         
         try:
-            choice = input("\nEnter your choice: ").strip()
+            choice = ask("\nEnter your choice: ", '0').strip()
             
             if choice == '1':
                 visualizer.create_line_chart()
@@ -515,7 +530,7 @@ def main():
                 visualizer.save_sample_data()
                 
             elif choice == '10':
-                filename = input("Enter CSV filename: ").strip()
+                filename = ask("Enter CSV filename: ", 'demo.txt').strip()
                 if filename:
                     df = visualizer.load_custom_data(filename)
                     if df is not None:

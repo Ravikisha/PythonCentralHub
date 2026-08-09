@@ -2,6 +2,21 @@
 
 import random
 
+
+def ask(prompt="", default=""):
+    """Read a line, or fall back to `default` when nobody is there to type.
+
+    Without this the script raises EOFError the moment it runs unattended — in
+    a test, a scheduled job, or the build that captures this output for the
+    docs. The fallback is printed rather than silent, so a reader can always
+    tell which answers were typed and which were assumed.
+    """
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        print(f"{default}   (no input available, using the default)")
+        return default
+
 class TicTacToe:
     def __init__(self):
         self.board = [' ' for _ in range(9)]  # 3x3 board
@@ -97,7 +112,7 @@ class TicTacToe:
             if self.current_player == 'X':
                 # Player's turn
                 try:
-                    position = int(input("Enter your move (1-9): ")) - 1
+                    position = int(ask("Enter your move (1-9): ", '3')) - 1
                     if position < 0 or position > 8:
                         print("Invalid position! Choose 1-9.")
                         continue
@@ -147,7 +162,7 @@ class TicTacToe:
             player_name = "Player 1" if self.current_player == 'X' else "Player 2"
             
             try:
-                position = int(input(f"{player_name} ({self.current_player}), enter your move (1-9): ")) - 1
+                position = int(ask(f"{player_name} ({self.current_player}), enter your move (1-9): ", '3')) - 1
                 if position < 0 or position > 8:
                     print("Invalid position! Choose 1-9.")
                     continue
@@ -187,7 +202,7 @@ def main():
         print("2. Two Players")
         print("3. Exit")
         
-        choice = input("Choose an option (1-3): ").strip()
+        choice = ask("Choose an option (1-3): ", '3').strip()
         
         if choice == '1':
             game = TicTacToe()
@@ -206,7 +221,7 @@ def main():
         
         # Ask if want to play again
         if choice in ['1', '2']:
-            play_again = input("\nPlay again? (y/n): ").lower()
+            play_again = ask("\nPlay again? (y/n): ", 'n').lower()
             if play_again != 'y':
                 print("Thanks for playing!")
                 break

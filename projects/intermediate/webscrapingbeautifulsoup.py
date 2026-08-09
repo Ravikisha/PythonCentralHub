@@ -11,6 +11,21 @@ from urllib.parse import urljoin, urlparse
 from typing import List, Dict, Optional
 import logging
 
+
+def ask(prompt="", default=""):
+    """Read a line, or fall back to `default` when nobody is there to type.
+
+    Without this the script raises EOFError the moment it runs unattended — in
+    a test, a scheduled job, or the build that captures this output for the
+    docs. The fallback is printed rather than silent, so a reader can always
+    tell which answers were typed and which were assumed.
+    """
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        print(f"{default}   (no input available, using the default)")
+        return default
+
 class WebScraper:
     def __init__(self, base_url: str = "", delay: float = 1.0):
         self.base_url = base_url
@@ -349,7 +364,7 @@ def main():
         print("0. Exit")
         
         try:
-            choice = input("\nEnter your choice: ").strip()
+            choice = ask("\nEnter your choice: ", '0').strip()
             
             if choice == '1':
                 print("Scraping quotes from quotes.toscrape.com...")
@@ -366,7 +381,7 @@ def main():
                         print(f"Tags: {', '.join(quote['tags'])}")
                     
                     # Save options
-                    save_format = input("\nSave as (csv/json/both): ").strip().lower()
+                    save_format = ask("\nSave as (csv/json/both): ", '0').strip().lower()
                     
                     if save_format in ['csv', 'both']:
                         scraper.save_to_csv(quotes, 'quotes.csv')
@@ -391,7 +406,7 @@ def main():
                         print(f"Availability: {book['availability']}")
                     
                     # Save options
-                    save_format = input("\nSave as (csv/json/both): ").strip().lower()
+                    save_format = ask("\nSave as (csv/json/both): ", '0').strip().lower()
                     
                     if save_format in ['csv', 'both']:
                         scraper.save_to_csv(books, 'books.csv')
@@ -401,9 +416,9 @@ def main():
                     print("No books found!")
             
             elif choice == '3':
-                base_url = input("Enter base URL for article scraping: ").strip()
+                base_url = ask("Enter base URL for article scraping: ", 'https://example.com').strip()
                 if base_url:
-                    max_pages = int(input("Enter max pages to scrape (default 3): ").strip() or "3")
+                    max_pages = int(ask("Enter max pages to scrape (default 3): ", '7').strip() or "3")
                     
                     print(f"Scraping articles from {base_url}...")
                     articles = scraper.scrape_articles_from_website(base_url, max_pages)
@@ -419,7 +434,7 @@ def main():
                             print(f"Date: {article['date']}")
                         
                         # Save options
-                        save_format = input("\nSave as (csv/json/both): ").strip().lower()
+                        save_format = ask("\nSave as (csv/json/both): ", '0').strip().lower()
                         
                         if save_format in ['csv', 'both']:
                             scraper.save_to_csv(articles, 'articles.csv')
@@ -429,9 +444,9 @@ def main():
                         print("No articles found!")
             
             elif choice == '4':
-                base_url = input("Enter base URL for product scraping: ").strip()
+                base_url = ask("Enter base URL for product scraping: ", 'https://example.com').strip()
                 if base_url:
-                    max_pages = int(input("Enter max pages to scrape (default 3): ").strip() or "3")
+                    max_pages = int(ask("Enter max pages to scrape (default 3): ", '7').strip() or "3")
                     
                     print(f"Scraping products from {base_url}...")
                     products = scraper.scrape_product_listings(base_url, max_pages)
@@ -447,7 +462,7 @@ def main():
                             print(f"Rating: {product['rating']}")
                         
                         # Save options
-                        save_format = input("\nSave as (csv/json/both): ").strip().lower()
+                        save_format = ask("\nSave as (csv/json/both): ", '0').strip().lower()
                         
                         if save_format in ['csv', 'both']:
                             scraper.save_to_csv(products, 'products.csv')

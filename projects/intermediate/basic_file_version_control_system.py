@@ -13,6 +13,21 @@ import pickle
 from datetime import datetime
 
 
+def ask(prompt="", default=""):
+    """Read a line, or fall back to `default` when nobody is there to type.
+
+    Without this the script raises EOFError the moment it runs unattended — in
+    a test, a scheduled job, or the build that captures this output for the
+    docs. The fallback is printed rather than silent, so a reader can always
+    tell which answers were typed and which were assumed.
+    """
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        print(f"{default}   (no input available, using the default)")
+        return default
+
+
 class BasicFileVersionControl:
     def __init__(self, repo_path):
         self.repo_path = repo_path
@@ -96,17 +111,17 @@ def main():
         print("3. View Log")
         print("4. Exit")
 
-        choice = input("Enter your choice: ")
+        choice = ask("Enter your choice: ", '4')
 
         if choice == "1":
-            file_path = input("Enter the file path to commit: ")
-            message = input("Enter commit message: ")
+            file_path = ask("Enter the file path to commit: ", 'demo.txt')
+            message = ask("Enter commit message: ", '7')
             vcs.commit(file_path, message)
         elif choice == "2":
-            file_name = input("Enter the file name to revert: ")
+            file_name = ask("Enter the file name to revert: ", 'demo.txt')
             vcs.revert(file_name)
         elif choice == "3":
-            file_name = input("Enter the file name to view log: ")
+            file_name = ask("Enter the file name to view log: ", 'demo.txt')
             vcs.log(file_name)
         elif choice == "4":
             break

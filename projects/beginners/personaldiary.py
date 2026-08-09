@@ -4,6 +4,21 @@ import datetime
 import os
 import json
 
+
+def ask(prompt="", default=""):
+    """Read a line, or fall back to `default` when nobody is there to type.
+
+    Without this the script raises EOFError the moment it runs unattended — in
+    a test, a scheduled job, or the build that captures this output for the
+    docs. The fallback is printed rather than silent, so a reader can always
+    tell which answers were typed and which were assumed.
+    """
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        print(f"{default}   (no input available, using the default)")
+        return default
+
 class DiaryEntry:
     def __init__(self, date, title, content, mood="neutral"):
         self.date = date
@@ -155,15 +170,15 @@ def main():
         print("5. View statistics")
         print("6. Exit")
         
-        choice = input("\nSelect an option (1-6): ").strip()
+        choice = ask("\nSelect an option (1-6): ", '6').strip()
         
         if choice == '1':
             print("\nAdding new diary entry:")
-            title = input("Enter title: ").strip()
+            title = ask("Enter title: ", '6').strip()
             print("Enter content (press Enter twice to finish):")
             content_lines = []
             while True:
-                line = input()
+                line = ask("", '6')
                 if line == "":
                     break
                 content_lines.append(line)
@@ -171,14 +186,14 @@ def main():
             
             print("Select mood:")
             print("1. Happy  2. Sad  3. Excited  4. Anxious  5. Peaceful  6. Other")
-            mood_choice = input("Enter choice (1-6): ").strip()
+            mood_choice = ask("Enter choice (1-6): ", '6').strip()
             
             mood_map = {'1': 'happy', '2': 'sad', '3': 'excited', 
                        '4': 'anxious', '5': 'peaceful', '6': 'other'}
             mood = mood_map.get(mood_choice, 'neutral')
             
             if mood == 'other':
-                mood = input("Enter custom mood: ").strip() or 'neutral'
+                mood = ask("Enter custom mood: ", '6').strip() or 'neutral'
             
             diary.add_entry(title, content, mood)
         
@@ -186,12 +201,12 @@ def main():
             diary.view_entries()
         
         elif choice == '3':
-            keyword = input("Enter search keyword: ").strip()
+            keyword = ask("Enter search keyword: ", 'python').strip()
             if keyword:
                 diary.search_entries(keyword)
         
         elif choice == '4':
-            mood = input("Enter mood to filter by: ").strip()
+            mood = ask("Enter mood to filter by: ", '6').strip()
             if mood:
                 diary.filter_by_mood(mood)
         

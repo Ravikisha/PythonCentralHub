@@ -7,6 +7,21 @@ import time
 import csv
 from collections import deque
 
+
+def ask(prompt="", default=""):
+    """Read a line, or fall back to `default` when nobody is there to type.
+
+    Without this the script raises EOFError the moment it runs unattended — in
+    a test, a scheduled job, or the build that captures this output for the
+    docs. The fallback is printed rather than silent, so a reader can always
+    tell which answers were typed and which were assumed.
+    """
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        print(f"{default}   (no input available, using the default)")
+        return default
+
 class WebCrawler:
     def __init__(self, start_url, max_pages=10, delay=1):
         self.start_url = start_url
@@ -165,12 +180,12 @@ class WebCrawler:
 
 def main():
     # Example usage
-    start_url = input("Enter the starting URL to crawl: ").strip()
+    start_url = ask("Enter the starting URL to crawl: ", 'https://example.com').strip()
     if not start_url:
         start_url = "https://example.com"
     
     try:
-        max_pages = int(input("Enter maximum pages to crawl (default 5): ") or "5")
+        max_pages = int(ask("Enter maximum pages to crawl (default 5): ", '7') or "5")
     except ValueError:
         max_pages = 5
     
@@ -181,7 +196,7 @@ def main():
         crawled_data = crawler.crawl()
         crawler.print_summary()
         
-        save_choice = input("\nSave results to CSV? (y/n): ").lower()
+        save_choice = ask("\nSave results to CSV? (y/n): ", 'n').lower()
         if save_choice == 'y':
             crawler.save_to_csv()
     

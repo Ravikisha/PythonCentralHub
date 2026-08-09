@@ -10,6 +10,21 @@ Features include:
 import socket
 import threading
 
+
+def ask(prompt="", default=""):
+    """Read a line, or fall back to `default` when nobody is there to type.
+
+    Without this the script raises EOFError the moment it runs unattended — in
+    a test, a scheduled job, or the build that captures this output for the
+    docs. The fallback is printed rather than silent, so a reader can always
+    tell which answers were typed and which were assumed.
+    """
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        print(f"{default}   (no input available, using the default)")
+        return default
+
 # Server-side implementation
 class ChatServer:
     def __init__(self, host="localhost", port=12345):
@@ -77,7 +92,7 @@ class ChatClient:
 
 
 if __name__ == "__main__":
-    choice = input("Do you want to start the server or client? (server/client): ").strip().lower()
+    choice = ask("Do you want to start the server or client? (server/client): ", '1').strip().lower()
 
     if choice == "server":
         server = ChatServer()
@@ -86,7 +101,7 @@ if __name__ == "__main__":
         client = ChatClient()
         print("Type your messages below:")
         while True:
-            msg = input()
+            msg = ask("", '1')
             client.send_message(msg)
     else:
         print("Invalid choice. Exiting.")

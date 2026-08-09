@@ -6,6 +6,21 @@ import os
 from datetime import datetime, date, timedelta
 from typing import Dict, List, Optional, Tuple
 
+
+def ask(prompt="", default=""):
+    """Read a line, or fall back to `default` when nobody is there to type.
+
+    Without this the script raises EOFError the moment it runs unattended — in
+    a test, a scheduled job, or the build that captures this output for the
+    docs. The fallback is printed rather than silent, so a reader can always
+    tell which answers were typed and which were assumed.
+    """
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        print(f"{default}   (no input available, using the default)")
+        return default
+
 class Event:
     def __init__(self, event_id: str, title: str, date: str, time: str = "", 
                  description: str = "", category: str = "General"):
@@ -390,7 +405,7 @@ def display_events(events: List[Event], title: str = "Events"):
 def get_date_input(prompt: str) -> str:
     """Get date input from user with validation"""
     while True:
-        date_str = input(f"{prompt} (YYYY-MM-DD): ").strip()
+        date_str = ask(f"{prompt} (YYYY-MM-DD): ", '0').strip()
         if not date_str:
             return ""
         
@@ -403,7 +418,7 @@ def get_date_input(prompt: str) -> str:
 def get_time_input(prompt: str) -> str:
     """Get time input from user with validation"""
     while True:
-        time_str = input(f"{prompt} (HH:MM, optional): ").strip()
+        time_str = ask(f"{prompt} (HH:MM, optional): ", '0').strip()
         if not time_str:
             return ""
         
@@ -434,11 +449,11 @@ def main():
         print("0. Exit")
         
         try:
-            choice = input("\nEnter your choice: ").strip()
+            choice = ask("\nEnter your choice: ", '0').strip()
             
             if choice == '1':
                 print("\n=== Add New Event ===")
-                title = input("Event title: ").strip()
+                title = ask("Event title: ", '0').strip()
                 if not title:
                     print("Title cannot be empty!")
                     continue
@@ -449,14 +464,14 @@ def main():
                     continue
                 
                 time_str = get_time_input("Event time")
-                description = input("Description (optional): ").strip()
+                description = ask("Description (optional): ", '0').strip()
                 
                 print("\nAvailable categories:")
                 categories = list(calendar_app.categories)
                 for i, cat in enumerate(categories, 1):
                     print(f"  {i}. {cat}")
                 
-                cat_choice = input("Choose category (number) or enter new: ").strip()
+                cat_choice = ask("Choose category (number) or enter new: ", '7').strip()
                 try:
                     cat_idx = int(cat_choice) - 1
                     if 0 <= cat_idx < len(categories):
@@ -478,7 +493,7 @@ def main():
             
             elif choice == '3':
                 try:
-                    days = int(input("Show events for next how many days? (default 7): ").strip() or "7")
+                    days = int(ask("Show events for next how many days? (default 7): ", '5').strip() or "7")
                     upcoming = calendar_app.get_upcoming_events(days)
                     display_events(upcoming, f"Upcoming Events (Next {days} days)")
                 except ValueError:
@@ -486,8 +501,8 @@ def main():
             
             elif choice == '4':
                 try:
-                    year = int(input("Enter year (default current): ").strip() or str(date.today().year))
-                    month = int(input("Enter month (1-12, default current): ").strip() or str(date.today().month))
+                    year = int(ask("Enter year (default current): ", '7').strip() or str(date.today().year))
+                    month = int(ask("Enter month (1-12, default current): ", '0').strip() or str(date.today().month))
                     
                     if 1 <= month <= 12:
                         calendar_view = calendar_app.get_calendar_view(year, month)
@@ -509,7 +524,7 @@ def main():
                     display_events(date_events, f"Events on {date_str}")
             
             elif choice == '6':
-                query = input("Enter search query: ").strip()
+                query = ask("Enter search query: ", 'python').strip()
                 if query:
                     results = calendar_app.search_events(query)
                     display_events(results, f"Search Results for '{query}'")
@@ -519,13 +534,13 @@ def main():
                 for category in sorted(calendar_app.categories):
                     print(f"  • {category}")
                 
-                category = input("\nEnter category name: ").strip()
+                category = ask("\nEnter category name: ", 'Demo').strip()
                 if category:
                     category_events = calendar_app.get_events_by_category(category)
                     display_events(category_events, f"Events in '{category}' Category")
             
             elif choice == '8':
-                event_id = input("Enter event ID to edit: ").strip()
+                event_id = ask("Enter event ID to edit: ", '0').strip()
                 event = calendar_app.get_event(event_id)
                 if event:
                     print(f"\nCurrent event: {event}")
@@ -534,11 +549,11 @@ def main():
                     print(f"Category: {event.category}")
                     
                     print("\nLeave blank to keep current value:")
-                    new_title = input(f"New title ({event.title}): ").strip()
+                    new_title = ask(f"New title ({event.title}): ", '0').strip()
                     new_date = get_date_input(f"New date ({event.date})")
                     new_time = get_time_input(f"New time ({event.time or 'Not set'})")
-                    new_desc = input(f"New description ({event.description or 'None'}): ").strip()
-                    new_cat = input(f"New category ({event.category}): ").strip()
+                    new_desc = ask(f"New description ({event.description or 'None'}): ", '0').strip()
+                    new_cat = ask(f"New category ({event.category}): ", '0').strip()
                     
                     success = calendar_app.update_event(
                         event_id,
@@ -557,10 +572,10 @@ def main():
                     print("Event not found!")
             
             elif choice == '9':
-                event_id = input("Enter event ID to delete: ").strip()
+                event_id = ask("Enter event ID to delete: ", '0').strip()
                 event = calendar_app.get_event(event_id)
                 if event:
-                    confirm = input(f"Are you sure you want to delete '{event.title}'? (y/N): ").strip().lower()
+                    confirm = ask(f"Are you sure you want to delete '{event.title}'? (y/N): ", 'n').strip().lower()
                     if confirm == 'y':
                         if calendar_app.delete_event(event_id):
                             print("Event deleted successfully!")
@@ -593,7 +608,7 @@ def main():
                     print("No events to show statistics for.")
             
             elif choice == '11':
-                filename = input("Enter filename for export (e.g., my_events.txt): ").strip()
+                filename = ask("Enter filename for export (e.g., my_events.txt): ", 'demo.txt').strip()
                 if not filename:
                     filename = f"calendar_export_{date.today().strftime('%Y%m%d')}.txt"
                 
@@ -608,7 +623,7 @@ def main():
                 for category in sorted(calendar_app.categories):
                     print(f"  • {category}")
                 
-                new_category = input("\nAdd new category (or press Enter to skip): ").strip()
+                new_category = ask("\nAdd new category (or press Enter to skip): ", '').strip()
                 if new_category:
                     calendar_app.add_category(new_category)
                     print(f"Category '{new_category}' added!")

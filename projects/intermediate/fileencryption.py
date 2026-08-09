@@ -15,6 +15,21 @@ import json
 import getpass
 from datetime import datetime
 
+
+def ask(prompt="", default=""):
+    """Read a line, or fall back to `default` when nobody is there to type.
+
+    Without this the script raises EOFError the moment it runs unattended — in
+    a test, a scheduled job, or the build that captures this output for the
+    docs. The fallback is printed rather than silent, so a reader can always
+    tell which answers were typed and which were assumed.
+    """
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        print(f"{default}   (no input available, using the default)")
+        return default
+
 class FileEncryption:
     def __init__(self):
         self.key = None
@@ -406,7 +421,7 @@ def main():
         print("0. Exit")
         
         try:
-            choice = input("\nEnter your choice: ").strip()
+            choice = ask("\nEnter your choice: ", '0').strip()
             
             if choice == '1':
                 password = getpass.getpass("Enter password for encryption: ")
@@ -428,8 +443,8 @@ def main():
                     print("❌ Please set an encryption key first (option 1 or 2)")
                     continue
                 
-                file_path = input("Enter file path to encrypt: ").strip()
-                preserve = input("Preserve original file? (y/n): ").strip().lower() == 'y'
+                file_path = ask("Enter file path to encrypt: ", 'demo.txt').strip()
+                preserve = ask("Preserve original file? (y/n): ", 'n').strip().lower() == 'y'
                 
                 result = encryption.encrypt_file(file_path, preserve_original=preserve)
                 
@@ -447,8 +462,8 @@ def main():
                     print("❌ Please set an encryption key first (option 1 or 2)")
                     continue
                 
-                file_path = input("Enter encrypted file path: ").strip()
-                preserve = input("Preserve encrypted file? (y/n): ").strip().lower() == 'y'
+                file_path = ask("Enter encrypted file path: ", '0').strip()
+                preserve = ask("Preserve encrypted file? (y/n): ", 'n').strip().lower() == 'y'
                 
                 result = encryption.decrypt_file(file_path, preserve_encrypted=preserve)
                 
@@ -466,8 +481,8 @@ def main():
                     print("❌ Please set an encryption key first (option 1 or 2)")
                     continue
                 
-                dir_path = input("Enter directory path to encrypt: ").strip()
-                include_subdirs = input("Include subdirectories? (y/n): ").strip().lower() == 'y'
+                dir_path = ask("Enter directory path to encrypt: ", 'demo.txt').strip()
+                include_subdirs = ask("Include subdirectories? (y/n): ", 'n').strip().lower() == 'y'
                 
                 print("Encrypting directory... This may take a while for large directories.")
                 result = encryption.encrypt_directory(dir_path, include_subdirs=include_subdirs)
@@ -487,8 +502,8 @@ def main():
                     print("❌ Please set an encryption key first (option 1 or 2)")
                     continue
                 
-                archive_path = input("Enter encrypted archive path: ").strip()
-                output_dir = input("Enter output directory (or press Enter for default): ").strip()
+                archive_path = ask("Enter encrypted archive path: ", '0').strip()
+                output_dir = ask("Enter output directory (or press Enter for default): ", '').strip()
                 
                 if not output_dir:
                     output_dir = None
@@ -511,8 +526,8 @@ def main():
                     print("❌ No encryption key to save")
                     continue
                 
-                key_file = input("Enter key file path: ").strip()
-                protect = input("Protect key with password? (y/n): ").strip().lower() == 'y'
+                key_file = ask("Enter key file path: ", '0').strip()
+                protect = ask("Protect key with password? (y/n): ", 'n').strip().lower() == 'y'
                 
                 if protect:
                     password = getpass.getpass("Enter password to protect key: ")
@@ -523,7 +538,7 @@ def main():
                 print("✓ Key saved successfully!")
             
             elif choice == '8':
-                key_file = input("Enter key file path: ").strip()
+                key_file = ask("Enter key file path: ", '0').strip()
                 
                 try:
                     # Check if file is encrypted

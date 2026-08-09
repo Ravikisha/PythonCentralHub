@@ -4,6 +4,21 @@
 import requests
 from bs4 import BeautifulSoup
 
+
+def ask(prompt="", default=""):
+    """Read a line, or fall back to `default` when nobody is there to type.
+
+    Without this the script raises EOFError the moment it runs unattended — in
+    a test, a scheduled job, or the build that captures this output for the
+    docs. The fallback is printed rather than silent, so a reader can always
+    tell which answers were typed and which were assumed.
+    """
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        print(f"{default}   (no input available, using the default)")
+        return default
+
 # URL
 url = "https://www.x-rates.com/calculator/?from=%s&to=%s&amount=%s"
 
@@ -34,9 +49,9 @@ print('''
         
         Don't Enter the Number. Enter the currency code.
     ''')
-from_currency = input("From Currency: ").upper()
-to_currency = input("To Currency: ").upper()
-amount = input("Amount: ")
+from_currency = ask("From Currency: ", '1').upper()
+to_currency = ask("To Currency: ", '1').upper()
+amount = ask("Amount: ", '7')
 
 # Requesting the URL
 response = requests.get(url % (from_currency, to_currency, amount))

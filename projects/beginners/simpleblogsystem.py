@@ -5,6 +5,21 @@ import os
 from datetime import datetime
 from typing import List, Dict, Optional
 
+
+def ask(prompt="", default=""):
+    """Read a line, or fall back to `default` when nobody is there to type.
+
+    Without this the script raises EOFError the moment it runs unattended — in
+    a test, a scheduled job, or the build that captures this output for the
+    docs. The fallback is printed rather than silent, so a reader can always
+    tell which answers were typed and which were assumed.
+    """
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        print(f"{default}   (no input available, using the default)")
+        return default
+
 class BlogPost:
     def __init__(self, title: str, content: str, author: str = "Anonymous", post_id: str = None):
         self.id = post_id or str(int(datetime.now().timestamp()))
@@ -222,22 +237,22 @@ def main():
         print("0. Exit")
         
         try:
-            choice = input("\nEnter your choice: ").strip()
+            choice = ask("\nEnter your choice: ", '0').strip()
             
             if choice == '1':
-                title = input("Enter post title: ").strip()
+                title = ask("Enter post title: ", '0').strip()
                 if not title:
                     print("Title cannot be empty!")
                     continue
                 
-                author = input("Enter author name (or press Enter for Anonymous): ").strip()
+                author = ask("Enter author name (or press Enter for Anonymous): ", 'Demo').strip()
                 if not author:
                     author = "Anonymous"
                 
                 print("Enter post content (type 'END' on a new line to finish):")
                 content_lines = []
                 while True:
-                    line = input()
+                    line = ask("", '0')
                     if line.strip() == 'END':
                         break
                     content_lines.append(line)
@@ -263,7 +278,7 @@ def main():
                         display_post(post)
             
             elif choice == '4':
-                query = input("Enter search query: ").strip()
+                query = ask("Enter search query: ", 'python').strip()
                 if query:
                     results = blog.search_posts(query)
                     if not results:
@@ -274,7 +289,7 @@ def main():
                             display_post(post)
             
             elif choice == '5':
-                post_id = input("Enter post ID: ").strip()
+                post_id = ask("Enter post ID: ", '0').strip()
                 post = blog.get_post_by_id(post_id)
                 if post:
                     display_post(post)
@@ -282,17 +297,17 @@ def main():
                     print("Post not found.")
             
             elif choice == '6':
-                post_id = input("Enter post ID to edit: ").strip()
+                post_id = ask("Enter post ID to edit: ", '0').strip()
                 post = blog.get_post_by_id(post_id)
                 if post:
                     print(f"Current title: {post.title}")
-                    new_title = input("Enter new title (or press Enter to keep current): ").strip()
+                    new_title = ask("Enter new title (or press Enter to keep current): ", '').strip()
                     
                     print(f"Current content:\n{post.content}")
                     print("Enter new content (type 'END' on a new line to finish, or just 'END' to keep current):")
                     content_lines = []
                     while True:
-                        line = input()
+                        line = ask("", '0')
                         if line.strip() == 'END':
                             break
                         content_lines.append(line)
@@ -309,10 +324,10 @@ def main():
                     print("Post not found.")
             
             elif choice == '7':
-                post_id = input("Enter post ID to delete: ").strip()
+                post_id = ask("Enter post ID to delete: ", '0').strip()
                 post = blog.get_post_by_id(post_id)
                 if post:
-                    confirm = input(f"Are you sure you want to delete '{post.title}'? (y/N): ").strip().lower()
+                    confirm = ask(f"Are you sure you want to delete '{post.title}'? (y/N): ", 'n').strip().lower()
                     if confirm == 'y':
                         blog.delete_post(post_id)
                         print("Post deleted successfully!")
@@ -322,23 +337,23 @@ def main():
                     print("Post not found.")
             
             elif choice == '8':
-                post_id = input("Enter post ID to manage tags: ").strip()
+                post_id = ask("Enter post ID to manage tags: ", '7').strip()
                 post = blog.get_post_by_id(post_id)
                 if post:
                     print(f"Current tags: {', '.join(post.tags) if post.tags else 'None'}")
                     print("1. Add tag")
                     print("2. Remove tag")
-                    tag_choice = input("Enter choice: ").strip()
+                    tag_choice = ask("Enter choice: ", '0').strip()
                     
                     if tag_choice == '1':
-                        tag = input("Enter tag to add: ").strip()
+                        tag = ask("Enter tag to add: ", '0').strip()
                         if tag:
                             post.add_tag(tag)
                             blog.save_posts()
                             print("Tag added successfully!")
                     elif tag_choice == '2':
                         if post.tags:
-                            tag = input("Enter tag to remove: ").strip()
+                            tag = ask("Enter tag to remove: ", '0').strip()
                             if tag:
                                 post.remove_tag(tag)
                                 blog.save_posts()
@@ -349,20 +364,20 @@ def main():
                     print("Post not found.")
             
             elif choice == '9':
-                post_id = input("Enter post ID: ").strip()
+                post_id = ask("Enter post ID: ", '0').strip()
                 post = blog.get_post_by_id(post_id)
                 if post:
                     current_status = "Published" if post.published else "Draft"
                     print(f"Current status: {current_status}")
                     
                     if post.published:
-                        confirm = input("Unpublish this post? (y/N): ").strip().lower()
+                        confirm = ask("Unpublish this post? (y/N): ", 'n').strip().lower()
                         if confirm == 'y':
                             post.unpublish()
                             blog.save_posts()
                             print("Post unpublished!")
                     else:
-                        confirm = input("Publish this post? (y/N): ").strip().lower()
+                        confirm = ask("Publish this post? (y/N): ", 'n').strip().lower()
                         if confirm == 'y':
                             post.publish()
                             blog.save_posts()
@@ -385,11 +400,11 @@ def main():
                         print(f"  {tag}: {count}")
             
             elif choice == '11':
-                filename = input("Enter filename for export (e.g., blog_export.txt): ").strip()
+                filename = ask("Enter filename for export (e.g., blog_export.txt): ", 'demo.txt').strip()
                 if not filename:
                     filename = "blog_export.txt"
                 
-                published_only = input("Export only published posts? (Y/n): ").strip().lower()
+                published_only = ask("Export only published posts? (Y/n): ", 'n').strip().lower()
                 published_only = published_only != 'n'
                 
                 blog.export_posts(filename, published_only)

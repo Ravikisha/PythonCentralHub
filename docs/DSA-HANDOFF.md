@@ -1063,6 +1063,59 @@ Recording it plainly because the arithmetic is otherwise flattering and wrong: *
 contributed 4 pages.** Projects is now 194/203, which resolves the "138 refused by the
 generator" question in a way Tier C could not — someone wrote them by hand or by another tool.
 
+### Tutorials, batch 7 — 5 diagrams + 4 verified notes
+
+| Page | Verified |
+| --- | --- |
+| `Function / Module` | a module body printed on the **first** import only; the second import and `importlib.import_module` printed nothing; `importlib.reload` ran it again |
+| `Errors / Debugging Tracebacks` | frame order — outermost first, and the **last** `File` line is where it was raised |
+| `Synchronization / Events` | three waiters, one `set()` released **all three**; a waiter arriving afterwards returned in **0.0000 s** |
+| `Synchronization / Barrier` | with 2 of 3 arrived nobody passed; the third released all three; exactly one got index 0 |
+| `Set / Add and Remove` | `discard(99)` -> `None`; `remove(99)` -> `KeyError`; `pop()` takes no argument |
+
+**Two mechanisms here explain bugs people usually attribute to something else.**
+
+**`sys.modules` caching.** The body runs once per process, so module-level work is startup work
+for every entry point that imports it. And because the module object is inserted into
+`sys.modules` *before* its body executes, a circular import finds a half-built module and
+succeeds — then fails later with `ImportError: cannot import name ...` for a name that simply
+has not been defined yet. That is why circular imports fail confusingly rather than cleanly.
+
+**`Event` is level-triggered; `Condition.notify` is edge-triggered.** Once an Event is set it
+stays set, so a thread that arrives late is not missed — measured at 0.0000 s. A `notify` sent
+before a thread began waiting is simply lost. Choosing between them is choosing whether a late
+arrival should still learn what happened.
+
+**Backlog: tutorials 39 left**, and the site figure continues to be dominated by the other
+session's work rather than these batches.
+
+### Tutorials, batch 8 — 5 diagrams + 4 verified notes
+
+| Page | Verified |
+| --- | --- |
+| `Threading / Creating and Starting Threads` | target via `start()` ran on `Thread-1`; via **`run()` it ran on `MainThread`** — no error, no concurrency. Restart -> `RuntimeError: threads can only be started once` |
+| `Dictionaries / Nested Dictionary` | `orig.copy()` shares the inner dict, so mutating the copy changed the original; `deepcopy` did not; `dict(orig)` is also shallow |
+| `List / List Methods` | `sort()`/`reverse()` return **`None`**; `sorted()` returns a new list; `reversed()` returns an **iterator**; sort is **stable** — `[('b',1),('a',1),('c',0)]` by number gives `[('c',0),('b',1),('a',1)]` |
+| `Strings / Escape String` | `len('a
+b')` is 3, `len(r'a
+b')` is 4; a raw string cannot **end** with a backslash |
+| `OOPS / Inner Class` | bare `SHARED` inside `Inner` raises `NameError`; `Outer.Inner()` works with no `Outer` instance; there is **no link** back to an outer object |
+
+**`t.run()` instead of `t.start()` is the quietest bug in the batch.** The target executed on
+`MainThread` — the program produced the right output, one job at a time, with nothing to
+indicate the threading had been removed. That is the shape of "threading made no difference to
+my program".
+
+**The inner-class result matters for anyone arriving from Java.** Nesting a class creates a
+namespace and nothing else: no reference to the outer class, no access to its attributes by bare
+name, and an instance that knows nothing about any outer instance. Verified in all three
+directions.
+
+**Sort stability is a guarantee, not an accident**, and it is what makes multi-key sorting work
+by sorting twice — least significant key first.
+
+**Backlog: tutorials 34 left.**
+
 ### `scripts/lint-p5.mjs` — new, wired into `npm run dsa`
 
 Nothing on the build path ever parses a p5 sketch: `lib/p5/remake.ts` base64-encodes it and

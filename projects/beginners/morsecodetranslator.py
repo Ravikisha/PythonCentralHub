@@ -5,6 +5,21 @@ import winsound
 import time
 import sys
 
+
+def ask(prompt="", default=""):
+    """Read a line, or fall back to `default` when nobody is there to type.
+
+    Without this the script raises EOFError the moment it runs unattended — in
+    a test, a scheduled job, or the build that captures this output for the
+    docs. The fallback is printed rather than silent, so a reader can always
+    tell which answers were typed and which were assumed.
+    """
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        print(f"{default}   (no input available, using the default)")
+        return default
+
 # Defining variables
 morse_code = {
     'A': '.-', 'B': '-...', 'C': '-.-.', 'D': '-..', 'E': '.',
@@ -57,19 +72,19 @@ def main():
     print('2. Translate to Text')
     print('3. Play Morse Code')
     print('4. Exit')
-    choice = input('Enter your choice: ')
+    choice = ask('Enter your choice: ', '4')
     if choice == '1':
-        text = input('Enter the text to translate to Morse Code: ')
+        text = ask('Enter the text to translate to Morse Code: ', '4')
         morse_code_text = translate_to_morse_code(text)
         print('Morse Code: ' + morse_code_text)
         main()
     elif choice == '2':
-        morse_code_text = input('Enter the Morse Code to translate to Text: ')
+        morse_code_text = ask('Enter the Morse Code to translate to Text: ', '4')
         text = translate_to_text(morse_code_text)
         print('Text: ' + text)
         main()
     elif choice == '3':
-        morse_code_text = input('Enter the Morse Code to play: ')
+        morse_code_text = ask('Enter the Morse Code to play: ', '4')
         play_morse_code(morse_code_text)
         main()
     elif choice == '4':

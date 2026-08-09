@@ -4,6 +4,21 @@ import time
 import threading
 from datetime import datetime, timedelta
 
+
+def ask(prompt="", default=""):
+    """Read a line, or fall back to `default` when nobody is there to type.
+
+    Without this the script raises EOFError the moment it runs unattended — in
+    a test, a scheduled job, or the build that captures this output for the
+    docs. The fallback is printed rather than silent, so a reader can always
+    tell which answers were typed and which were assumed.
+    """
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        print(f"{default}   (no input available, using the default)")
+        return default
+
 class SimpleTimer:
     def __init__(self):
         self.is_running = False
@@ -33,7 +48,7 @@ class SimpleTimer:
         self.timer_thread = threading.Thread(target=update_display)
         self.timer_thread.start()
         
-        input()  # Wait for Enter
+        ask("", '4')  # Wait for Enter
         self.stop()
     
     def countdown_timer(self, duration_seconds):
@@ -69,7 +84,7 @@ class SimpleTimer:
         self.timer_thread.start()
         
         # Check for early stop
-        input()
+        ask("", '4')
         if self.is_running:
             self.stop()
             print("\nTimer stopped early.")
@@ -131,26 +146,26 @@ def main():
         print("3. Pomodoro Timer")
         print("4. Exit")
         
-        choice = input("\nSelect an option (1-4): ").strip()
+        choice = ask("\nSelect an option (1-4): ", '4').strip()
         
         try:
             if choice == '1':
                 timer.start_stopwatch()
             
             elif choice == '2':
-                duration_input = input("Enter duration (e.g., '30s', '5m', '1h', '2:30'): ").strip()
+                duration_input = ask("Enter duration (e.g., '30s', '5m', '1h', '2:30'): ", '4').strip()
                 duration = timer.format_time_input(duration_input)
                 timer.countdown_timer(duration)
             
             elif choice == '3':
                 print("Pomodoro Timer Settings:")
-                work_input = input("Work duration in minutes (default 25): ").strip()
+                work_input = ask("Work duration in minutes (default 25): ", '4').strip()
                 work_minutes = int(work_input) if work_input else 25
                 
-                break_input = input("Break duration in minutes (default 5): ").strip()
+                break_input = ask("Break duration in minutes (default 5): ", '4').strip()
                 break_minutes = int(break_input) if break_input else 5
                 
-                cycles_input = input("Number of cycles (default 4): ").strip()
+                cycles_input = ask("Number of cycles (default 4): ", '5').strip()
                 cycles = int(cycles_input) if cycles_input else 4
                 
                 timer.pomodoro_timer(work_minutes, break_minutes, cycles)

@@ -751,3 +751,46 @@ one of two places, and there is no third:
 
 Wave 5 is struck from the plan. Wave 6 (code-smell Pitfalls on the 70 files
 with real findings) still stands, and wave 7 grows to include authored sketches.
+
+---
+
+## 16. Unblocking the input-driven projects (2026-08-08)
+
+The constraint on wave 7 is not writing speed, it is that a page whose project
+does not run has nothing honest to put in Recap. 56 projects were stopping at
+`EOFError`, so this went at those before writing another page.
+
+`scripts/projects_demo_input.py` rewrites every `input(...)` into
+`ask(..., default)` and inserts the wrapper. The default is inferred from the
+prompt — a `(y/n)` question gets `n`, `how many` gets a small number, a filename
+prompt gets one — and the fallback prints what it substituted, so the captured
+output never hides an assumed answer.
+
+**Inference is a guess, so nothing is trusted.** Every rewritten file is
+executed and **any file that does not then run is reverted**. What survives is
+only what was demonstrated to work.
+
+The first pass kept **6 of 52**, and the reason 14 of the rest failed is
+instructive: a menu-driven program answered `1` forever never reaches its exit
+branch, so it ran until the timeout. The default for a menu has to be the option
+that *leaves*, and the program advertises which that is — it prints it. Reading
+the exit option out of the menu the program itself displays (`print("E. Exit")`,
+`print("6. Exit")`) took the pass to **13 kept of 46 attempted**.
+
+Combined with the classifier already exempting files that handle `EOFError`,
+projects running went **85 → 102**, and pages carrying real output **80 → 94**.
+
+A tooling note worth keeping: the exit-option regex silently matched nothing
+for an hour because a `` written inside a shell heredoc arrived in the file as
+an actual **backspace character (0x08)**. It parsed, it compiled, and it matched
+nothing. Writing the pattern through a file rather than a heredoc avoids it.
+
+### What is left, and what each category needs
+
+| Blocker | Files | The work |
+| --- | --- | --- |
+| module not installed | 55 | mostly unavailable: `speech_recognition`, `googletrans`, `gensim`, `pyfiglet`, `face_recognition` |
+| needs stdin | 39 | 27 could not be rewritten safely; 12 run past the wrapper into other failures |
+| needs a display | 36 | a headless mode, or a screenshot committed once |
+| blocks until stopped | 23 | 7 camera loops, 15 factory-built Flask apps, 1 other |
+| failed | 5 | documented individually in §13 |

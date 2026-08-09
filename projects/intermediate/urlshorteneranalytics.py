@@ -21,6 +21,21 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from collections import defaultdict
 
+
+def ask(prompt="", default=""):
+    """Read a line, or fall back to `default` when nobody is there to type.
+
+    Without this the script raises EOFError the moment it runs unattended — in
+    a test, a scheduled job, or the build that captures this output for the
+    docs. The fallback is printed rather than silent, so a reader can always
+    tell which answers were typed and which were assumed.
+    """
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        print(f"{default}   (no input available, using the default)")
+        return default
+
 class URLShortenerAnalytics:
     def __init__(self, db_path="url_shortener.db"):
         self.db_path = db_path
@@ -698,15 +713,15 @@ def main():
         print("5. Delete URL")
         print("6. Exit")
         
-        choice = input("\nEnter your choice (1-6): ").strip()
+        choice = ask("\nEnter your choice (1-6): ", '6').strip()
         
         if choice == '1':
-            original_url = input("Enter the URL to shorten: ").strip()
-            custom_alias = input("Custom alias (optional): ").strip() or None
-            title = input("Title (optional): ").strip() or None
-            description = input("Description (optional): ").strip() or None
+            original_url = ask("Enter the URL to shorten: ", 'https://example.com').strip()
+            custom_alias = ask("Custom alias (optional): ", '6').strip() or None
+            title = ask("Title (optional): ", '6').strip() or None
+            description = ask("Description (optional): ", '6').strip() or None
             
-            expires_input = input("Expires in days (optional): ").strip()
+            expires_input = ask("Expires in days (optional): ", '6').strip()
             expires_days = int(expires_input) if expires_input else None
             
             result = shortener.create_short_url(
@@ -727,7 +742,7 @@ def main():
                 print(f"\n❌ Error: {result['error']}")
         
         elif choice == '2':
-            url_id = input("Enter URL ID for analytics: ").strip()
+            url_id = ask("Enter URL ID for analytics: ", 'https://example.com').strip()
             try:
                 url_id = int(url_id)
                 analytics = shortener.get_analytics(url_id)
@@ -776,7 +791,7 @@ def main():
                 print("\n🛑 Server stopped")
         
         elif choice == '5':
-            url_id = input("Enter URL ID to delete: ").strip()
+            url_id = ask("Enter URL ID to delete: ", 'https://example.com').strip()
             try:
                 url_id = int(url_id)
                 if shortener.delete_url(url_id):
