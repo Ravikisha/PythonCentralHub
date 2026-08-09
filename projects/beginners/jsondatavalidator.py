@@ -1,6 +1,7 @@
 # JSON Data Validator
 
 import json
+import sys
 import os
 import re
 from typing import Any, Dict, List, Optional, Union, Tuple
@@ -398,6 +399,7 @@ def create_sample_schemas():
                     "maxLength": 50
                 },
                 "email": {
+                    "examples": ["ada@example.com"],
                     "type": "string",
                     "pattern": r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
                 },
@@ -408,6 +410,7 @@ def create_sample_schemas():
                 },
                 "phone": {
                     "type": "string",
+                    "examples": ["+44 20 7946 0958"],
                     "pattern": r"^\+?[\d\s\-\(\)]+$"
                 },
                 "status": {
@@ -694,5 +697,164 @@ def main():
         except Exception as e:
             print(f"An error occurred: {e}")
 
+
+# --------------------------------------------------------------------------
+# The functional surface the documentation page teaches. The class above is
+# the application; these are the three verbs on top of it, and they exist
+# here so that a snippet copied off the page runs against this file.
+# --------------------------------------------------------------------------
+
+def sample(schema: dict):
+    """Build one example document that satisfies `schema`.
+
+    Useful for two things: showing a user what shape is expected, and giving
+    a test suite a valid starting point to then break in one specific way.
+    Everything it returns is the least interesting legal value -- the minimum
+    for a number, the first enum member -- because a sample is a shape, not
+    a fixture.
+    """
+    # A generator cannot invent a string matching an arbitrary regular
+    # expression -- that needs a regex-reversing library, and the general
+    # problem is genuinely hard. So the schema is asked first: `default` and
+    # `examples` are standard JSON Schema keywords and exist for exactly this.
+    if "default" in schema:
+        return schema["default"]
+    if schema.get("examples"):
+        return schema["examples"][0]
+
+    kind = schema.get("type")
+    if kind == "string":
+        if schema.get("enum"):
+            return schema["enum"][0]
+        # Without an example the best available guess is a placeholder padded
+        # to the minimum length. It will still fail any `pattern` constraint,
+        # which is why the demo checks its own output rather than assuming.
+        return "example".ljust(schema.get("minLength", 0), "x")
+    if kind == "integer":
+        return int(schema.get("minimum", 0))
+    if kind == "number":
+        return float(schema.get("minimum", 0))
+    if kind == "boolean":
+        return True
+    if kind == "array":
+        return [sample(schema["items"])] if "items" in schema else []
+    if kind == "object":
+        return {key: sample(value)
+                for key, value in schema.get("properties", {}).items()}
+    return None
+
+
+def batch(pattern: str, schema: dict, validator=None):
+    """Validate every file matching a glob, returning (path, ok, errors).
+
+    The return value matters more than the printing. A batch validator that
+    only prints cannot be used by anything else -- not a test, not a CI step,
+    not a report -- so it returns the results and prints as a courtesy.
+    """
+    from pathlib import Path
+
+    validator = validator or JSONSchema(schema)
+    results = []
+    for path in sorted(Path().glob(pattern)):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            results.append((str(path), False,
+                            [ValidationError(str(path), f"not JSON: {exc}")]))
+            print(f"  BAD  {path}  (not valid JSON: {exc.msg} "
+                  f"at line {exc.lineno})")
+            continue
+        ok, errors = validator.validate(data)
+        results.append((str(path), ok, errors))
+        print(f"  {'OK ' if ok else 'BAD'}  {path}  ({len(errors)} error(s))")
+    return results
+
+
+# `pydantic` does the same job by declaring the shape as a type. Importing it
+# lazily keeps this file runnable without it -- the point of showing the
+# alternative is lost if the file refuses to start when it is absent.
+def build_user_model():
+    """The pydantic equivalent of the user schema, or None if unavailable."""
+    try:
+        from pydantic import BaseModel, Field
+    except ImportError:
+        return None
+
+    class User(BaseModel):
+        name: str = Field(min_length=2, max_length=50)
+        # `EmailStr` needs the email-validator package; a pattern keeps this
+        # to one dependency and is honest about being a weaker check.
+        email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+        age: int = Field(ge=0, le=150)
+
+    return User
+
+
+User = build_user_model()
+
+
+def demo():
+    """Validate four documents against the user schema and report.
+
+    Three of them are wrong in different ways, because a validator that has
+    only ever seen valid input has not been tested. The point of the run is
+    the error messages, not the pass.
+    """
+    schema = create_sample_schemas()["user"]
+    validator = JSONSchema(schema)
+
+    print("=== JSON Data Validator ===\n")
+    print("a document the schema would accept, generated from the schema:")
+    print("  " + json.dumps(sample(schema)) + "\n")
+
+    documents = {
+        "good.json": {"name": "Ada Lovelace", "email": "ada@example.com",
+                      "age": 36},
+        "bad-type.json": {"name": "Ada", "email": "ada@example.com",
+                          "age": "thirty-six"},
+        "missing.json": {"name": "A", "email": "not-an-email"},
+    }
+    for name, document in documents.items():
+        with open(name, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+    with open("broken.json", "w", encoding="utf-8") as handle:
+        handle.write('{"name": "unterminated')
+
+    print("batch validating *.json:")
+    results = batch("*.json", schema, validator)
+    print()
+    for path, ok, errors in results:
+        if ok:
+            continue
+        print(f"{path}:")
+        for error in errors:
+            print(f"    {error}")
+
+    passed = sum(1 for _, ok, _ in results if ok)
+    print(f"\n{passed} of {len(results)} documents valid")
+
+    if User is not None:
+        print("\nthe same rules as a pydantic model:")
+        for name, document in documents.items():
+            try:
+                User.model_validate(document)
+                print(f"  {name:16} accepted")
+            except Exception as exc:
+                count = len(getattr(exc, "errors", lambda: [])())
+                print(f"  {name:16} rejected, {count} error(s)")
+        print("\npydantic reports the same failures from a class declaration")
+        print("rather than a schema dict. Which one to use depends on whether")
+        print("the schema has to be data -- shared with another language, or")
+        print("loaded at runtime -- or can be code.")
+    else:
+        print("\npydantic is not installed, so that comparison was skipped.")
+
+
 if __name__ == "__main__":
-    main()
+    if "--menu" in sys.argv:
+        main()
+    else:
+        # The interactive menu is opt-in. Run unattended it answered "0" and
+        # exited, so the captured transcript showed a menu and nothing else.
+        demo()
+

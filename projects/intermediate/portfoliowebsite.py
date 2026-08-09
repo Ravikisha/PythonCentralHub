@@ -1,8 +1,13 @@
 # Personal Portfolio Website (Flask)
 
 import sys
-from flask import Flask, render_template, request, flash, redirect, url_for, jsonify
+import hmac
+from functools import wraps
+
+from flask import (Flask, render_template, render_template_string,
+                   request, flash, redirect, url_for, jsonify, session)
 import os
+import secrets
 import json
 from datetime import datetime
 from werkzeug.utils import secure_filename
@@ -11,7 +16,16 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-here'
+# Flask signs the session cookie with this. A key committed to a
+# repository is a key everyone has, and forging `session['admin']` is
+# then trivial -- so it comes from the environment, and the fallback is
+# random per process, which logs everyone out on restart rather than
+# accepting a known value.
+app.secret_key = os.environ.get('PORTFOLIO_SECRET_KEY') or secrets.token_hex(32)
+
+# Likewise the password. `ADMIN_PASSWORD` unset means the admin page is
+# unreachable rather than open with a default nobody changed.
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD')
 
 # Configuration
 UPLOAD_FOLDER = 'static/uploads'
@@ -762,7 +776,62 @@ def contact():
         flash('Thank you for your message! I\'ll get back to you soon.', 'success')
         return redirect(url_for('index') + '#contact')
 
+def login_required(view):
+    """Refuse the view to anyone without an admin session.
+
+    `functools.wraps` is not decoration: without it every decorated view is
+    called `wrapped`, and Flask registers endpoints by function name, so the
+    second decorated route raises "View function mapping is overwriting an
+    existing endpoint".
+    """
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get('admin'):
+            return redirect(url_for('login', next=request.path))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Sign in to the admin area."""
+    error = ''
+    if request.method == 'POST':
+        supplied = request.form.get('password', '')
+        if not ADMIN_PASSWORD:
+            error = 'ADMIN_PASSWORD is not set, so nobody can sign in.'
+        elif hmac.compare_digest(supplied, ADMIN_PASSWORD):
+            # Rotate the session id on login, so a session fixed before
+            # sign-in cannot be reused after it.
+            session.clear()
+            session['admin'] = True
+            return redirect(request.args.get('next') or url_for('admin'))
+        else:
+            error = 'Wrong password.'
+    return render_template_string(LOGIN_PAGE, error=error), (
+        401 if error else 200)
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('index'))
+
+
+LOGIN_PAGE = """<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Sign in</title></head>
+<body style="font-family: system-ui, sans-serif; max-width: 20rem; margin: 4rem auto">
+<h1>Admin sign in</h1>
+{% if error %}<p style="color: #b00">{{ error }}</p>{% endif %}
+<form method="post">
+  <p><input type="password" name="password" autofocus required></p>
+  <p><button type="submit">Sign in</button></p>
+</form>
+</body></html>"""
+
+
 @app.route('/admin')
+@login_required
 def admin():
     """Simple admin interface to view contacts"""
     contacts = []
@@ -832,8 +901,8 @@ def main():
     print(f"2. Run: python {__file__}")
     print(f"3. Open http://localhost:5000 in your browser")
     print(f"4. Admin interface: http://localhost:5000/admin")
-    
-    # Run the Flask app
+
+
 def smoke_test():
     """Exercise every GET route once, without starting a server.
 
@@ -841,8 +910,14 @@ def smoke_test():
     object -- no socket, no port, no waiting. A web project that cannot be
     driven this way cannot be tested either, so this is worth having whether or
     not anything is capturing the output.
+
+    It returns the number of routes that did **not** answer 2xx. A smoke test
+    that prints `500` and exits 0 is not a test; this file shipped that way,
+    and both content routes were failing unnoticed because the templates had
+    not been written yet when the check ran.
     """
     print("smoke test: dispatching one request per route\n")
+    broken = 0
     with app.test_client() as client:
         rules = sorted(app.url_map.iter_rules(), key=lambda rule: str(rule))
         checked = 0
@@ -850,22 +925,23 @@ def smoke_test():
             if "GET" not in rule.methods or rule.arguments:
                 continue
             response = client.get(str(rule))
-            body = response.get_data(as_text=True)
-            body = " ".join(body.split())[:60]
+            body = " ".join(response.get_data(as_text=True).split())[:60]
+            if response.status_code >= 400:
+                broken += 1
             print(f"  GET {str(rule):26} {response.status_code}  {body}")
             checked += 1
-    print(f"\n{checked} route(s) answered. Pass --serve to start the real "
-          f"server instead.")
+    print(f"\n{checked} route(s) answered, {broken} failing. "
+          f"Pass --serve to start the real server instead.")
+    return broken
 
 
 if __name__ == "__main__":
-    # Serving is opt-in, because a run that never returns cannot be
-    # tested or captured. With no arguments the file answers every
-    # route once and exits; `--serve` starts the real server.
-    if "--serve" in sys.argv:
-            app.run(debug=True, host='0.0.0.0', port=5000)
-    else:
-        smoke_test()
-
-if __name__ == "__main__":
+    # The templates live in this file as strings and are written to disk
+    # before anything is served OR tested. Running the smoke test first was
+    # the bug: Jinja looked for templates/index.html, found nothing, and
+    # returned 500 while the run still exited successfully.
     main()
+    if "--serve" in sys.argv:
+        app.run(debug=True, host="0.0.0.0", port=5000)
+    else:
+        raise SystemExit(1 if smoke_test() else 0)
