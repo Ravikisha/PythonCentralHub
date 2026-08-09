@@ -67,7 +67,14 @@ def transcript(run: dict, command: str, keep: int | None) -> str:
             f'```text title="{command}"\n{body}\n')
     if trimmed:
         text += "...\n"
-    return text + "```\n"
+    text += "```\n"
+    if trimmed:
+        # Say what was cut. A transcript that silently stops looks like the
+        # program stopped, which is the opposite of the point.
+        total = len((run["stdout"] or "").rstrip("\n").split("\n"))
+        text += (f"\nThe first {keep} of {total} lines are shown; the run "
+                 f"continues past this point.\n")
+    return text
 
 
 def wire(path: str, ledger: dict, keep: int | None) -> tuple[str, str] | None:
