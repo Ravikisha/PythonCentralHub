@@ -44,6 +44,10 @@ TIERS = ("Beginners", "intermediate", "Advance")
 
 TARGETS = {
     "words": 900,
+    # A figure is required only where the project produces one. Demanding a
+    # plot from a text-based CLI tool would mean inventing a picture, which is
+    # what this section is being cured of -- see docs/projects_upgrade_plan.md
+    # section 14. `draws` is set per page from the run ledger.
     "figures": 1,
     "quiz": 1,
     "exercises": 1,
@@ -155,6 +159,10 @@ def measure(path: str, ledger: dict) -> dict:
         "order": int(m.group(1)) if (m := re.search(r"order:\s*(\d+)", text))
         else None,
         "runs": bool(run and run.get("ok")),
+        # Did the run leave an image behind? Only then is a figure expected.
+        "draws": bool(run and run.get("ok") and any(
+            a["name"].lower().endswith((".png", ".jpg", ".jpeg", ".svg", ".gif"))
+            for a in run.get("artifacts", []))),
         "ran_at": run.get("finished") if run else None,
     }
 
@@ -163,9 +171,11 @@ def shortfalls(row: dict) -> list[str]:
     out = []
     if row["words"] < TARGETS["words"]:
         out.append(f"words {row['words']}")
-    for key in ("figures", "quiz", "exercises", "mermaid"):
+    for key in ("quiz", "exercises", "mermaid"):
         if row[key] < TARGETS[key]:
             out.append(key)
+    if row["draws"] and row["figures"] < TARGETS["figures"]:
+        out.append("figure (the project produces one)")
     for section in TARGETS["sections"]:
         if section not in row["sections"]:
             out.append(f"no {section}")
@@ -205,6 +215,9 @@ def totals(rows: list[dict]) -> dict:
             1 for row in rows if row["snippets_missing"]),
         "stale_snippets": sum(row["snippets_missing"] for row in rows),
         "pages_that_run": sum(1 for row in rows if row["runs"]),
+        "pages_that_draw": sum(1 for row in rows if row["draws"]),
+        "draws_but_no_figure": sum(
+            1 for row in rows if row["draws"] and not row["figures"]),
         "drift_page_ahead": sum(1 for row in rows
                                 if row["drift"] == "page ahead"),
         "drift_page_behind": sum(1 for row in rows

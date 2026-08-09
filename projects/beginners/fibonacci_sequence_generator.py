@@ -69,25 +69,80 @@ def fib_binet(n: int) -> int:
     return round((PHI ** n - PSI ** n) / math.sqrt(5))
 
 
-def fib_matrix(n: int) -> int:
-    """Matrix exponentiation. O(log n) multiplications by squaring."""
-    def multiply(a, b):
-        return [
-            [a[0][0] * b[0][0] + a[0][1] * b[1][0],
-             a[0][0] * b[0][1] + a[0][1] * b[1][1]],
-            [a[1][0] * b[0][0] + a[1][1] * b[1][0],
-             a[1][0] * b[0][1] + a[1][1] * b[1][1]],
-        ]
+def mat_mul(a, b):
+    """Multiply two 2x2 matrices, written out rather than looped.
 
-    result = [[1, 0], [0, 1]]
-    base = [[1, 1], [1, 0]]
-    power = n
+    Four multiplications and two additions. A general matmul would loop, but
+    at this size the loop overhead is larger than the arithmetic it saves.
+    """
+    return [
+        [a[0][0] * b[0][0] + a[0][1] * b[1][0],
+         a[0][0] * b[0][1] + a[0][1] * b[1][1]],
+        [a[1][0] * b[0][0] + a[1][1] * b[1][0],
+         a[1][0] * b[0][1] + a[1][1] * b[1][1]],
+    ]
+
+
+def mat_pow(matrix, power):
+    """Exponentiation by squaring: O(log n) multiplications, not O(n).
+
+    Reading `power` in binary, each 1 bit contributes the current square. So
+    the 1,000,000th power costs 20 multiplications rather than a million.
+    """
+    result = [[1, 0], [0, 1]]                   # identity
     while power:
         if power & 1:
-            result = multiply(result, base)
-        base = multiply(base, base)
+            result = mat_mul(result, matrix)
+        matrix = mat_mul(matrix, matrix)
         power >>= 1
-    return result[0][1]
+    return result
+
+
+def fib_matrix(n: int) -> int:
+    """Matrix exponentiation. O(log n) multiplications by squaring."""
+    return mat_pow([[1, 1], [1, 0]], n)[0][1]
+
+
+def fib_sum(n: int) -> int:
+    """Sum of the first n Fibonacci numbers -- without adding them up.
+
+    The identity is F(0)+...+F(n-1) = F(n+1) - 1, so the whole sum costs one
+    more Fibonacci call. Worth knowing because it turns an O(n) loop into
+    whatever the underlying F() costs.
+    """
+    return fib(n + 1) - 1
+
+
+def get_n(prompt: str = "How many numbers? ", default: int = 12) -> int:
+    """Ask until the answer is a positive integer.
+
+    `int(input())` raises on "twelve" and accepts "-5", and neither is a
+    count. Validation is the difference between a script that scolds the user
+    and one that crashes at them.
+    """
+    while True:
+        raw = ask_line(prompt, str(default))
+        try:
+            value = int(raw)
+        except ValueError:
+            print(f"'{raw}' is not a whole number.")
+            continue
+        if value < 0:
+            print("A count cannot be negative.")
+            continue
+        if value > 100_000:
+            print("That will take a while -- pick something under 100,000.")
+            continue
+        return value
+
+
+def ask_line(prompt: str, default: str) -> str:
+    """One line of input, or `default` when nobody is there to type."""
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        print(f"{default}   (no input available, using the default)")
+        return default
 
 
 def ask(prompt: str, default: int) -> int:
@@ -96,7 +151,7 @@ def ask(prompt: str, default: int) -> int:
     A script that dies with EOFError the moment it is run without a terminal
     cannot be tested, scheduled or demonstrated. Handling that is three lines.
     """
-    if len(sys.argv) > 1:
+    if len(sys.argv) > 1 and sys.argv[1].isdigit():
         return int(sys.argv[1])
     try:
         answer = input(prompt).strip()
@@ -152,6 +207,37 @@ def precision_limit() -> None:
         print(f"  F({n:2}) = {exact:<20} binet {mark}")
 
 
+def digit_count(n: int) -> int:
+    """How many decimal digits `n` has, without building the string.
+
+    `len(str(n))` is the obvious version and it raises on anything past 4,300
+    digits: CPython 3.11 capped int-to-str conversion, because the algorithm
+    is quadratic and a single `str(huge)` was a denial-of-service vector. The
+    bit length times log10(2) sidesteps the whole conversion.
+    """
+    if n == 0:
+        return 1
+    return int(n.bit_length() * math.log10(2)) + 1
+
+
+def big_n(n: int = 100_000) -> None:
+    """The O(log n) method against the O(n) one, where the gap shows."""
+    print(f"\ncomputing F({n:,}) two ways:")
+    started = time.perf_counter()
+    by_matrix = fib_matrix(n)
+    matrix_time = time.perf_counter() - started
+
+    started = time.perf_counter()
+    by_loop = fib(n)
+    loop_time = time.perf_counter() - started
+
+    print(f"  fib_matrix  {matrix_time * 1000:8.1f} ms")
+    print(f"  fib (loop)  {loop_time * 1000:8.1f} ms   "
+          f"{loop_time / matrix_time:.1f}x slower")
+    print(f"  same answer: {by_matrix == by_loop}, "
+          f"{digit_count(by_matrix):,} digits long")
+
+
 def main() -> None:
     count = ask("How many numbers to generate?: ", 12)
     print(f"Fibonacci sequence, first {count} terms:")
@@ -161,6 +247,9 @@ def main() -> None:
         raise SystemExit("implementations disagree")
     timings()
     precision_limit()
+    print(f"\nsum of the first {count} terms: {fib_sum(count)} "
+          f"(checked against adding them up: {sum(fib_iter(count))})")
+    big_n()
     print("\nseven ways to compute the same numbers. The loop is what you")
     print("ship; the rest are here because the gaps between them are the")
     print("whole lesson.")

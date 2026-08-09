@@ -65,12 +65,28 @@ NEEDS_NETWORK = {"socket", "socketserver", "http.server", "flask", "fastapi",
 
 
 def imported(tree: ast.AST) -> set:
+    """Modules this file imports *when it starts*.
+
+    Imports nested inside a function body are deliberately excluded. A file
+    that does `import tkinter` inside a `gui()` nobody calls runs perfectly
+    well headless, and counting that import would skip the file for a screen
+    it never asks for -- which is exactly how the temperature converter and
+    the password generator were wrongly skipped. If such a function *is*
+    reached, the run fails with a real ImportError, which is the honest
+    outcome: a stated failure beats a skip that hides a working demo.
+    """
     out = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            out.update(alias.name.split(".")[0] for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            out.add(node.module.split(".")[0])
+    stack = [(node, False) for node in ast.iter_child_nodes(tree)]
+    while stack:
+        node, nested = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            nested = True
+        if not nested:
+            if isinstance(node, ast.Import):
+                out.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                out.add(node.module.split(".")[0])
+        stack.extend((child, nested) for child in ast.iter_child_nodes(node))
     return out
 
 
@@ -116,10 +132,100 @@ BLOCKING_CALLS = {
 }
 
 
+def reachable(tree: ast.AST) -> set:
+    """Function names a plain `python file.py` can actually reach.
+
+    Everything called from module level, plus everything those functions call,
+    transitively. A `gui()` that only runs behind `--gui` is not in the set,
+    so the `mainloop` inside it must not condemn the whole file -- the same
+    mistake `imported` used to make with a nested `import tkinter`.
+
+    This is a name-based approximation: it ignores aliasing and methods
+    reached through objects. That is deliberate. Being slightly too generous
+    means an occasional file runs and hits the timeout, which is recoverable;
+    being too strict means a runnable file is silently skipped, which is what
+    this whole function exists to stop.
+    """
+    functions = {node.name: node for node in ast.walk(tree)
+                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+    def called_in(node) -> set:
+        out = set()
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.Call):
+                target = inner.func
+                name = (target.id if isinstance(target, ast.Name)
+                        else target.attr if isinstance(target, ast.Attribute)
+                        else None)
+                if name in functions:
+                    out.add(name)
+        return out
+
+    # Module level = everything that is not inside a function definition.
+    module_level = ast.Module(body=[node for node in tree.body
+                                    if not isinstance(node, (
+                                        ast.FunctionDef, ast.AsyncFunctionDef,
+                                        ast.ClassDef))],
+                              type_ignores=[])
+    seen, queue = set(), list(called_in(module_level))
+    while queue:
+        name = queue.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        queue.extend(called_in(functions[name]))
+    return seen
+
+
+def _only_behind_flag(tree: ast.AST, name: str, guarded: set) -> bool:
+    """Is every call to `name` inside a command-line-flag branch?"""
+    calls = [node for node in ast.walk(tree)
+             if isinstance(node, ast.Call)
+             and ((isinstance(node.func, ast.Name) and node.func.id == name)
+                  or (isinstance(node.func, ast.Attribute)
+                      and node.func.attr == name))]
+    return bool(calls) and all(id(node) in guarded for node in calls)
+
+
+def flag_guarded(tree: ast.AST) -> set:
+    """Nodes that only execute when a command-line flag was passed.
+
+    The runner invokes every project as a bare `python file.py`, so the body
+    of `if "--gui" in sys.argv:` is dead code for its purposes. Only the
+    guarded branch is excluded -- the `else` is exactly the path that *does*
+    run, and must still be inspected.
+    """
+    out = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If):
+            continue
+        mentions_argv = any(
+            isinstance(inner, ast.Attribute) and inner.attr == "argv"
+            or isinstance(inner, ast.Name) and inner.id == "argv"
+            for inner in ast.walk(node.test))
+        if not mentions_argv:
+            continue
+        for statement in node.body:
+            out.update(id(inner) for inner in ast.walk(statement))
+    return out
+
+
 def blocking_call(tree: ast.AST) -> str | None:
+    functions = {node.name: node for node in ast.walk(tree)
+                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    guarded = flag_guarded(tree)
+    live = {name for name in reachable(tree)
+            if not _only_behind_flag(tree, name, guarded)}
+    unreachable_nodes = {id(inner)
+                         for name, node in functions.items()
+                         if name not in live
+                         for inner in ast.walk(node)}
+
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
+        if id(node) in unreachable_nodes:
+            continue          # inside a function this run never calls
         target = node.func
         name = (target.attr if isinstance(target, ast.Attribute)
                 else target.id if isinstance(target, ast.Name) else None)
@@ -302,6 +408,20 @@ def main() -> int:
             parts = [p for p in (row["skipped"], row["reason"]) if p]
             detail = f"  ({': '.join(parts)})"
         print(f"  [{index:3}/{len(paths)}] {mark} {row['source'][9:]}{detail}")
+
+    if args.pattern and os.path.exists(LEDGER):
+        # A filtered run must not throw away everything it did not touch.
+        # Re-running one project after fixing it is the common case, and
+        # rewriting the ledger from a three-file run would drop the other 261.
+        try:
+            with open(LEDGER, encoding="utf-8") as handle:
+                previous = json.load(handle)["runs"]
+        except (OSError, ValueError, KeyError):
+            previous = []
+        fresh = {row["source"]: row for row in rows}
+        merged = [fresh.pop(row["source"], row) for row in previous]
+        rows = merged + [row for row in rows if row["source"] in fresh]
+        print(f"\nmerged into the existing ledger: {len(rows)} file(s) total")
 
     ok = sum(1 for row in rows if row["ok"])
     skipped = sum(1 for row in rows if row["skipped"])
