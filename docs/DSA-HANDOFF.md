@@ -965,6 +965,104 @@ down 4.
 
 **Backlog after tutorials batch 3: 338 pages.**
 
+### Tutorials, batch 4 — 5 diagrams + 4 verified notes
+
+**Loopback TCP works in this environment**, so the socket pages carry a real measurement rather
+than a description. Two servers were actually run.
+
+| Page | Verified |
+| --- | --- |
+| `Networking / Sockets` | `sendall(b"HELLO")` then `sendall(b"WORLD")`, read by a loop of `recv(4)`, arrived as **`[b'HELL', b'O', b'WORL']`** |
+| `Networking / Networking in Python` | flow — what `requests` does above a raw socket |
+| `Dictionaries / Dictionary Methods` | `get` vs `[]` vs `setdefault` vs `pop`; **`setdefault` evaluates its default even when the key exists**; `keys()` is a live view; mutating during iteration raises `RuntimeError` |
+| `Set / Frozen Set` | `hash({1,2})` -> `TypeError: unhashable type: 'set'`; `hash(frozenset(...))` fine; `{frozenset({1,2}): 'v'}` works; `fs.add` -> `AttributeError` |
+| `Asyncio / Async Queues` | flow — back-pressure, `task_done`, `join` |
+
+**The socket result is the one that changes how people write code.** Neither `sendall` arrived
+as a unit: the first was split across two reads and the second began mid-read. TCP guarantees
+the bytes arrive in order and intact and guarantees **nothing** about where they are divided. So
+`recv(n)` returning fewer than `n` bytes is normal, two sends can arrive as one read, and any
+protocol on top needs a length prefix, a delimiter, or connection close to mark a message. A
+loop that assumes one `recv` is one message works on localhost and fails under real latency.
+
+**A smaller one worth keeping:** `d.setdefault(k, make())` calls `make()` **even when `k` is
+already present**, because arguments are evaluated before the call. So
+`d.setdefault(k, []).append(x)` allocates a throwaway list every iteration —
+`collections.defaultdict(list)` builds the default only when it is needed.
+
+**Backlog after tutorials batch 4: 331 pages.** Coverage **763 / 1094 (69.7%)**.
+
+### Tutorials, batch 5 — 5 diagrams + 4 verified notes
+
+| Page | Verified |
+| --- | --- |
+| `Asyncio / Synchronization` | `Semaphore(2/4/12)` over 12 jobs of 0.05 s: peak in-flight **exactly 2 / 4 / 12**, elapsed 0.37 / 0.19 / 0.06 s. Plus `asyncio.Lock` fully serialising two tasks that await while holding it |
+| `Asyncio / Async Context Managers` | order `__aenter__, body, __aexit__, gen start, got 0, got 1, gen end` |
+| `Operator / Membership Operators` | `'ell' in 'hello'` is a **substring** test; `1 in {1:'a'}` tests the **key**; `'a' in {1:'a'}` is **False**; a class without `__contains__` falls back to `__iter__` + `==` |
+| `Operator / Ternary Operator` | flow — condition first, only one branch evaluated |
+
+**The membership table is the most useful thing here.** One keyword, three different questions:
+substring for a string, key for a dict, element for a list. `value in some_dict` reads like a
+containment check on the data and is a check on the keys — a silent wrong answer rather than an
+error. And `user_input in "yesno"` is `True` for `"yes"`, `"no"`, `"es"` and `""`.
+
+**A guessed error message, replaced with the measured one.** The async note originally
+paraphrased what `async with` does to a synchronous context manager. Running it gives something
+considerably more useful, and 3.14 even suggests the fix:
+
+```text
+TypeError: 'SyncCM' object does not support the asynchronous context manager
+protocol (missed __aexit__ method) but it supports the context manager protocol.
+Did you mean to use 'with'?
+```
+
+The page now quotes that verbatim instead of my paraphrase.
+
+**Also worth recording:** use `asyncio.Semaphore`, never `threading.Semaphore`, inside an event
+loop. The threading version blocks the whole thread while waiting, which blocks every task —
+including the ones holding the permits it is waiting for. That is a deadlock, not a slowdown.
+
+**Backlog after tutorials batch 5: 327 pages.**
+
+### Tutorials, batch 6 — 5 diagrams + 4 verified notes
+
+| Page | Verified |
+| --- | --- |
+| `Strings / String Methods` | `strip` takes a **character set**: `'moocow.com'.strip('.com')` -> **`'w'`**; `'mississippi'.strip('mip')` -> `'ssiss'`. Plus the split family |
+| `Modern Python / Virtual Environments` | system: `prefix == base_prefix`, `flask` -> `PackageNotFoundError`. venv: `prefix != base_prefix`, `flask` importable |
+| `Modern Python / Type Hints` | `get_type_hints` resolves string annotations; `isinstance(5, list[int])` -> `TypeError: argument 2 cannot be a parameterized generic` |
+| `Threading / Thread Communication` | flow — `put`/`get` blocking, `task_done`/`join`, sentinel shutdown |
+
+**`strip` is the best trap found in the tutorials so far**, because the usual example hides it:
+
+| Call | `.strip('.com')` | `.removesuffix('.com')` |
+| --- | --- | --- |
+| `'example.com'` | `'example'` — **right by luck** | `'example'` |
+| `'com.example.com'` | `'example'` — the leading `com.` went too | `'com.example'` |
+| `'moocow.com'` | **`'w'`** | `'moocow'` |
+
+`'example.com'` gives the expected answer for the wrong reason, so the bug survives testing.
+`'moocow.com'` returning `'w'` is the same call on different data.
+
+**A hand-waved row, replaced.** The table originally had `'welcome.com'` with "would lose more
+than you expect" — a claim I had not run. Measured, it returns `'welcome'`, which is
+uninteresting; `'com.example.com'` and `'moocow.com'` are the cases that actually show the
+mechanism, so those replaced it. **If a table cell is a guess, it does not belong in a table.**
+
+**Also verified and worth carrying:** `''.split()` is `[]` but `''.split(',')` is `['']`, so a
+loop over `line.split(',')` runs once on a blank line with an empty field — which is why blank
+lines silently become rows of empty values.
+
+**Backlog after tutorials batch 6: my four pages.** The site-wide number is **196**, and that
+is emphatically not all mine: between batch 5 and batch 6 the `projects` section went from
+**67 covered to 194** — roughly **127 pages** gained diagrams from the other session editing
+this repo, in a section I was explicitly asked to leave alone. Site coverage jumped
+767 -> **898 / 1094 (82.1%)** in the same window.
+
+Recording it plainly because the arithmetic is otherwise flattering and wrong: **this batch
+contributed 4 pages.** Projects is now 194/203, which resolves the "138 refused by the
+generator" question in a way Tier C could not — someone wrote them by hand or by another tool.
+
 ### `scripts/lint-p5.mjs` — new, wired into `npm run dsa`
 
 Nothing on the build path ever parses a p5 sketch: `lib/p5/remake.ts` base64-encodes it and

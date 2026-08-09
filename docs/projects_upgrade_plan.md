@@ -635,3 +635,119 @@ The last two are worth saying plainly: a project that scrapes a live site will
 break whenever that site changes, and no amount of local fixing prevents it.
 The right answer is a saved fixture for the test and a clear note that the live
 version depends on someone else's HTML.
+
+---
+
+## 14. The remaining page work, planned (2026-08-08)
+
+Waves 0–3 fixed what was *wrong*: walkthroughs that quoted code the projects did
+not contain, pages that were one template refilled, and 264 files nobody had
+ever run. What is left is what is *missing* — the visual and interactive
+material the rest of the site carries and these pages do not.
+
+Where the section stands against the contract:
+
+| Element | Have | Need | Can it be derived? |
+| --- | --- | --- | --- |
+| mermaid diagram | 64 | 195 | **Yes** — from the file's own AST |
+| figure | 34 | — | Only where the project draws something |
+| p5 sketch | 10 | — | **Yes** — from the project's measured run |
+| quiz | 5 | 203 | No |
+| exercise | 5 | 203 | No |
+| Pitfalls / Recap | 5 | 203 | Mostly no |
+
+### What can be generated honestly, and what cannot
+
+**Diagrams can.** `scripts/projects_mermaid.py` reads the shipped file and draws
+what is actually in it. **130 pages can take one right now**; 8 more have no
+functions at all and correctly get none. This is the single biggest remaining
+win and it costs one command.
+
+**A second visualisation can, for the pages that run.** 80 projects now execute
+and 34 of them draw a figure. The other 46 print measured output — timings,
+counts, comparisons — and that is enough for a p5 sketch of the same kind the
+Deep Learning module uses: the project's own numbers, explorable, with the
+conclusions computed from the data at runtime so the sketch cannot claim
+anything the run did not produce.
+
+**Pitfalls cannot, mostly.** A static pass over all 264 files finds real issues
+on only **70** of them — 30 missing a `__main__` guard, 20 mutable default
+arguments, 15 bare `except`, 10 `except: pass`, 5 unclosed files, 2 `os.system`,
+1 `eval`. Worth surfacing where they exist, and nowhere near enough to fill 203
+pages. The rest has to be written.
+
+**Quizzes and exercises cannot at all.** A generated quiz is the Advance
+template problem again in a new costume: uniform, plausible, and empty. These
+are authored, at roughly three pages per session, and the pages whose projects
+run come first because their claims can be grounded in real output.
+
+### Revised contract
+
+One change, and it is a correction rather than a concession: **a figure is
+required only where the project produces one.** Demanding a matplotlib plot
+from a text-based CLI tool would mean inventing a picture, which is exactly what
+this section is being cured of. Every page still gets a diagram and a
+visualisation; for the 169 without a natural figure, that visualisation is a p5
+sketch built from the project's own run.
+
+### The waves
+
+| Wave | Scope | Derived or authored |
+| --- | --- | --- |
+| **4** | Diagrams everywhere: 130 pages | derived — one command |
+| **5** | A p5 visualisation on every page whose project runs and does not already have a figure | derived from the run ledger |
+| **6** | Code-smell Pitfalls on the 70 files with real findings | derived, then reviewed by hand |
+| **7** | Authored contract — quiz, exercise, Pitfalls, Recap — Beginners first, then intermediate, then Advance | authored, ~3 pages a session |
+| **8** | Section landing: a difficulty and topic matrix, what each tier builds, and the run-health figures from `scripts/figures/projects/` | authored |
+
+Waves 4–6 are a session's work between them and move three of the six rows in
+the table above. Wave 7 is the long one, and its pace is set by how many
+projects run — which is why waves 0–3 went at the runner first.
+
+---
+
+## 15. Wave 4 done, wave 5 abandoned — and why (2026-08-08)
+
+**Wave 4 shipped.** `scripts/projects_mermaid.py` ran across all three tiers:
+**mermaid diagrams 64 → 193**, on every page whose file defines a function. The
+9 that got none are straight-line scripts with no call flow to draw. It also
+surfaced a pre-existing bug: `realtime-chat.mdx` had a sample transcript pasted
+after its Conclusion with **no opening fence**, leaving the file ending inside a
+code block. Fixed.
+
+**Wave 5 was attempted and dropped.** The idea was a p5 sketch built
+automatically from each project's captured stdout — the project's own numbers,
+explorable, on the 46 pages that run but draw nothing. It does not work, and
+the failure is worth recording because it is the same failure this section was
+being cured of.
+
+A first version took the trailing number from each output line. On the
+Fibonacci page that produced a bar reading **`fib (loop) ms  15971`** — where
+15,971 was the *speedup ratio* from the neighbouring column and had nothing to
+do with milliseconds. Plausible, well-formatted, and wrong.
+
+Tightening the rule to lines carrying exactly one number fixed the mislabelling
+and left two problems that cannot be fixed mechanically:
+
+- **Mixed units on one axis.** The sales-forecasting page yields 180 days,
+  15.458 MAE, 45.0 percent and 0.859 (a weekday multiplier). A bar chart over
+  those is meaningless, and the "largest / smallest" line the sketch computes
+  would compare a day count against a ratio.
+- **Prose that parses as data.** `recovered weekly profile (1.00 = an average
+  day):` yields a row labelled "recovered weekly profile" with value 1.0. That
+  is a legend, not a measurement.
+
+Yield after tightening was **9 pages of 203**. Nine pages is not worth a
+mechanism that can silently mislabel, so `scripts/projects_sketch.py` was
+deleted rather than left in the tree.
+
+**What this means for the plan.** Visualisation on a project page comes from
+one of two places, and there is no third:
+
+1. **The project draws it.** 34 pages, already done, and the only route that
+   scales without judgement.
+2. **Someone writes it.** Everything else — which puts sketches in wave 7 with
+   the quizzes and exercises rather than in a sweep of their own.
+
+Wave 5 is struck from the plan. Wave 6 (code-smell Pitfalls on the 70 files
+with real findings) still stands, and wave 7 grows to include authored sketches.
