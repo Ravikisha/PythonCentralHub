@@ -315,7 +315,13 @@ def run_one(path: str, timeout: int) -> dict:
     copy = os.path.join(workdir, os.path.basename(path))
     shutil.copyfile(path, copy)
     environment = dict(os.environ, MPLBACKEND="Agg", PYTHONIOENCODING="utf-8",
-                       PYTHONWARNINGS="ignore")
+                       PYTHONWARNINGS="ignore",
+                       # pygame opens a real window unless told otherwise, and
+                       # a window is exactly what a headless run cannot have.
+                       # The dummy driver renders to memory, so the game logic
+                       # still executes and the run still ends.
+                       SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy",
+                       PYGAME_HIDE_SUPPORT_PROMPT="1")
     started = time.perf_counter()
     try:
         with open(os.devnull) as devnull:

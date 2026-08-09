@@ -8,11 +8,36 @@ import numpy as np
 import argparse
 import os
 
+def test_pattern(size=320):
+    """A synthetic image with the features each mode is meant to show.
+
+    Hard edges for Canny, a smooth gradient for the blur, isolated specks for
+    the morphological close, and saturated colour for the HSV conversion. A
+    photograph would work too; this one is here so the file runs with no
+    arguments and no downloaded asset.
+    """
+    img = np.zeros((size, size, 3), dtype=np.uint8)
+    img[:, :, 0] = np.linspace(0, 255, size, dtype=np.uint8)      # gradient
+    cv2.rectangle(img, (40, 40), (150, 150), (0, 220, 255), -1)   # hard edges
+    cv2.circle(img, (230, 230), 55, (255, 60, 60), -1)
+    cv2.line(img, (0, size - 1), (size - 1, 0), (255, 255, 255), 2)
+    rng = np.random.default_rng(20260809)                          # specks
+    for y, x in rng.integers(0, size, (120, 2)):
+        img[y, x] = (255, 255, 255)
+    return img
+
+
 def process_image(image_path, mode, out_path=None):
-    img = cv2.imread(image_path)
-    if img is None:
-        print(f"Error: Could not load image {image_path}")
-        return
+    if image_path:
+        img = cv2.imread(image_path)
+        if img is None:
+            print(f"Error: Could not load image {image_path}")
+            return
+        print(f"loaded {image_path}: {img.shape[1]}x{img.shape[0]}")
+    else:
+        img = test_pattern()
+        print(f"no --image given, using a generated "
+              f"{img.shape[1]}x{img.shape[0]} test pattern")
     if mode == 'gray':
         result = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     elif mode == 'edges':
@@ -28,6 +53,9 @@ def process_image(image_path, mode, out_path=None):
     else:
         print(f"Unknown mode: {mode}")
         return
+    print(f"mode {mode}: output is {result.shape} "
+      f"{'grayscale' if result.ndim == 2 else 'colour'}, "
+      f"range {result.min()} to {result.max()}")
     show_or_save(f'{mode.capitalize()} Image', result)
     wait_or_skip(0)
     cv2.destroyAllWindows() if "--show" in __import__("sys").argv else None
@@ -40,8 +68,8 @@ def process_image(image_path, mode, out_path=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Advanced Image Processing with OpenCV")
-    parser.add_argument('--image', type=str, required=True, help='Path to image file')
-    parser.add_argument('--mode', type=str, choices=['gray', 'edges', 'blur', 'morph', 'hsv'], required=True, help='Processing mode')
+    parser.add_argument('--image', type=str, help='Path to image file; a generated test pattern is used when omitted')
+    parser.add_argument('--mode', type=str, choices=['gray', 'edges', 'blur', 'morph', 'hsv'], default='edges', help='Processing mode')
     parser.add_argument('--out', type=str, help='Output file path')
     args = parser.parse_args()
     process_image(args.image, args.mode, args.out)

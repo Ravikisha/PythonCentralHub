@@ -3,6 +3,8 @@ Virtual Reality (VR) Game (Pygame)
 
 A basic VR-like game simulation using Pygame. Demonstrates 3D perspective, player movement, collision detection, and interactive environment. (Note: True VR requires specialized hardware; this is a 3D simulation.)
 """
+import os
+
 import pygame
 import sys
 import math
@@ -38,8 +40,19 @@ def main():
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     clock = pygame.time.Clock()
     player = Player(WIDTH//2, HEIGHT//2)
+    # A game loop has no natural end, which makes the file untestable and
+    # unrunnable in any automated context. MAX_FRAMES bounds it: pass 0 for
+    # the real thing, and the default renders a fixed number of frames and
+    # exits so the run can be captured.
+    max_frames = int(os.environ.get("VR_MAX_FRAMES", "180"))
+    frames = 0
     running = True
     while running:
+        frames += 1
+        if max_frames and frames > max_frames:
+            print(f"rendered {max_frames} frames, exiting "
+                  f"(set VR_MAX_FRAMES=0 to run until closed)")
+            running = False
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
