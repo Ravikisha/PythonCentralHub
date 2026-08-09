@@ -33,6 +33,9 @@ IMAGES = os.path.join(REPO, "public", "images", "projects")
 SECTION = re.compile(r"(^## What it produces\n)([\s\S]*?)(?=^## |\Z)", re.M)
 FIGURE = re.compile(r"<Figure[\s\S]*?/>")
 FILECODE = re.compile(r'<FileCode\s+file="([^"]+)"')
+# Any existing component import tells us the relative path to use.
+FIGURE_IMPORT = re.compile(
+    r"^import \w+ from '(\.\.[^']*)/components/\w+\.astro'", re.M)
 IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".svg", ".gif")
 
 FIGURE_TEMPLATE = """<Figure
@@ -109,6 +112,14 @@ def wire(path: str, ledger: dict, keep: int | None) -> tuple[str, str] | None:
             block += "\n" + FIGURE_TEMPLATE.format(image=available[0],
                                                    stem=stem) + "\n"
             notes.append(f"added a figure ({available[0]})")
+            # The component has to be imported as well as used. Adding the
+            # tag without the import produces a page that passes mdxcheck
+            # and fails check_docs, which is how it slipped through once.
+            if "components/Figure.astro" not in page:
+                page = FIGURE_IMPORT.sub(
+                    lambda m: m.group(0) + "\nimport Figure from "
+                    f"'{m.group(1)}/components/Figure.astro'", page, count=1)
+                notes.append("and its import")
         elif artifacts and not available:
             notes.append(f"!! {artifacts[0]} was never captured")
 
