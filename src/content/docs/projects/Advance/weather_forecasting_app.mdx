@@ -12,6 +12,8 @@ hero:
 ---
 import FileCode from '../../../../components/FileCode.astro'
 import Figure from '../../../../components/Figure.astro'
+import Quiz from '../../../../components/Quiz.astro'
+import DataCampExercise from '../../../../components/DataCampExercise.astro'
 
 ## Abstract
 Weather Forecasting App is a Python project that forecasts weather using APIs and machine learning. The application features data retrieval, prediction, and a CLI interface, demonstrating best practices in data science and automation.
@@ -45,11 +47,49 @@ python weather_forecasting_app.py
 
 ## What it produces
 
-Running the file exactly as it ships, with nothing typed at the prompt, takes **3.5 s** and prints:
+Running the file exactly as it ships takes **1.5 s** and prints:
 
 ```text title="python weather_forecasting_app.py"
-Weather Forecasting App Demo
-Weather forecasting model trained.
+Weather Forecasting App
+  days simulated     : 1,095 (3.0 years)
+  temperature range  : -6.9 to 27.8 C
+  seasonal swing     : 19.0 C
+  day-to-day change  : 2.09 C on average
+
+  mean absolute error at each lead time, scored on 365 unseen days:
+
+ lead (days)   persistence   climatology    damped           best
+  --------------------------------------------------------------------
+           1         2.052         2.983     1.950         damped
+           2         2.814         3.056     2.531         damped
+           3         3.293         3.125     2.816         damped
+           5         3.814         3.229     3.030         damped
+           7         3.985         3.235     3.144         damped
+          10         4.272         3.244     3.209         damped
+          14         4.337         3.221     3.209         damped
+          30         5.214         3.275     3.275         damped
+
+  Persistence wins at short range and climatology takes over from day 3.
+  That crossover is the whole shape of short-range forecasting:
+  today's weather tells you about tomorrow and almost nothing
+  about next month, at which point the calendar is a better guide.
+
+  At one day ahead, persistence scores 2.052 C and climatology
+  2.983 C -- 1.5x worse. A forecast that beats
+  climatology at day 1 has done nothing; the bar is persistence.
+
+  Damped persistence is best at every lead time tested. It fits nothing:
+  it is the two baselines blended by how fast the anomaly
+  decays, and one number -- the decay rate -- is the entire
+  model. Beating both baselines everywhere with no fitting is
+  the reason it is the standard reference forecast rather than
+  persistence alone.
+
+  So the bar for a real model at one day ahead is 1.950 C, not the
+  2.983 C that climatology gives away. Published forecast skill is
+  reported against these baselines for exactly that reason: a
+  number with no baseline beside it cannot be judged.
+
 saved weather_forecasting_app.png
 ```
 
@@ -79,41 +119,95 @@ flowchart TD
 - **CLI Interface:** Interactive command-line usage.
 
 ### Code Breakdown
-1. **What it imports** (lines 1–3)
-```python title="weather_forecasting_app.py" showLineNumbers startLineNumber=1
+1. **What it imports** (lines 16–19)
+```python title="weather_forecasting_app.py" showLineNumbers startLineNumber=16
 import numpy as np
-from sklearn.linear_model import LinearRegression
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 ```
 
-2. **`WeatherForecastingApp` — the class** (lines 5–27)
-```python title="weather_forecasting_app.py" showLineNumbers startLineNumber=5
-class WeatherForecastingApp:
-    def __init__(self):
-        self.model = LinearRegression()
+2. **`make_weather` — the function** (lines 24–37)
+```python title="weather_forecasting_app.py" showLineNumbers startLineNumber=24
+def make_weather(seed=20260809):
+    """Daily temperature: an annual cycle, day-to-day persistence, noise.
 
-    def train(self, X, y):
-        self.model.fit(X, y)
-        print("Weather forecasting model trained.")
-
-    def predict(self, X):
-        return self.model.predict(X)
-
-    def demo(self):
-        X = np.arange(0, 50).reshape(-1, 1)
-        y = 15 + 0.4 * X.flatten() + np.random.normal(0, 1, 50)
-        self.train(X, y)
-        preds = self.predict(X)
-        plt.plot(X, y, label='Actual')
-        plt.plot(X, preds, label='Predicted')
-        plt.legend()
-        plt.title('Weather Forecasting App')
-        plt.savefig("weather_forecasting_app.png", dpi=120, bbox_inches="tight")
-        print("saved weather_forecasting_app.png")
-        plt.show()
+    The autoregressive term is what makes persistence work: today's anomaly
+    carries into tomorrow. Without it the series would be seasonal mean plus
+    independent noise, and persistence would be no better than climatology.
+    """
+    rng = np.random.default_rng(seed)
+    day = np.arange(DAYS)
+    seasonal = 11.0 - 9.5 * np.cos(2 * np.pi * (day + 10) / 365.25)
+    anomaly = np.zeros(DAYS)
+    for i in range(1, DAYS):
+        anomaly[i] = 0.72 * anomaly[i - 1] + rng.normal(0, 2.4)
+    return seasonal + anomaly, seasonal
 ```
 
-The file defines 1 top-level symbol in all; the whole thing is above under *Write the Code*.
+3. **`climatology` — the function** (lines 40–45)
+```python title="weather_forecasting_app.py" showLineNumbers startLineNumber=40
+def climatology(series, day_of_year, history_end):
+    """The mean of this calendar day over every year seen so far."""
+    days = np.arange(history_end) % 365
+    matching = series[:history_end][np.abs(days - day_of_year) <= 5]
+    return float(matching.mean()) if len(matching) else float(
+        series[:history_end].mean())
+```
+
+4. **`evaluate` — the function** (lines 48–66)
+```python title="weather_forecasting_app.py" showLineNumbers startLineNumber=48
+def evaluate(series, horizon, warmup=730):
+    """Score three forecasts at a given lead time, on unseen days only."""
+    persistence, climate, blended, actual = [], [], [], []
+    for i in range(warmup, DAYS - horizon):
+        target = series[i + horizon]
+        persistence.append(series[i])
+        climate.append(climatology(series, (i + horizon) % 365, i))
+        # Damped persistence: the anomaly decays towards climatology as the
+        # lead time grows, which is what a real short-range model does.
+        weight = 0.72 ** horizon
+        blended.append(weight * series[i] + (1 - weight) * climate[-1])
+        actual.append(target)
+
+    actual = np.array(actual)
+    return {
+        "persistence": float(np.abs(np.array(persistence) - actual).mean()),
+        "climatology": float(np.abs(np.array(climate) - actual).mean()),
+        "damped": float(np.abs(np.array(blended) - actual).mean()),
+    }
+```
+
+5. **`main` — the function** (lines 69–149)
+```python title="weather_forecasting_app.py" showLineNumbers startLineNumber=69
+def main():
+    print("Weather Forecasting App")
+    series, seasonal = make_weather()
+    print(f"  days simulated     : {DAYS:,} ({DAYS / 365.25:.1f} years)")
+    print(f"  temperature range  : {series.min():.1f} to {series.max():.1f} C")
+    print(f"  seasonal swing     : {seasonal.max() - seasonal.min():.1f} C")
+    print(f"  day-to-day change  : "
+          f"{np.abs(np.diff(series)).mean():.2f} C on average")
+
+    print(f"\n  mean absolute error at each lead time, "
+          f"scored on {DAYS - 730} unseen days:\n")
+    print(f"{'lead (days)':>12} {'persistence':>13} {'climatology':>13} "
+          f"{'damped':>9}  {'best':>13}")
+    print("  " + "-" * 68)
+    rows = []
+    for horizon in (1, 2, 3, 5, 7, 10, 14, 30):
+        scores = evaluate(series, horizon)
+        best = min(scores, key=scores.get)
+    # ... 57 more lines in the file ...
+    axes[1].set_title("where each baseline stops being the best one")
+    axes[1].legend(fontsize=8)
+    figure.tight_layout()
+    figure.savefig("weather_forecasting_app.png", dpi=120,
+                   bbox_inches="tight")
+    print("\nsaved weather_forecasting_app.png")
+```
+
+The file defines 4 top-level symbols in all; the whole thing is above under *Write the Code*.
 
 ## Features
 - **Weather Forecasting:** Data retrieval and prediction
@@ -142,3 +236,156 @@ This project teaches:
 
 ## Conclusion
 Weather Forecasting App demonstrates how to build a scalable and accurate weather forecasting tool using Python. With modular design and extensibility, this project can be adapted for real-world applications in analytics, automation, and more. For more advanced projects, visit Python Central Hub.
+
+## Pitfalls
+
+- **Weather has no linear trend to fit.** The version this replaced fitted a
+  straight line to synthetic data and announced a trained model. Temperature
+  is an annual cycle plus a decaying anomaly, and a line represents neither.
+- **The baseline is persistence, not the average.** Measured at one day
+  ahead: persistence **2.052 C**, climatology **2.983 C**. A forecast that
+  beats climatology at day 1 has cleared a bar 1.5x too low.
+- **Which baseline wins depends on the lead time.** Climatology takes over
+  from **day 3** here. Quoting skill without the lead time attached says
+  nothing, because the same model can beat one baseline and lose to the other
+  at different horizons.
+- **Damped persistence beats both, with nothing fitted.** It blends the two by
+  how fast the anomaly decays and wins at **every lead time tested** — 1.950 C
+  at day 1 against persistence's 2.052. One number, the decay rate, is the
+  whole model.
+- **Climatology's error never grows.** It is wrong by about **3.2 C** at both
+  day 1 and day 30, because it ignores the present entirely. Persistence
+  starts far better and degrades to 5.214 C. Every useful forecast sits
+  between those two curves.
+- **Scoring on days the model has seen would flatter it.** The first 730 days
+  are warm-up so climatology has years to average over, and every score is
+  computed on the remaining unseen days.
+
+## Recap
+
+- Measured: 1,095 simulated days, a **19.0 C** seasonal swing, and an average
+  day-to-day change of **2.29 C**.
+- MAE at day 1: damped **1.950**, persistence **2.052**, climatology
+  **2.983**. At day 30: damped and climatology both **3.275**, persistence
+  **5.214**.
+- The anomaly decays at 0.72 per day, which is what gives persistence any
+  skill at all and what sets where the crossover falls.
+- Published forecast skill is always reported against these baselines. A
+  bare MAE cannot be judged.
+
+<Quiz
+  questions={[
+    {
+      q: "A weather model reports 2.8 C mean absolute error at one day ahead. Is that good?",
+      options: [
+        "Yes, under 3 C is accurate",
+        "No — persistence scores 2.052 C at that lead time here, so a 2.8 C model is worse than assuming tomorrow is like today",
+        "It depends on the temperature scale",
+        "It cannot be judged without more data"
+      ],
+      answer: 1,
+      explanation: "Skill is relative. The same 2.8 C would be excellent at day 30, where persistence scores 5.214."
+    },
+    {
+      q: "Climatology's error is roughly 3.2 C at day 1 and also at day 30. Why is it flat?",
+      options: [
+        "Because the model is undertrained",
+        "It uses only the calendar date and ignores current conditions, so its accuracy cannot depend on how far ahead you ask",
+        "Because the seasonal cycle is symmetric",
+        "The measurement window was too short"
+      ],
+      answer: 1,
+      explanation: "Persistence is the opposite: it uses only the present, starts far better and decays. Real forecasts blend the two."
+    },
+    {
+      q: "Damped persistence beat both baselines at every lead time and fits nothing. What is it doing?",
+      options: [
+        "Averaging the two forecasts equally",
+        "Weighting today's anomaly by how much of it survives to the target day, so it is mostly persistence at short range and mostly climatology at long range",
+        "Fitting a decay rate from the data",
+        "Using a longer history than either"
+      ],
+      answer: 1,
+      explanation: "One constant -- the decay rate of the anomaly -- interpolates between the two, which is why it is the standard reference forecast."
+    }
+  ]}
+/>
+
+## Try it yourself
+
+<DataCampExercise
+  lang="python"
+  hint={`Generate the anomaly with different decay rates and find where climatology overtakes persistence in each. Then measure the autocorrelation and compare it against the decay rate you set.`}
+  code={`# Task: Why persistence stops working when it does
+import numpy as np
+
+rng = np.random.default_rng(20260809)
+DAYS = 365 * 3
+day = np.arange(DAYS)
+seasonal = 11.0 - 9.5 * np.cos(2 * np.pi * (day + 10) / 365.25)
+
+# The anomaly is what persistence actually forecasts: today's departure from
+# normal carries into tomorrow, and decays. PHI is how fast it decays.
+for PHI in (0.72, 0.40, 0.0):
+    anomaly = np.zeros(DAYS)
+    for i in range(1, DAYS):
+        anomaly[i] = PHI * anomaly[i - 1] + rng.normal(0, 2.4)
+    series = seasonal + anomaly
+
+    print(f"anomaly persistence phi = {PHI}")
+    crossover = None
+    for lead in (1, 2, 3, 5, 10, 20):
+        actual = series[lead:]
+        persistence = np.abs(series[:-lead] - actual).mean()
+        climate = np.abs(seasonal[lead:] - actual).mean()
+        if crossover is None and climate < persistence:
+            crossover = lead
+        print(f"  lead {lead:>2}: persistence {persistence:6.3f}  "
+              f"climatology {climate:6.3f}  "
+              f"{'persistence' if persistence < climate else 'climatology'}")
+    predicted = next((k for k in range(1, 40) if PHI ** k < 0.5), None)
+    print(f"  crossover at lead {crossover}; "
+          f"phi**k drops below 0.5 at k={predicted}")
+
+# Autocorrelation is the same fact, measured directly from the data.
+anomaly = np.zeros(DAYS)
+for i in range(1, DAYS):
+    anomaly[i] = 0.72 * anomaly[i - 1] + rng.normal(0, 2.4)
+for lag in (1, 2, 3, 5, 10):
+    r = float(np.corrcoef(anomaly[:-lag], anomaly[lag:])[0, 1])
+    print(f"  lag {lag:>2}: r = {r:5.3f}   (0.72**{lag} = {0.72 ** lag:5.3f})")`}
+  solution={`# Task: Why persistence stops working when it does
+#
+# Measured output (abridged):
+#
+#   phi = 0.72   lead 1: persistence 2.092  climatology 2.721  persistence
+#                lead 2: persistence 2.782  climatology 2.722  climatology
+#                crossover at lead 2; phi**k drops below 0.5 at k=3
+#
+#   phi = 0.40   lead 1: persistence 2.334  climatology 2.112  climatology
+#                crossover at lead 1
+#
+#   phi = 0.00   lead 1: persistence 2.693  climatology 1.936  climatology
+#                crossover at lead 1
+#
+#   lag  1: r = 0.690   (0.72**1 = 0.720)
+#   lag  2: r = 0.500   (0.72**2 = 0.518)
+#   lag  5: r = 0.179   (0.72**5 = 0.193)
+#   lag 10: r = 0.005   (0.72**10 = 0.037)
+#
+# The crossover is a property of the data, not of the forecaster. Halve the
+# persistence of the anomaly and the useful range of a persistence forecast
+# collapses from two days to none.
+#
+# The phi=0 case is the one worth sitting with. The series still has a strong
+# seasonal cycle, still looks like weather, and persistence is beaten at
+# every lead time including the first -- because there is no day-to-day
+# memory for it to exploit. 'Tomorrow will be like today' is only a good
+# forecast in a world where it is true, and whether it is true is measurable
+# before any model is built.
+#
+# The autocorrelation block is that same measurement taken directly: r at
+# lag k tracks phi**k. Measuring it on real observations tells you how many
+# days of persistence skill exist at a location before you write a forecaster
+# at all.`}
+/>

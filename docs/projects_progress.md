@@ -20,6 +20,7 @@ Regenerate with `python scripts/projects_audit.py --progress`. One row per run; 
 | 2026-08-09 wave 7d | 203 | 32 | 281 | 28 | 24 | 94 | 35 | 32 | 32 | 197 | 10 | 0 |
 | 2026-08-09 wave 7e | 203 | 32 | 281 | 28 | 24 | 102 | 37 | 32 | 32 | 197 | 10 | 0 |
 | 2026-08-09 wave 7f | 203 | 34 | 281 | 28 | 24 | 102 | 37 | 34 | 34 | 197 | 10 | 0 |
+| 2026-08-09 wave 7g | 203 | 36 | 281 | 28 | 24 | 102 | 37 | 36 | 36 | 197 | 10 | 0 |
 
 Notes on the columns, so later rows stay comparable:
 
