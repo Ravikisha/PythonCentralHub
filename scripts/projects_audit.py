@@ -197,6 +197,28 @@ def collect() -> list[dict]:
     return rows
 
 
+def orphaned_projects(rows: list[dict]) -> list[str]:
+    """Project files that no page ships.
+
+    The audit measures pages, so a `.py` with no page was invisible to every
+    metric here -- it could not be stale, could not be at target, and could
+    not be counted as missing. 65 of the 264 files were in that state when
+    this was added.
+    """
+    shipped = {row["source"] for row in rows if row["source"]}
+    found = []
+    for root, dirs, files in os.walk(os.path.join(REPO, "projects")):
+        dirs[:] = sorted(dirs)
+        for name in sorted(files):
+            if not name.endswith(".py"):
+                continue
+            relative = os.path.relpath(os.path.join(root, name),
+                                       REPO).replace(os.sep, "/")
+            if relative not in shipped:
+                found.append(relative)
+    return found
+
+
 def totals(rows: list[dict]) -> dict:
     # Starlight autogenerates the sidebar per folder, so only collisions
     # inside one folder actually compete for a position.
@@ -215,6 +237,7 @@ def totals(rows: list[dict]) -> dict:
             1 for row in rows if row["snippets_missing"]),
         "stale_snippets": sum(row["snippets_missing"] for row in rows),
         "pages_that_run": sum(1 for row in rows if row["runs"]),
+        "orphaned_projects": len(orphaned_projects(rows)),
         "pages_that_draw": sum(1 for row in rows if row["draws"]),
         "draws_but_no_figure": sum(
             1 for row in rows if row["draws"] and not row["figures"]),
