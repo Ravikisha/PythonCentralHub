@@ -1,0 +1,731 @@
+---
+title: Design HashMap and Skiplist
+description: Building the two structures you normally get for free — a hash map from an array of buckets, and a skiplist as the probabilistic alternative to a balanced tree.
+sidebar:
+  order: 7
+patterns:
+  - design-lru-and-lfu-caches
+  - hash-tables
+  - linked-lists
+difficulty: medium
+prereqs:
+  - hash-tables
+  - linked-lists
+---
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import ArrayStepper from "../../../../components/viz/ArrayStepper.tsx";
+import ProblemLadder from "../../../../components/dsa/ProblemLadder.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+Both of these are structures you normally get from the standard library and never think
+about. Being asked to build one is a request to explain **why it is fast**, and in both
+cases the honest answer involves a caveat: a hash map is $O(1)$ *average* and not worst
+case, and a skiplist is $O(\log n)$ *expected* with no guarantee at all.
+
+## The cue
+
+:::tip[You are looking at a from-scratch structure when...]
+- The problem literally says **"design"** or **"implement"** a map, set, or sorted
+  container without using the built-in one. LC 705, 706, 1206.
+- You need **insert, delete and ordered iteration** all in sub-linear time — that is a
+  balanced tree or a skiplist, and the skiplist is far easier to write correctly.
+- The follow-up is **"and what if the keys collide?"** or **"what happens when it fills
+  up?"** — those are the two questions a hash map exists to answer.
+- Someone asks for a **sorted structure with $O(\log n)$ insert** and you reach for
+  `bisect.insort`, which is $O(n)$. The skiplist is what fixes that.
+- You need to explain **why `dict` is $O(1)$** rather than just assert it.
+:::
+
+**When it is the wrong tool.** In real Python, use `dict` and `set` — they are C
+implementations with an open-addressing design better tuned than anything you will write
+here. For a sorted container, `sortedcontainers.SortedList` beats a hand-rolled skiplist and
+`bisect` is fine when insertions are rare. These pages exist because the *interview* asks
+for the mechanism, not because you should ship one.
+
+## Visual intuition
+
+A hash map is an array of buckets plus a rule for collisions. The modulo is what makes the
+lookup fast; the chain is what makes the worst case slow:
+
+<ArrayStepper
+  client:visible
+  algo="hash-chaining"
+  values={[1, 6, 11, 2, 7, 3]}
+  k={5}
+  title="An unbounded key space collapsing onto five buckets"
+  lib="LC 706 · O(1) average"
+  desc="Keys 1, 6 and 11 all satisfy k % 5 == 1, so they share a bucket and form a chain. Watch the 'worst chain' chip rather than 'size': a lookup pays for the length of its own bucket, not for the number of keys in the map. That is the entire difference between O(1) average and O(1) worst case."
+/>
+
+## Part 1 — a hash map from an array
+
+```python title="my_hash_map.py" showLineNumbers{1}
+class MyHashMap:
+    """LC 706, with separate chaining."""
+
+    def __init__(self, n_buckets=1009):        # a prime reduces clustering
+        self.n = n_buckets
+        self.buckets = [[] for _ in range(n_buckets)]
+
+    def _index(self, key):
+        return key % self.n                    # the modulo collapse
+
+    def put(self, key, value):
+        chain = self.buckets[self._index(key)]
+        for i, (k, _) in enumerate(chain):
+            if k == key:
+                chain[i] = (key, value)        # UPDATE, do not append
+                return
+        chain.append((key, value))
+
+    def get(self, key):
+        for k, v in self.buckets[self._index(key)]:
+            if k == key:
+                return v
+        return -1                              # LC 706's "absent" sentinel
+
+    def remove(self, key):
+        chain = self.buckets[self._index(key)]
+        for i, (k, _) in enumerate(chain):
+            if k == key:
+                chain.pop(i)
+                return
+
+
+m = MyHashMap(n_buckets=5)
+for k in [1, 6, 11]:
+    m.put(k, k * 10)
+print([m.get(1), m.get(11), m.get(4)])   # expect [10, 110, -1]
+```
+
+Three details carry the whole design:
+
+- **The modulo is the lookup.** `key % n` says *where* to look with no search at all. That
+  is the source of the speed; everything else is damage control for collisions.
+- **`put` must scan the chain for an existing key.** Appending unconditionally leaves two
+  entries with the same key, and `get` then returns whichever the scan reaches first — a
+  stale-value bug, not a crash.
+- **A prime bucket count reduces clustering.** With `n = 1000` and keys that are all
+  multiples of 10, only 100 buckets are ever used. A prime has no small factors to
+  conspire with the key distribution.
+
+:::caution[$O(1)$ is the average, and the worst case is $O(n)$]
+Every key in the same bucket must be compared one by one, so a lookup costs the length of
+**its own chain**. Measured on `[1, 6, 11, 2, 7, 3]` into 5 buckets: `get(1)` takes 1 probe,
+`get(11)` takes 3, and `get(4)` takes 0 because that bucket is empty.
+
+Now feed it `[0, 5, 10, 15, 20]` with 5 buckets: **every key lands in bucket 0**, occupancy
+`[5, 0, 0, 0, 0]`, and `get` degrades to a linear scan. Nothing detects this. It is why the
+honest bound is "$O(1)$ average, $O(n)$ worst case", and why real implementations randomise
+the hash rather than trusting `%` alone.
+:::
+
+**Resizing is the part candidates forget.** As the load factor — keys divided by buckets —
+grows, so do the chains, and average lookup is $O(1 + \text{load})$. Real maps allocate a
+larger array once the load passes about 0.75 and **rehash every key into it**, because a key's
+bucket depends on the bucket count. That rehash is $O(n)$, which makes insertion $O(1)$
+*amortised* — the same accounting as `list.append`.
+
+## Part 2 — a skiplist
+
+A sorted linked list has $O(1)$ insert given the position and $O(n)$ search, because you must
+walk it. A skiplist adds **express lanes**: each node appears at level 0, and with probability
+½ at each level above, so the top lanes skip most of the list.
+
+```python title="skiplist.py" showLineNumbers{1}
+import random
+
+MAX_LEVEL = 16
+
+
+class Node:
+    __slots__ = ("val", "next")
+
+    def __init__(self, val, level):
+        self.val = val
+        self.next = [None] * level             # one forward pointer per level
+
+
+class Skiplist:
+    """LC 1206."""
+
+    def __init__(self):
+        self.head = Node(float("-inf"), MAX_LEVEL)
+
+    def _random_level(self):
+        level = 1
+        while random.random() < 0.5 and level < MAX_LEVEL:
+            level += 1
+        return level                           # P(level >= k) = 2^-(k-1)
+
+    def _walk(self, target):
+        """Return, per level, the last node strictly before `target`."""
+        update = [self.head] * MAX_LEVEL
+        cur = self.head
+        for level in range(MAX_LEVEL - 1, -1, -1):
+            while cur.next[level] and cur.next[level].val < target:
+                cur = cur.next[level]          # hop forward on this lane
+            update[level] = cur                # then DESCEND from here
+        return update
+
+    def search(self, target):
+        node = self._walk(target)[0].next[0]
+        return node is not None and node.val == target
+
+    def add(self, num):
+        update = self._walk(num)
+        level = self._random_level()
+        node = Node(num, level)
+        for i in range(level):
+            node.next[i] = update[i].next[i]   # splice in on every level it owns
+            update[i].next[i] = node
+
+    def erase(self, num):
+        update = self._walk(num)
+        node = update[0].next[0]
+        if node is None or node.val != num:
+            return False
+        for i in range(len(node.next)):
+            if update[i].next[i] is node:
+                update[i].next[i] = node.next[i]
+        return True
+```
+
+**`_walk` is the entire structure.** It descends from the top lane, hopping forward while the
+next value is still below the target and dropping a level when it is not — and it records
+where it left each lane, which is exactly what `add` and `erase` need to splice or unsplice.
+Search, insert and delete are all one `_walk` plus a constant amount of pointer work.
+
+:::note[Why a coin flip instead of a balancing rule]
+A balanced tree guarantees $O(\log n)$ by *maintaining* balance — rotations on insert and
+delete, which is where AVL and red-black implementations get long and error-prone.
+
+A skiplist buys the same expected bound with **no balancing code at all**: level counts are
+drawn from a geometric distribution, so roughly half the nodes reach level 2, a quarter reach
+level 3, and the expected number of lanes is $\log_2 n$. The trade is that the guarantee is
+**probabilistic** — a run of unlucky flips genuinely can make it $O(n)$, it is just
+astronomically unlikely and, crucially, **not something an adversary can force**, because the
+randomness is in your coin flips rather than in the data.
+:::
+
+## Dry run
+
+### The hash map, and what a lookup actually pays
+
+Keys `[1, 6, 11, 2, 7, 3]` into 5 buckets. `1 % 5`, `6 % 5` and `11 % 5` are all 1.
+
+| `put` | Bucket | Result | Buckets after | Load | Longest chain |
+| --- | --- | --- | --- | --- | --- |
+| `1` | 1 | empty slot | `b1: 1` | 0.2 | 1 |
+| `6` | 1 | **collision** | `b1: 1 -> 6` | 0.4 | 2 |
+| `11` | 1 | **collision** | `b1: 1 -> 6 -> 11` | 0.6 | **3** |
+| `2` | 2 | empty slot | `b2: 2` | 0.8 | 3 |
+| `7` | 2 | **collision** | `b2: 2 -> 7` | 1.0 | 3 |
+| `3` | 3 | empty slot | `b3: 3` | **1.2** | 3 |
+
+Final state: `b0: -`, `b1: 1 -> 6 -> 11`, `b2: 2 -> 7`, `b3: 3`, `b4: -`.
+
+Now the probe counts, which is the number that matters:
+
+| Lookup | Bucket | Chain | Probes |
+| --- | --- | --- | --- |
+| `get(1)` | 1 | `[1, 6, 11]` | **1** |
+| `get(11)` | 1 | `[1, 6, 11]` | **3** |
+| `get(4)` | 4 | `[]` | **0** |
+
+**A lookup pays for its own bucket, not for the map.** `get(11)` costs three comparisons while
+`get(4)` costs none, in the same map with the same six keys. That is why the useful statistic
+is the **longest chain**, and why the trace above shows it as a chip.
+
+And the degenerate case, which nothing in the code prevents:
+
+| Keys | Buckets | Occupancy | Longest chain |
+| --- | --- | --- | --- |
+| `[1, 6, 11, 2, 7, 3]` | 5 | `[0, 3, 2, 1, 0]` | 3 |
+| **`[0, 5, 10, 15, 20]`** | 5 | **`[5, 0, 0, 0, 0]`** | **5 = n** |
+
+Every key a multiple of the bucket count means one bucket holds everything and `get` is a
+linear scan. Verified. The map still works; it is just no longer a hash map in any useful
+sense.
+
+### The skiplist's express lanes
+
+Inserting `3, 7, 9, 12, 17, 19` with levels forced to `1, 3, 1, 2, 1, 4` (so the trace is
+reproducible rather than random):
+
+```
+L3:                                    19
+L2:              7                     19
+L1:              7        12           19
+L0:   3          7    9   12   17      19
+```
+
+Verified by building it. Now search, counting a "probe" as either a forward hop or the
+comparison that makes us descend:
+
+| Search | Descent path (level, node) | Probes | Level-0 scan would take |
+| --- | --- | --- | --- |
+| `19` | `(2, 7) -> (1, 12) -> (0, 17)` | 7 | 6 |
+| `3` | none — first node on L0 | 4 | 1 |
+| `10` (absent) | `(2, 7) -> (0, 9)` | 6 | 4 |
+
+**At `n = 6` the skiplist is slower than just walking the list**, on all three queries. That
+is not a bug in the trace — it is the honest shape of the structure. Four levels of descent
+cost four comparisons before any useful hopping happens, and with six elements there is
+almost nothing to skip.
+
+Measured across sizes, with random levels and 300 lookups each:
+
+| `n` | Skiplist probes | Level-0 scan probes | $\log_2 n$ |
+| --- | --- | --- | --- |
+| 6 | 5.3 | **3.5** | 2.6 |
+| 50 | **12.0** | 25.9 | 5.6 |
+| 500 | **17.8** | 261.2 | 9.0 |
+| 5,000 | **25.4** | 2,567.8 | 12.3 |
+| 50,000 | **32.2** | 25,411.7 | 15.6 |
+
+The crossover is somewhere below `n = 50`, and by 50,000 the skiplist is **790x** cheaper.
+Note the skiplist column tracks roughly $2\log_2 n$ — one hop plus one descend per level,
+which is exactly the theoretical expectation.
+
+:::caution[A measurement I got wrong first]
+My first probe counter restarted each lane from the head, which made the skiplist look
+*worse* than a linear scan at every size — 50,878 probes against 25,412 at `n = 50{,}000`.
+
+That is not a skiplist, it is a separate full scan per level. The whole mechanism is that you
+**continue from where the higher lane left you**, so the work already done is never repeated.
+If your implementation is slower than a plain list walk at large `n`, this is almost certainly
+why.
+:::
+
+## Complexity
+
+| Structure | Search | Insert | Delete | Ordered iteration | Space |
+| --- | --- | --- | --- | --- | --- |
+| **Hash map (chaining)** | $O(1)$ avg, **$O(n)$ worst** | $O(1)$ avg **amortised** | $O(1)$ avg | ❌ $O(n \log n)$ — must sort | $O(n + b)$ |
+| Hash map (open addressing) | $O(1)$ avg | $O(1)$ avg amortised | $O(1)$ avg, needs tombstones | ❌ | $O(b)$, no per-entry lists |
+| Sorted array + `bisect` | $O(\log n)$ | **$O(n)$** — the shift | $O(n)$ | ✅ $O(n)$ | $O(n)$ |
+| **Skiplist** | $O(\log n)$ **expected** | $O(\log n)$ expected | $O(\log n)$ expected | ✅ $O(n)$ — walk level 0 | $O(n)$ expected, $2n$ pointers |
+| Balanced BST (AVL / red-black) | $O(\log n)$ **guaranteed** | $O(\log n)$ | $O(\log n)$ | ✅ $O(n)$ | $O(n)$ |
+| Unsorted linked list | $O(n)$ | $O(1)$ | $O(n)$ | ❌ | $O(n)$ |
+
+Four things worth being precise about:
+
+- **The hash map's $O(1)$ is an average over a good hash.** A lookup costs the length of its
+  own chain: measured 1, 3 and 0 probes for three keys in the same six-key map, and `n` when
+  every key collides.
+- **Insertion is $O(1)$ amortised, not worst case**, because of the rehash on resize. Same
+  accounting as `list.append`: the resize is $O(n)$ and happens rarely enough that the total
+  is linear.
+- **The skiplist's $O(\log n)$ is *expected*, not guaranteed** — the only bound here that is
+  probabilistic. A balanced tree guarantees it; the skiplist trades that guarantee for having
+  no balancing code.
+- **Space is $O(n)$ but the constant is about 2**: with $p = \frac12$, the expected number of
+  forward pointers per node is $\sum_k 2^{-(k-1)} = 2$. Lowering $p$ to ¼ reduces pointers to
+  ~1.33 at the cost of taller searches.
+
+## The variant map
+
+| Variant | The change | Canonical problem |
+| --- | --- | --- |
+| **Hash set instead of map** | Store keys only; no value in the chain | 705 Design HashSet |
+| **Hash map with chaining** | Bucket holds a list | 706 Design HashMap |
+| **Open addressing** | On collision, probe the next slot; deletion needs a **tombstone** | how CPython's `dict` works |
+| **Resizing** | Double the bucket count past a ~0.75 load and **rehash every key** | any real map |
+| **Non-integer keys** | `hash(key) % n`, and rely on `__hash__` / `__eq__` agreeing | -- |
+| **Sorted container, $O(\log n)$ insert** | Skiplist, or a balanced tree | 1206 Design Skiplist |
+| **Skiplist with a duplicate policy** | LC 1206 permits duplicates; `erase` removes **one** | 1206 |
+| **Range queries on a skiplist** | Walk level 0 from the search position | -- |
+| **Rank / order-statistic queries** | Store a span (nodes skipped) on each forward pointer | Redis sorted sets |
+| **Guaranteed, not expected, $O(\log n)$** | AVL or red-black tree — more code, no randomness | -- |
+| **Time-keyed store** | A map from key to a sorted list, then `bisect` on the timestamps | 981 Time Based Key-Value Store |
+
+:::note[Redis sorted sets are skiplists, and that is the practical answer]
+When an interviewer asks why anyone would use a skiplist over a balanced tree, the strongest
+answer is not asymptotic — it is that **Redis implements its sorted sets with one**. The
+reasons are: no rebalancing code (far less to get wrong), range queries fall out naturally
+from walking level 0, and it is much easier to make lock-free for concurrent access, because
+an insert touches only forward pointers rather than rotating subtrees.
+:::
+
+## Pitfalls
+
+- **`put` appending without scanning the chain.** A repeated key then has two entries, and
+  `get` returns whichever the scan hits first. The value is stale rather than wrong-looking,
+  so it survives casual testing.
+- **A non-prime bucket count.** With `n = 1000` and keys that are multiples of 10, only 100
+  buckets are ever reachable. A prime has no small factors to conspire with the key
+  distribution.
+- **Claiming $O(1)$ worst case for a hash map.** It is $O(1)$ *average*. Measured: `[0, 5, 10,
+  15, 20]` into 5 buckets gives occupancy `[5,0,0,0,0]` and a linear lookup.
+- **Forgetting resizing entirely.** Without it the load factor grows without bound and every
+  chain becomes long. Mentioning the ~0.75 threshold and the $O(n)$ rehash is most of what the
+  follow-up wants.
+- **Forgetting that a rehash must recompute every bucket.** A key's slot depends on the bucket
+  count, so you cannot copy chains across — you re-insert.
+- **Open addressing without tombstones.** Deleting by clearing a slot breaks every probe
+  sequence that passed through it, so later lookups stop early and report absent keys.
+  Mark deleted rather than empty.
+- **`_walk` restarting from the head on each level.** This is the one that makes a skiplist
+  slower than a linked list — measured 50,878 probes against a scan's 25,412 at `n = 50{,}000`.
+  Continue from the node the higher lane left you at.
+- **Descending before hopping.** The loop order is: hop forward while the next value is
+  *strictly* less than the target, then descend. Reversing it skips nodes.
+- **`< target` versus `<= target` in the walk.** It must be strict, so the walk stops at the
+  last node *before* the target and `update[0].next[0]` is the candidate. With `<=` you land
+  on the target itself and `add` inserts in the wrong place.
+- **`erase` unsplicing at only level 0.** A node appears at every level up to its own height;
+  missing the upper links leaves dangling forward pointers that still route through a removed
+  node.
+- **Expecting `MAX_LEVEL` to be free.** Every node allocates a pointer array, and the head
+  allocates `MAX_LEVEL` of them. 16 is plenty for $n \approx 65{,}000$ at $p = \frac12$.
+- **Hand-rolling either of these in production Python.** `dict` is a tuned C
+  open-addressing map; `sortedcontainers.SortedList` beats a Python skiplist comfortably.
+
+## Practice
+
+<ProblemLadder pattern={["design-lru-and-lfu-caches", "hash-tables", "linked-lists"]} />
+
+## Try it yourself
+
+### Drill 1 — `put` must update, not append
+
+<DataCampExercise
+  lang="python"
+  hint={`Scan the chain for an existing key before appending. Return -1 from get when the key is absent, which is LC 706's convention.`}
+  code={`class MyHashMap:
+    def __init__(self, n_buckets=5):
+        self.n = n_buckets
+        self.buckets = [[] for _ in range(n_buckets)]
+
+    def put(self, key, value):
+        # TODO: update in place if the key is already in the chain,
+        # otherwise append.
+        pass
+
+    def get(self, key):
+        # TODO: walk the chain; return -1 if absent.
+        pass
+
+
+m = MyHashMap(5)
+for k in [1, 6, 11]:
+    m.put(k, k * 10)
+m.put(6, 999)                     # an UPDATE, not a second entry
+print([m.get(1), m.get(6), m.get(11), m.get(4)])
+print([len(b) for b in m.buckets])
+# expect [10, 999, 110, -1]
+# expect [0, 3, 0, 0, 0]`}
+  solution={`class MyHashMap:
+    def __init__(self, n_buckets=5):
+        self.n = n_buckets
+        self.buckets = [[] for _ in range(n_buckets)]
+
+    def put(self, key, value):
+        chain = self.buckets[key % self.n]
+        for i, (k, _) in enumerate(chain):
+            if k == key:
+                chain[i] = (key, value)      # update in place
+                return
+        chain.append((key, value))
+
+    def get(self, key):
+        for k, v in self.buckets[key % self.n]:
+            if k == key:
+                return v
+        return -1
+
+
+m = MyHashMap(5)
+for k in [1, 6, 11]:
+    m.put(k, k * 10)
+m.put(6, 999)
+print([m.get(1), m.get(6), m.get(11), m.get(4)])
+print([len(b) for b in m.buckets])`}
+  sct={`test_output_contains("[10, 999, 110, -1]")
+success_msg("The second line is the real check: bucket 1 holds exactly 3 entries, not 4. An unconditional append would still make get(6) return 999 -- the scan finds the newer entry first -- so only the chain length exposes the duplicate. That is why this bug ships.")`}
+  height={620}
+/>
+
+### Drill 2 — count the probes, not the keys
+
+<DataCampExercise
+  lang="python"
+  hint={`Probes is how far into its own bucket's chain a key sits: 1 for the first entry, 2 for the second, and 0 when the bucket is empty. Build the buckets first, then measure.`}
+  code={`def probe_counts(keys, n_buckets, queries):
+    # TODO: insert keys, then return the probe count for each query --
+    # its 1-based position in its bucket's chain, or 0 if the bucket is empty.
+    pass
+
+
+print(probe_counts([1, 6, 11, 2, 7, 3], 5, [1, 11, 4]))
+print(probe_counts([0, 5, 10, 15, 20], 5, [0, 20]))
+# expect [1, 3, 0]
+# expect [1, 5]`}
+  solution={`def probe_counts(keys, n_buckets, queries):
+    buckets = [[] for _ in range(n_buckets)]
+    for k in keys:
+        chain = buckets[k % n_buckets]
+        if k not in chain:
+            chain.append(k)
+
+    out = []
+    for q in queries:
+        chain = buckets[q % n_buckets]
+        out.append(chain.index(q) + 1 if q in chain else 0)
+    return out
+
+
+print(probe_counts([1, 6, 11, 2, 7, 3], 5, [1, 11, 4]))
+print(probe_counts([0, 5, 10, 15, 20], 5, [0, 20]))`}
+  sct={`test_output_contains("[1, 3, 0]")
+success_msg("Same map, same six keys, and lookups costing 1, 3 and 0 probes. The second line is the degenerate case: every key is a multiple of the bucket count, so all five land in bucket 0 and get(20) costs 5 probes -- a linear scan. Nothing in the code detects it, which is why the honest bound is O(1) AVERAGE.")`}
+  height={520}
+/>
+
+### Drill 3 — the skiplist walk
+
+<DataCampExercise
+  lang="python"
+  hint={`Descend from the top level. On each level, hop forward while the NEXT value is strictly less than the target, then drop a level from where you stopped -- never restart from the head. Record the stopping node per level; that list is what add and erase need.`}
+  code={`MAX_LEVEL = 4
+
+
+class Node:
+    __slots__ = ("val", "next")
+
+    def __init__(self, val, level):
+        self.val = val
+        self.next = [None] * level
+
+
+def build(pairs):
+    """pairs: (value, level), inserted in order."""
+    head = Node(float("-inf"), MAX_LEVEL)
+    for val, level in pairs:
+        cur = head
+        update = [head] * MAX_LEVEL
+        for lv in range(MAX_LEVEL - 1, -1, -1):
+            while cur.next[lv] and cur.next[lv].val < val:
+                cur = cur.next[lv]
+            update[lv] = cur
+        node = Node(val, level)
+        for i in range(level):
+            node.next[i] = update[i].next[i]
+            update[i].next[i] = node
+    return head
+
+
+def search(head, target):
+    # TODO: return (found, probes). A probe is a forward hop OR the
+    # comparison that makes you descend a level.
+    pass
+
+
+h = build([(3, 1), (7, 3), (9, 1), (12, 2), (17, 1), (19, 4)])
+print([search(h, t) for t in [19, 3, 10]])
+# expect [(True, 7), (True, 4), (False, 6)]`}
+  solution={`MAX_LEVEL = 4
+
+
+class Node:
+    __slots__ = ("val", "next")
+
+    def __init__(self, val, level):
+        self.val = val
+        self.next = [None] * level
+
+
+def build(pairs):
+    head = Node(float("-inf"), MAX_LEVEL)
+    for val, level in pairs:
+        cur = head
+        update = [head] * MAX_LEVEL
+        for lv in range(MAX_LEVEL - 1, -1, -1):
+            while cur.next[lv] and cur.next[lv].val < val:
+                cur = cur.next[lv]
+            update[lv] = cur
+        node = Node(val, level)
+        for i in range(level):
+            node.next[i] = update[i].next[i]
+            update[i].next[i] = node
+    return head
+
+
+def search(head, target):
+    cur = head
+    probes = 0
+    for lv in range(MAX_LEVEL - 1, -1, -1):
+        while cur.next[lv] and cur.next[lv].val < target:
+            cur = cur.next[lv]               # hop, never restart from head
+            probes += 1
+        probes += 1                          # the compare that makes us descend
+    nxt = cur.next[0]
+    return (nxt is not None and nxt.val == target, probes)
+
+
+h = build([(3, 1), (7, 3), (9, 1), (12, 2), (17, 1), (19, 4)])
+print([search(h, t) for t in [19, 3, 10]])`}
+  sct={`test_output_contains("(True, 7)")
+success_msg("Note that at n = 6 these probe counts (7, 4, 6) are WORSE than just walking level 0 (6, 1, 4) -- four levels of descent cost four comparisons before any useful hopping. The express lanes only pay off at scale: measured, the crossover is below n = 50, and by n = 50,000 the skiplist needs 32 probes against 25,412 for a scan.")`}
+  height={700}
+/>
+
+## Interview follow-ups
+
+| They ask | What they're checking | The answer |
+| --- | --- | --- |
+| "Why is a hash map $O(1)$?" | Whether you can justify it or only assert it | The modulo says *where* to look with no search. But it is $O(1)$ **average**: a lookup walks its own bucket's chain, so the cost is the chain length, and the worst case is $O(n)$ |
+| "What happens on a collision?" | The two standard answers | Chaining (the bucket holds a list) or open addressing (probe the next slot). CPython's `dict` uses open addressing; chaining is easier to write under pressure |
+| "What happens when it fills up?" | Resizing, which candidates forget | Past a load factor of ~0.75, allocate a larger array and **rehash every key** — a key's bucket depends on the bucket count, so chains cannot be copied across. The $O(n)$ rehash makes insert $O(1)$ *amortised* |
+| "Why a prime number of buckets?" | Depth on the hash | It has no small factors to align with structure in the keys. With 1000 buckets and keys that are multiples of 10, only 100 buckets are ever used |
+| "Delete with open addressing?" | The tombstone | Mark the slot deleted rather than empty. Clearing it truncates every probe sequence that passed through, so later lookups report absent keys that are present |
+| "Give me a sorted container with $O(\log n)$ insert." | Whether you know `bisect` is not it | `bisect` finds the position in $O(\log n)$ but inserting shifts the tail, so it is $O(n)$. A skiplist or a balanced tree is the answer |
+| "Why a skiplist over a red-black tree?" | Judgement, not asymptotics | Same expected bound with **no balancing code** — much less to get wrong. Range queries fall out of walking level 0, and it is far easier to make lock-free. **Redis implements sorted sets with one**, which is the answer that lands |
+| "Is the skiplist bound guaranteed?" | Honesty about randomness | No — $O(\log n)$ **expected**. Unlucky flips genuinely can make it $O(n)$, but no adversary can force it, because the randomness is in your coin flips rather than in the data. A balanced tree is the answer when the bound must be a guarantee |
+| "Why probability ½?" | Whether the constant is understood | It makes the expected number of levels $\log_2 n$ and forward pointers per node 2. Lowering $p$ to ¼ cuts pointers to ~1.33 and makes searches taller — a space-versus-time knob |
+| "Your skiplist is slower than a list. Why?" | The one real implementation bug | `_walk` is almost certainly restarting from the head at each level instead of continuing from where the higher lane stopped. Measured, that mistake costs 50,878 probes against a scan's 25,412 at `n = 50{,}000` |
+| "Would you write either of these in production?" | Practical judgement | No — `dict` is a tuned C implementation and `sortedcontainers.SortedList` beats a Python skiplist. These are asked to see whether you can explain the mechanism |
+
+## Self-check
+
+<Quiz
+  questions={[
+    {
+      q: "In the traced map, get(1), get(11) and get(4) cost 1, 3 and 0 probes. What does that show?",
+      options: [
+        "The map is badly implemented",
+        "A lookup pays for the length of ITS OWN bucket's chain, not for the number of keys -- which is why the bound is O(1) average rather than worst case",
+        "get is O(log n) because the chains are sorted",
+        "Probe counts depend on insertion order only",
+      ],
+      answer: 1,
+      explain:
+        "Three lookups in the same six-key map costing 1, 3 and 0 comparisons. The useful statistic is therefore the *longest chain*, not the size -- which is exactly what the trace shows as a chip. Feed the same map [0, 5, 10, 15, 20] with 5 buckets and occupancy becomes [5,0,0,0,0], making get a linear scan.",
+    },
+    {
+      q: "Your `put` appends unconditionally instead of scanning the chain first. What is the symptom?",
+      options: [
+        "A KeyError on the next get",
+        "Duplicate entries for the same key; get returns whichever the scan reaches first, so the value is stale rather than obviously wrong",
+        "The bucket array grows without bound",
+        "Nothing -- appending is correct",
+      ],
+      answer: 1,
+      explain:
+        "In the drill, put(6, 999) after put(6, 60) still makes get(6) return 999, because the scan finds the newer entry first. Only the chain *length* exposes the bug -- bucket 1 holds 4 entries instead of 3. Correct-looking output plus a hidden duplicate is exactly the combination that survives testing.",
+    },
+    {
+      q: "Why use a prime number of buckets?",
+      options: [
+        "Primes make the modulo operation faster",
+        "A prime has no small factors to align with structure in the keys -- with 1000 buckets and keys that are multiples of 10, only 100 buckets are ever reachable",
+        "It guarantees no collisions",
+        "It is required for the resize to work",
+      ],
+      answer: 1,
+      explain:
+        "The failure is a clustering one: any common factor between the bucket count and a stride in the key distribution collapses the usable buckets by that factor. Nothing about primes is faster, and nothing prevents collisions -- they only stop a *systematic* pile-up. Real implementations go further and randomise the hash.",
+    },
+    {
+      q: "What must happen when a hash map's load factor passes about 0.75?",
+      options: [
+        "Nothing -- chaining handles any load",
+        "Allocate a larger bucket array and REHASH every key, because a key's bucket depends on the bucket count. That O(n) rehash makes insertion O(1) amortised",
+        "Sort each chain",
+        "Switch from chaining to open addressing",
+      ],
+      answer: 1,
+      explain:
+        "Chaining does keep working, but average lookup is O(1 + load), so chains grow without bound and the constant stops being constant. The detail candidates miss is that chains cannot be copied across -- key % new_n differs from key % old_n, so every key is re-inserted. Same amortisation argument as list.append.",
+    },
+    {
+      q: "You need a sorted container with O(log n) insertion. Is `bisect.insort` enough?",
+      options: [
+        "Yes -- bisect is O(log n)",
+        "No -- bisect finds the position in O(log n) but the insertion shifts the tail, so insort is O(n). A skiplist or balanced tree is needed",
+        "No -- bisect only works on integers",
+        "Yes, provided the list is pre-allocated",
+      ],
+      answer: 1,
+      explain:
+        "Only the locating half is logarithmic. Because the shift is a fast memmove, insort stays competitive well past where the asymptotics suggest -- so it is a fine choice for occasional insertions. For many, the O(n) per insert dominates, which is exactly the gap a skiplist fills.",
+    },
+    {
+      q: "Is a skiplist's O(log n) guaranteed?",
+      options: [
+        "Yes -- the level distribution enforces it",
+        "No -- it is EXPECTED. Unlucky coin flips can degrade it, but no adversary can force that, because the randomness is in your flips rather than the data",
+        "Yes, provided MAX_LEVEL is at least log2(n)",
+        "No -- it is O(n) in practice",
+      ],
+      answer: 1,
+      explain:
+        "This is the trade the structure makes: a balanced tree guarantees the bound by *maintaining* balance through rotations, while a skiplist gets the same expected bound with no balancing code at all. The randomised-not-average distinction matters -- it is the same argument as randomising a quicksort pivot, and it is why an adversarial input cannot hurt you.",
+    },
+    {
+      q: "Your skiplist is slower than a plain linked-list scan at n = 50,000. What is almost certainly wrong?",
+      options: [
+        "MAX_LEVEL is too small",
+        "The walk restarts from the head at each level instead of continuing from where the higher lane stopped -- measured, that costs 50,878 probes against a scan's 25,412",
+        "The probability should be 0.25, not 0.5",
+        "Nothing -- skiplists are slower in Python",
+      ],
+      answer: 1,
+      explain:
+        "Restarting per level is not a skiplist at all, it is a separate full scan per level -- so it is strictly worse than one scan. The entire mechanism is that work done on a higher lane is never repeated: you descend *from the node you stopped at*. Correctly implemented, probe counts track about 2*log2(n): 32 at n = 50,000.",
+    },
+    {
+      q: "At n = 6 the traced skiplist needs 7 probes to find 19 while a level-0 walk needs 6. Is the trace wrong?",
+      options: [
+        "Yes -- the search must be buggy",
+        "No -- four levels of descent cost four comparisons before any useful hopping, and with six elements there is nothing to skip. The crossover is measured below n = 50",
+        "Yes -- MAX_LEVEL should be 1 for small inputs",
+        "No, but only because 19 is the last element",
+      ],
+      answer: 1,
+      explain:
+        "The express lanes have a fixed setup cost -- one comparison per level, whether or not that lane helps. Measured across sizes: at n = 6 a scan wins 3.5 to 5.3 probes; at n = 50 the skiplist wins 12.0 to 25.9; at n = 50,000 it wins 32.2 to 25,411.7. Structures with a per-level overhead often lose on tiny inputs, and saying so is more useful than claiming they always win.",
+    },
+    {
+      q: "Why does Redis implement sorted sets with a skiplist rather than a balanced tree?",
+      options: [
+        "It is asymptotically faster",
+        "No rebalancing code (far less to get wrong), range queries fall out of walking level 0, and it is much easier to make lock-free for concurrency",
+        "It uses less memory",
+        "Balanced trees cannot store scores",
+      ],
+      answer: 1,
+      explain:
+        "The bounds are the same, so the answer is engineering rather than asymptotics -- which is what makes it a good answer to give. An insert touches only forward pointers instead of rotating subtrees, which is both simpler to reason about and much friendlier to concurrent access. Memory is actually slightly worse: about 2 forward pointers per node at p = 1/2.",
+    },
+  ]}
+/>
+
+## Recall card
+
+- **A hash map is an array of buckets plus a collision rule.** `key % n` says *where* to look
+  with no search — that is the whole source of the speed.
+- **`put` must scan its chain for the key** before appending, or duplicates accumulate and
+  `get` returns a stale value with no error.
+- **A lookup pays for its own chain**, not the map size: measured 1, 3 and 0 probes for three
+  keys in one six-key map. So the statistic that matters is the **longest chain**.
+- **$O(1)$ is the *average*.** `[0, 5, 10, 15, 20]` into 5 buckets gives `[5,0,0,0,0]` — a
+  linear lookup, undetected.
+- **Use a prime bucket count.** 1000 buckets with multiples-of-10 keys reaches only 100 of them.
+- **Resize past a ~0.75 load and rehash every key** — buckets depend on the count, so chains
+  cannot be copied. The $O(n)$ rehash makes insert $O(1)$ **amortised**.
+- **Open addressing needs tombstones** — clearing a slot truncates probe sequences through it.
+- **A skiplist is a sorted list plus express lanes**, each node at level 0 and at each higher
+  level with probability ½. Expected $\log_2 n$ levels, ~2 pointers per node.
+- **`_walk` is the whole structure**: hop while `next.val < target` (strict), then **descend
+  from where you stopped** — never restart from the head. That mistake makes it slower than a
+  plain scan (50,878 vs 25,412 probes at `n = 50{,}000`).
+- **$O(\log n)$ is *expected*, not guaranteed** — but unforceable by an adversary, since the
+  randomness is in your flips. Use a balanced tree when the bound must be a guarantee.
+- **Express lanes lose on tiny inputs**: a scan wins at `n = 6` (3.5 vs 5.3 probes); the
+  skiplist wins by `n = 50` and by **790x** at `n = 50{,}000`.
+- **`bisect.insort` is $O(n)$**, not $O(\log n)$ — the search is logarithmic, the shift is not.
+- **Redis sorted sets are skiplists**: no rebalancing code, free range queries, easy to make
+  lock-free. That is the answer to "why not a red-black tree?".

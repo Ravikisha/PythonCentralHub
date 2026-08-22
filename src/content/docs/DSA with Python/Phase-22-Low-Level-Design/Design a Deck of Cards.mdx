@@ -1,0 +1,913 @@
+---
+title: Design a Deck of Cards
+description: The value-object archetype — why a frozen dataclass is the whole answer, the shuffle that is subtly wrong, and why card ranking belongs to the game rather than the card.
+sidebar:
+  order: 4
+difficulty: easy
+---
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+"Design a deck of cards" looks like the easiest OOD prompt and it is the one candidates most
+often over-build. There is no state machine and no resource pool here — this is the **value
+object** archetype, and almost all of the answer is choosing the right three lines for `Card`.
+
+The interesting decisions are the two most people skip: **who owns the ranking**, and whether
+the shuffle is actually uniform.
+
+## The cue
+
+:::tip[You are looking at value objects when...]
+- The entities are **defined entirely by their attributes**. Two cards with the same rank and
+  suit are *the same card* — there is no identity beyond the values.
+- Instances are **immutable**. A card does not become a different card; you replace it.
+- You need them as **dict keys or set members** — counting, deduplicating, membership tests.
+- The prompt is a **closed, enumerable set**: 52 cards, 6 dice faces, 12 months.
+- The behaviour that varies is **not on the object** but in the *rules applied to it* — which
+  is why the ranking is a policy.
+:::
+
+**When it is not this.** If instances have a lifecycle or mutable state, they are entities, not
+value objects — a `Player` with a changing chip count is not a value object even though a `Card`
+is. And if the interesting question is allocation from a pool it is
+[the parking lot](../design-a-parking-lot/); if it is modes and transitions it is
+[the elevator](../design-an-elevator-system/).
+
+## `Card` is three lines, and the decorator is the design
+
+```python title="card.py" showLineNumbers{1}
+from dataclasses import dataclass
+from enum import Enum
+
+
+class Suit(Enum):
+    CLUBS = "clubs"
+    DIAMONDS = "diamonds"
+    HEARTS = "hearts"
+    SPADES = "spades"
+
+
+RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
+
+
+@dataclass(frozen=True)
+class Card:
+    """A value object: equal by value, hashable, immutable."""
+
+    rank: str
+    suit: Suit
+
+
+a = Card("A", Suit.SPADES)
+b = Card("A", Suit.SPADES)
+print([a == b, a is b, len({a, b})])
+# expect [True, False, 1]
+```
+
+`frozen=True` is doing three separate jobs, and naming all three is the answer to "why a
+dataclass?":
+
+1. **`__eq__` by value** — two aces of spades are equal.
+2. **`__hash__`** — so a card works as a dict key or set member. A mutable dataclass gets
+   `__eq__` but its `__hash__` is set to `None`, making it *unhashable*.
+3. **Immutability** — `card.rank = "K"` raises, so a card cannot be mutated inside a hand and
+   silently corrupt a deck it was dealt from.
+
+Without it, you get identity semantics:
+
+| Class | `x == y` for two aces of spades | `len({x, y})` |
+| --- | --- | --- |
+| `@dataclass(frozen=True)` | **`True`** | **1** |
+| Plain class, no `__eq__` | `False` | **2** — hashed by `id` |
+
+Verified. The plain-class row is the bug: `card in hand` silently returns `False` for a card
+that is present, and a set of cards happily holds duplicates. Nothing raises.
+
+## The deck, and the shuffle
+
+```python title="deck.py" showLineNumbers{1}
+import random
+
+
+class Deck:
+    """Owns the card order. Knows nothing about any particular game's rules."""
+
+    def __init__(self, cards=None, rng=None):
+        self.cards = list(cards) if cards is not None else [
+            Card(rank, suit) for suit in Suit for rank in RANKS
+        ]
+        self.rng = rng or random.Random()
+
+    def __len__(self):
+        return len(self.cards)
+
+    def shuffle(self):
+        """Fisher-Yates. The bound MUST include i."""
+        for i in range(len(self.cards) - 1, 0, -1):
+            j = self.rng.randint(0, i)          # inclusive — an element may stay put
+            self.cards[i], self.cards[j] = self.cards[j], self.cards[i]
+
+    def deal(self, n):
+        if n > len(self.cards):
+            raise ValueError(f"cannot deal {n} from {len(self.cards)}")
+        dealt, self.cards = self.cards[:n], self.cards[n:]
+        return dealt
+
+
+d = Deck()
+print([len(d), len(set(d.cards))])
+# expect [52, 52]
+```
+
+**`deal` raises rather than returning a short hand**, and that is the opposite call from the
+parking lot's "full lot returns `None`". The distinction: a full lot is an expected business
+outcome, whereas dealing five cards from a three-card deck is a caller bug — nothing sensible
+can be returned.
+
+:::caution[`randint(0, i)` — the bound must include `i`]
+This is the same trap as the
+[randomisation page](../../phase-14-design-problems/design-with-randomization/), and it is worth
+repeating because a card shuffle is where it does real damage.
+
+Shuffling three cards six thousand times:
+
+| Version | Distinct permutations produced |
+| --- | --- |
+| `randint(0, i)` — correct | **6 of 6**, roughly 1000 each |
+| `randint(0, i - 1)` — biased | **2 of 6**, about 3000 each |
+
+Verified. The biased version still returns a valid permutation every single time, so a test
+asserting "the result is a permutation of the deck" passes. Only counting outcomes exposes it.
+Excluding `i` forces every card to move, and "permutations with no fixed point" is a strictly
+smaller set than "all permutations".
+:::
+
+```p5 title="Every possible 3-card shuffle, enumerated" desc="Not a sample -- the complete path tree for both versions. The correct loop has 3x2 = 6 equally likely paths and reaches all 6 permutations exactly once each. Excluding i leaves only 2x1 = 2 paths, so at most 2 permutations can ever come out, and both happen to be derangements. The bug cannot be caught by asserting the result is a permutation, because it always is. Only counting outcomes exposes it." height="420"
+// Enumerate exhaustively rather than hardcoding the answer.
+const PERMS = ["012", "021", "102", "120", "201", "210"];
+
+function enumerate(biased) {
+  const counts = {};
+  for (const perm of PERMS) counts[perm] = 0;   // NB: not 'p' -- that is the p5 instance
+  const paths = [];
+  // i = 2 then i = 1; j ranges over [0, i] (correct) or [0, i-1] (biased)
+  const hi2 = biased ? 1 : 2;
+  const hi1 = biased ? 0 : 1;
+  for (let j2 = 0; j2 <= hi2; j2++) {
+    for (let j1 = 0; j1 <= hi1; j1++) {
+      const a = [0, 1, 2];
+      let t = a[2]; a[2] = a[j2]; a[j2] = t;
+      t = a[1]; a[1] = a[j1]; a[j1] = t;
+      const key = a.join("");
+      counts[key] += 1;
+      paths.push({ j2: j2, j1: j1, out: key });
+    }
+  }
+  return { counts: counts, paths: paths };
+}
+
+let OK, BAD;
+let idx = 0;
+let last = 0;
+
+function setup() {
+  createCanvas(620, 420);
+  textFont("monospace");
+  OK = enumerate(false);
+  BAD = enumerate(true);
+}
+
+function histogram(x, y, res, label, tone, total) {
+  noStroke();
+  fill(200);
+  textSize(11);
+  textAlign(LEFT, TOP);
+  text(label, x, y);
+
+  const hit = [];
+  for (const perm of PERMS) if (res.counts[perm] > 0) hit.push(perm);
+  fill(hit.length === 6 ? color(140, 210, 160) : color(255, 123, 114));
+  textSize(10);
+  text(hit.length + " of 6 permutations reachable", x, y + 16);
+
+  const bw = 34, gap = 8;
+  for (let i = 0; i < 6; i++) {
+    const bx = x + i * (bw + gap);
+    const c = res.counts[PERMS[i]];
+    const h = (c / total) * 90;
+    // slot
+    fill(26, 31, 38);
+    rect(bx, y + 38, bw, 92, 3);
+    if (c > 0) {
+      fill(tone[0], tone[1], tone[2]);
+      rect(bx, y + 38 + (92 - h), bw, h, 3);
+      fill(13, 17, 23);
+      textSize(11);
+      textAlign(CENTER, TOP);
+      text(c, bx + bw / 2, y + 38 + (92 - h) + 4);
+    } else {
+      fill(255, 123, 114);
+      textSize(16);
+      textAlign(CENTER, CENTER);
+      text("x", bx + bw / 2, y + 84);
+    }
+    fill(c > 0 ? 170 : 90);
+    textSize(10);
+    textAlign(CENTER, TOP);
+    text(PERMS[i], bx + bw / 2, y + 134);
+  }
+}
+
+function draw() {
+  background(13, 17, 23);
+  if (millis() - last > 1600) { last = millis(); idx = (idx + 1) % OK.paths.length; }
+
+  noStroke();
+  fill(200);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("all paths through a 3-card Fisher-Yates", 20, 14);
+
+  histogram(20, 44, OK, "randint(0, i)   -- correct, 6 paths", [140, 210, 160], 1);
+  histogram(20, 214, BAD, "randint(0, i - 1) -- biased, 2 paths", [255, 123, 114], 1);
+
+  // walk the correct paths one at a time, on the right
+  const cur = OK.paths[idx];
+  const bx = 400;
+  fill(150);
+  textSize(11);
+  textAlign(LEFT, TOP);
+  text("path " + (idx + 1) + " of 6", bx, 44);
+  fill(210);
+  textSize(12);
+  text("j for i=2 : " + cur.j2, bx, 66);
+  text("j for i=1 : " + cur.j1, bx, 84);
+  fill(140, 210, 160);
+  textSize(20);
+  text(cur.out, bx, 108);
+
+  const reachable = BAD.counts[cur.out] > 0;
+  fill(reachable ? color(140, 210, 160) : color(255, 123, 114));
+  textSize(10);
+  textAlign(LEFT, TOP);
+  text(reachable ? "the biased loop can also" : "the biased loop can NEVER", bx, 142);
+  text(reachable ? "produce this one" : "produce this one", bx, 156);
+
+  // why: fixed points
+  let fixed = 0;
+  for (let k = 0; k < 3; k++) if (Number(cur.out[k]) === k) fixed += 1;
+  fill(150);
+  textSize(10);
+  text("cards left in place: " + fixed, bx, 182);
+
+  stroke(60);
+  line(bx, 206, 600, 206);
+  noStroke();
+  fill(219, 171, 90);
+  textSize(10);
+  textAlign(LEFT, TOP);
+  text("Excluding i forces every card", bx, 218);
+  text("to move, so only permutations", bx, 232);
+  text("with NO fixed point survive --", bx, 246);
+  text("and not even all of those.", bx, 260);
+  fill(150);
+  text("Both biased outputs, 120 and", bx, 286);
+  text("201, leave nothing in place.", bx, 300);
+  fill(255, 123, 114);
+  text("Every output is still a valid", bx, 326);
+  text("permutation, so a test that", bx, 340);
+  text("checks only that will pass.", bx, 354);
+}
+```
+
+## Ranking belongs to the game, not the card
+
+Here is the decision that separates a thought-through answer from a hierarchy of card
+subclasses. **Is an ace high or low?** It depends entirely on the game:
+
+| Ordering | `[A♠, 2♥, K♣]` sorts to |
+| --- | --- |
+| Ace high (poker) | `['2', 'K', 'A']` |
+| Ace low (some rummy variants) | `['A', '2', 'K']` |
+
+Verified. The *same three cards* order differently, so the ranking cannot live on `Card` — it is
+not a property of the card at all. It is a property of the **game**:
+
+```python title="ranking.py" showLineNumbers{1}
+from abc import ABC, abstractmethod
+
+
+class Ranking(ABC):
+    """The extension point. A new game is a new Ranking, not a new Card."""
+
+    @abstractmethod
+    def value(self, card) -> int: ...
+
+    def sort(self, cards):
+        return sorted(cards, key=self.value)
+
+
+class AceHigh(Ranking):
+    ORDER = {r: i for i, r in enumerate(RANKS)}
+
+    def value(self, card):
+        return self.ORDER[card.rank]
+
+
+class AceLow(Ranking):
+    ORDER = {r: i for i, r in enumerate(["A"] + RANKS[:-1])}
+
+    def value(self, card):
+        return self.ORDER[card.rank]
+
+
+class Blackjack(Ranking):
+    """Not even a total order — several ranks share a value."""
+
+    def value(self, card):
+        if card.rank in ("J", "Q", "K"):
+            return 10
+        if card.rank == "A":
+            return 11                      # or 1; the hand decides, not the card
+        return int(card.rank)
+```
+
+`Blackjack` is the case that kills any attempt to put ranking on the card: **jack, queen and
+king all have value 10**, so the ranking is not even injective, let alone a fixed property. And
+an ace is 11 *or* 1 depending on the rest of the hand — which means the value is not a function
+of the card alone.
+
+That last point is worth saying out loud: "in blackjack, a card's value depends on the other
+cards, so it cannot be a method on `Card` under any design."
+
+```p5 title="One card, three values: why ranking cannot live on Card" desc="The same thirteen ranks under all three Rankings from the page. AceHigh and AceLow are both bijections -- they only disagree about where the ace goes. Blackjack is the one that settles the design argument: jack, queen and king all collapse onto 10, so the map is not injective, and the ace is 11 or 1 depending on the rest of the hand. A value that is not a function of the card alone cannot be a method on Card." height="400"
+const RANKS = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
+const aceHigh = (r) => RANKS.indexOf(r);
+const aceLow  = (r) => (r === "A" ? 0 : RANKS.indexOf(r) + 1);
+function blackjack(r) {
+  if (r === "J" || r === "Q" || r === "K") return 10;
+  if (r === "A") return 11;
+  return Number(r);
+}
+
+const MODES = [
+  { name: "AceHigh (poker)",  fn: aceHigh,   tone: [88, 166, 255] },
+  { name: "AceLow (rummy)",   fn: aceLow,    tone: [219, 171, 90] },
+  { name: "Blackjack",        fn: blackjack, tone: [255, 123, 114] },
+];
+
+let mode = 0;
+let last = 0;
+
+function setup() {
+  createCanvas(620, 400);
+  textFont("monospace");
+}
+
+function mousePressed() { mode = (mode + 1) % MODES.length; last = millis(); }
+
+function draw() {
+  background(13, 17, 23);
+  if (millis() - last > 2600) { last = millis(); mode = (mode + 1) % MODES.length; }
+  const m = MODES[mode];
+
+  noStroke();
+  fill(200);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text(m.name, 20, 14);
+  fill(90, 100, 112);
+  textSize(10);
+  text("click to cycle the Ranking", 20, 32);
+
+  // the thirteen cards
+  const cw = 40, gap = 4;
+  const values = RANKS.map(m.fn);
+  // how many ranks share each value -- this is where Blackjack shows up
+  const share = {};
+  for (const v of values) share[v] = (share[v] || 0) + 1;
+
+  for (let i = 0; i < RANKS.length; i++) {
+    const x = 20 + i * (cw + gap);
+    const v = values[i];
+    const collides = share[v] > 1;
+    fill(collides ? color(60, 34, 36) : color(34, 40, 48));
+    rect(x, 58, cw, 54, 5);
+    fill(collides ? color(255, 123, 114) : color(200));
+    textSize(14);
+    textAlign(CENTER, CENTER);
+    text(RANKS[i], x + cw / 2, 78);
+    fill(collides ? color(255, 123, 114) : color(m.tone[0], m.tone[1], m.tone[2]));
+    textSize(13);
+    text(v, x + cw / 2, 100);
+  }
+
+  // value axis: draw each rank at its value, so a collapse is visible as a stack
+  const maxV = Math.max.apply(null, values);
+  fill(150);
+  textSize(11);
+  textAlign(LEFT, TOP);
+  text("placed on the value line", 20, 132);
+
+  const ax = 34, aw = 540, ay = 200;
+  stroke(60);
+  line(ax, ay, ax + aw, ay);
+  noStroke();
+
+  const stackAt = {};
+  for (let i = 0; i < RANKS.length; i++) {
+    const v = values[i];
+    const x = ax + (v / maxV) * aw;
+    const k = stackAt[v] || 0;
+    stackAt[v] = k + 1;
+    const y = ay - 14 - k * 24;
+    const collides = share[v] > 1;
+    fill(collides ? color(255, 123, 114) : color(m.tone[0], m.tone[1], m.tone[2]));
+    circle(x, y, 20);
+    fill(13, 17, 23);
+    textSize(9);
+    textAlign(CENTER, CENTER);
+    text(RANKS[i], x, y);
+    if (k === 0) {
+      fill(80, 88, 98);
+      textSize(9);
+      text(v, x, ay + 12);
+    }
+  }
+
+  // verdict
+  let distinct = 0;
+  for (const k in share) distinct += 1;
+  const injective = distinct === RANKS.length;
+  fill(injective ? color(140, 210, 160) : color(255, 123, 114));
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text(
+    injective
+      ? "13 ranks -> 13 distinct values: a bijection"
+      : "13 ranks -> " + distinct + " distinct values: NOT injective",
+    20, 246
+  );
+
+  fill(180);
+  textSize(11);
+  textAlign(LEFT, TOP);
+  if (mode === 0) {
+    text("The ace is the highest card. [A, 2, K] sorts to 2, K, A.", 20, 276);
+    text("A total order, and a perfectly reasonable one -- for poker.", 20, 294);
+  } else if (mode === 1) {
+    text("The ace is the lowest card. The SAME three cards, [A, 2, K],", 20, 276);
+    text("now sort to A, 2, K. Only the game changed.", 20, 294);
+  } else {
+    text("J, Q and K all collapse onto 10 -- three ranks, one value.", 20, 276);
+    text("And the ace shown here as 11 is 11 OR 1: the hand decides.", 20, 294);
+    fill(255, 123, 114);
+    text("A value that depends on the OTHER cards is not a property", 20, 318);
+    text("of this card, so it cannot be a method on Card at all.", 20, 336);
+  }
+
+  fill(90, 100, 112);
+  textSize(10);
+  textAlign(LEFT, TOP);
+  text("a new game is a new Ranking, never a new Card subclass", 20, 370);
+}
+```
+
+## Dry run
+
+### Why `frozen=True` and not just `@dataclass`
+
+| Decorator | `__eq__` | `__hash__` | Usable in a set? | Mutable? |
+| --- | --- | --- | --- | --- |
+| `@dataclass` | generated | **set to `None`** | ❌ `TypeError` | yes |
+| `@dataclass(frozen=True)` | generated | generated | ✅ | no |
+| Plain class | identity | identity | ✅ but wrong — hashes by `id` | yes |
+
+The middle column is the one people trip on. A plain `@dataclass` gives you value equality and
+then **removes hashability**, because a mutable object whose hash depends on its fields would
+break any set containing it the moment a field changed. Python makes that choice for you, and
+`frozen=True` is how you opt back in.
+
+Measured: the plain class reports `x == y` as `False` and puts both aces of spades in a set as
+**2 entries**. Neither raises. `card in hand` failing for a card that is present is the symptom.
+
+### The deck, dealt
+
+| Action | `len(deck)` | Notes |
+| --- | --- | --- |
+| `Deck()` | **52** | and `len(set(cards))` is also 52 — no duplicates |
+| `shuffle()` | 52 | same multiset, different order — verified |
+| `deal(5)` | 47 | five cards removed from the front |
+| `deal(48)` | -- | **raises** — a caller bug, not an outcome |
+
+`shuffle` preserving the multiset is worth checking explicitly rather than eyeballing: a
+`Counter` of the shuffled deck equals a `Counter` of the original. That check catches the whole
+family of shuffle bugs that lose or duplicate a card, and it is one line.
+
+### The shuffle bias, by hand
+
+For three cards, the biased version makes only two random draws: `i = 2` picks `j` from
+`{0, 1}`, then `i = 1` picks `j` from `{0}` — forced.
+
+- `j = 0`: swap slots 2 and 0 gives `[4, 3, 2]`, then the forced swap gives `[3, 4, 2]`
+- `j = 1`: swap slots 2 and 1 gives `[2, 4, 3]`, then the forced swap gives `[4, 2, 3]`
+
+Two paths, two outcomes, each with probability ½ — which is exactly what the 6,000-trial count
+showed: `{('3','4','2'): 2998, ('4','2','3'): 3002}`. The identity order `2, 3, 4` is
+**unreachable**, along with three others.
+
+For a card game that is a live cheating vector, not an academic point: a shuffle that never
+produces certain orders is predictable.
+
+## Complexity
+
+| Operation | Cost | Note |
+| --- | --- | --- |
+| Build a deck | $O(52)$ = $O(1)$ | the set is closed and known |
+| `shuffle` | $O(n)$ | one pass, one swap per position |
+| `deal(n)` | $O(n)$ to slice, $O(len)$ to rebuild the remainder | a `deque.popleft` loop is $O(n)$ with no rebuild |
+| `card in hand` (list) | $O(h)$ | fine for a 5-card hand |
+| `card in deck` (set) | $O(1)$ | needs `__hash__` — hence `frozen=True` |
+| `Ranking.sort(hand)` | $O(h \log h)$ | Timsort on a tiny list |
+| Counting a `Counter(hand)` | $O(h)$ | the poker-hand primitive |
+
+Two honest notes:
+
+- **All of these are trivially fast** because the deck is 52 cards. Nobody is optimising a card
+  game's asymptotics, and saying so is better than pretending otherwise. What the complexity
+  column *does* tell you is that `deal` rebuilding the list is avoidable with a `deque` or an
+  index cursor — a real if minor design improvement.
+- **`__hash__` is the only complexity-relevant design choice.** Without it, every membership
+  test is a linear scan and a "have I seen this card" check on a shoe of eight decks is $O(416)$
+  instead of $O(1)$.
+
+## The variant map
+
+| Variant | The change | Notes |
+| --- | --- | --- |
+| **Standard 52-card deck** | The base design | -- |
+| **Jokers** | Two more cards, and `Ranking` must handle them | `rank="JOKER"` rather than a subclass |
+| **Multiple decks (a shoe)** | `Deck(cards=[...] * 6)` — cards are no longer unique | **`Counter`, not `set`**, for counting |
+| **Ace high / ace low** | A `Ranking` subclass each | Same cards, different order |
+| **Blackjack values** | A `Ranking` where J/Q/K all map to 10 | Not injective — proves ranking is not a card property |
+| **Ace as 1 or 11** | The *hand* computes it, not the card | Value depends on other cards |
+| **Poker hand evaluation** | A `HandEvaluator` policy over `Counter(ranks)` and suit counts | The real work of a poker design |
+| **Dealing to `k` players** | Round-robin from the deck, or slice per player | Round-robin matches physical dealing |
+| **Reproducible games** | Inject `random.Random(seed)` rather than using the module functions | Also what makes shuffling testable |
+| **Cut / riffle shuffle** | A different `Shuffle` policy — deliberately *not* uniform | Simulating a physical shuffle |
+
+:::note[A shoe is where `set` stops working]
+In a six-deck shoe there are six aces of spades, and they are *equal* — that is the whole point
+of a value object. So `set(cards)` collapses them to one and `len(set(shoe)) == 52`, not 312.
+
+Use a `Counter` when you need multiplicity, and a `set` only when you genuinely mean "which
+distinct cards exist". This is the one place where value semantics bite rather than help, and
+noticing it unprompted is a good signal.
+:::
+
+## Pitfalls
+
+- **A plain class without `__eq__`.** `Card("A", SPADES) == Card("A", SPADES)` is `False`, and a
+  set holds both — **verified 2 entries**. `card in hand` then silently fails for a card that is
+  present.
+- **`@dataclass` without `frozen=True`.** You get `__eq__` and lose `__hash__` (Python sets it to
+  `None`), so the card is unhashable and `{card}` raises `TypeError`. `frozen=True` restores it.
+- **`randint(0, i - 1)` in the shuffle.** Produces **2 of 6** permutations for three cards
+  instead of 6, and the identity order is unreachable. Every result is still a valid permutation,
+  so validity tests pass — you have to count outcomes.
+- **Ranking as a method on `Card`.** Ace high versus ace low orders the same three cards
+  differently, and blackjack maps J/Q/K all to 10. The ranking is a property of the *game*.
+- **Trying to make blackjack's ace a card property.** Its value is 11 or 1 depending on the rest
+  of the hand, so it is not a function of the card at all.
+- **A subclass per suit or rank.** 4 suits × 13 ranks is 52 subclasses to express two fields.
+  Composition, as always.
+- **`set` on a multi-deck shoe.** Six aces of spades are *equal*, so `set` collapses them and
+  `len(set(shoe))` is 52 rather than 312. Use a `Counter`.
+- **`deal` returning a short hand when the deck runs out.** Unlike a full parking lot, this is a
+  caller bug — raise. Returning three cards when five were asked for propagates the error
+  somewhere harder to diagnose.
+- **Using `random.shuffle` and then being unable to test it.** Inject a
+  `random.Random(seed)`; module-level `random` makes games unreproducible and shuffles
+  unverifiable.
+- **Rebuilding the list on every deal.** `self.cards = self.cards[n:]` copies. An index cursor or
+  a `deque` avoids it — minor here, but it is the kind of thing worth naming.
+- **Over-building.** `CardFactory`, `AbstractDeckBuilder`, a `Suit` hierarchy. The correct answer
+  is genuinely small, and reaching for patterns is the failure mode this prompt tests.
+
+## Try it yourself
+
+### Drill 1 — value semantics, and what you lose without them
+
+<DataCampExercise
+  lang="python"
+  hint={`Use @dataclass(frozen=True) for the value object. Leave the plain class exactly as it is -- the point of the drill is to compare them.`}
+  code={`from dataclasses import dataclass
+
+
+# TODO: make this a value object -- equal by value, hashable, immutable.
+class Card:
+    rank: str
+    suit: str
+
+
+class Plain:
+    """Deliberately left as-is: no __eq__, no __hash__."""
+
+    def __init__(self, rank, suit):
+        self.rank, self.suit = rank, suit
+
+
+a, b = Card("A", "spades"), Card("A", "spades")
+p, q = Plain("A", "spades"), Plain("A", "spades")
+print([a == b, len({a, b})])
+print([p == q, len({p, q})])
+# expect [True, 1]
+# expect [False, 2]`}
+  solution={`from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Card:
+    rank: str
+    suit: str
+
+
+class Plain:
+    def __init__(self, rank, suit):
+        self.rank, self.suit = rank, suit
+
+
+a, b = Card("A", "spades"), Card("A", "spades")
+p, q = Plain("A", "spades"), Plain("A", "spades")
+print([a == b, len({a, b})])
+print([p == q, len({p, q})])`}
+  sct={`test_output_contains("[True, 1]")
+success_msg("The second line is the bug you avoid: two identical cards compare unequal and a set holds both, because the plain class hashes by id. Nothing raises -- card in hand just silently returns False for a card that is present. Note also that a plain @dataclass without frozen=True gives you __eq__ and then sets __hash__ to None, so the card becomes unhashable.")`}
+  height={620}
+/>
+
+### Drill 2 — the shuffle bound
+
+<DataCampExercise
+  lang="python"
+  hint={`Walk i from the last index down to 1 and swap with a random j in 0..i INCLUSIVE. The biased version is provided -- fill in only the correct one and compare the permutation counts.`}
+  code={`import random
+from collections import Counter
+
+
+def fisher_yates(cards, rng):
+    # TODO: correct Fisher-Yates -- the upper bound must include i.
+    pass
+
+
+def biased(cards, rng):
+    a = list(cards)
+    for i in range(len(a) - 1, 0, -1):
+        j = rng.randint(0, i - 1)          # excludes i -- every card must move
+        a[i], a[j] = a[j], a[i]
+    return a
+
+
+tiny = ["2", "3", "4"]
+for name, fn in (("correct", fisher_yates), ("biased", biased)):
+    r = random.Random(1)
+    seen = Counter(tuple(fn(tiny, r)) for _ in range(6000))
+    print([name, len(seen)])
+# expect ['correct', 6]
+# expect ['biased', 2]`}
+  solution={`import random
+from collections import Counter
+
+
+def fisher_yates(cards, rng):
+    a = list(cards)
+    for i in range(len(a) - 1, 0, -1):
+        j = rng.randint(0, i)              # INCLUSIVE: a card may stay put
+        a[i], a[j] = a[j], a[i]
+    return a
+
+
+def biased(cards, rng):
+    a = list(cards)
+    for i in range(len(a) - 1, 0, -1):
+        j = rng.randint(0, i - 1)
+        a[i], a[j] = a[j], a[i]
+    return a
+
+
+tiny = ["2", "3", "4"]
+for name, fn in (("correct", fisher_yates), ("biased", biased)):
+    r = random.Random(1)
+    seen = Counter(tuple(fn(tiny, r)) for _ in range(6000))
+    print([name, len(seen)])`}
+  sct={`test_output_contains("['correct', 6]")
+success_msg("6 of 6 permutations against 2 of 6. The biased version returns a valid permutation every single time, so a test asserting sorted(result) == sorted(deck) passes cleanly -- you have to count outcomes to see it. Excluding i forces every card to move, and permutations with no fixed point are a strictly smaller set.")`}
+  height={620}
+/>
+
+### Drill 3 — ranking belongs to the game
+
+<DataCampExercise
+  lang="python"
+  hint={`Build a rank-to-index map per game. Ace high puts A last; ace low puts it first. Blackjack is not a total order at all -- J, Q and K all map to 10.`}
+  code={`RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
+
+
+def value(rank, game):
+    # TODO: return the rank's value under each game.
+    #   "ace_high"  -> position in RANKS
+    #   "ace_low"   -> position in ["A"] + RANKS[:-1]
+    #   "blackjack" -> J/Q/K are 10, A is 11, digits are themselves
+    pass
+
+
+hand = ["A", "2", "K"]
+print([sorted(hand, key=lambda r: value(r, "ace_high")),
+       sorted(hand, key=lambda r: value(r, "ace_low"))])
+print([value("J", "blackjack"), value("Q", "blackjack"), value("K", "blackjack")])
+# expect [['2', 'K', 'A'], ['A', '2', 'K']]
+# expect [10, 10, 10]`}
+  solution={`RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
+
+ACE_HIGH = {r: i for i, r in enumerate(RANKS)}
+ACE_LOW = {r: i for i, r in enumerate(["A"] + RANKS[:-1])}
+
+
+def value(rank, game):
+    if game == "ace_high":
+        return ACE_HIGH[rank]
+    if game == "ace_low":
+        return ACE_LOW[rank]
+    if game == "blackjack":
+        if rank in ("J", "Q", "K"):
+            return 10
+        if rank == "A":
+            return 11
+        return int(rank)
+    raise ValueError(game)
+
+
+hand = ["A", "2", "K"]
+print([sorted(hand, key=lambda r: value(r, "ace_high")),
+       sorted(hand, key=lambda r: value(r, "ace_low"))])
+print([value("J", "blackjack"), value("Q", "blackjack"), value("K", "blackjack")])`}
+  sct={`test_output_contains("[['2', 'K', 'A'], ['A', '2', 'K']]")
+success_msg("The same three cards order two different ways, so ranking cannot be a property of the card. Blackjack settles it: J, Q and K all return 10, so the mapping is not even injective -- and an ace is 11 or 1 depending on the rest of the hand, which means the value is not a function of the card at all.")`}
+  height={640}
+/>
+
+## Interview follow-ups
+
+| They ask | What they're checking | The answer |
+| --- | --- | --- |
+| "How do you represent a card?" | Whether you know the idiom | `@dataclass(frozen=True)` with rank and suit. That gives value equality, hashability and immutability in one decorator — and naming all three is the answer, not just "a dataclass" |
+| "Why `frozen=True` rather than plain `@dataclass`?" | The detail most people miss | A plain dataclass generates `__eq__` and then sets `__hash__` to `None`, so the card is **unhashable**. `frozen` restores the hash because the fields can no longer change under a set |
+| "What breaks with a plain class?" | Concrete consequence | Identity semantics: two aces of spades compare unequal and a set holds both — verified 2 entries. `card in hand` silently returns `False` for a card that is present |
+| "Write the shuffle." | The `randint` bound | Fisher-Yates with `randint(0, i)` **inclusive**. Excluding `i` gives 2 of 6 permutations for three cards and never produces the identity — while still always returning a valid permutation |
+| "How would you test the shuffle?" | Whether you know validity is not enough | Not by asserting it is a permutation — the biased version passes that. Count outcomes over many trials, and check the multiset is preserved with a `Counter` |
+| "Is the ace high or low?" | Whether you see it is not a card property | It depends on the game, so it belongs to a `Ranking` policy. The same three cards sort to `['2','K','A']` or `['A','2','K']` |
+| "Model blackjack values." | The killer argument | J, Q and K all map to 10, so the ranking is not injective — and an ace is 11 or 1 depending on the rest of the hand, so the value is not a function of the card at all. That settles where ranking lives |
+| "Now it is a six-deck shoe." | Where value semantics bite | Cards stop being unique: six aces of spades are *equal*, so `set(shoe)` collapses to 52 rather than 312. Switch to a `Counter` wherever multiplicity matters |
+| "Deal five from a three-card deck." | Error modelling | Raise. Unlike a full parking lot — an expected outcome — this is a caller bug, and returning three cards propagates the error somewhere harder to find |
+| "Make the game reproducible." | Testability | Inject `random.Random(seed)` rather than calling module-level `random`. That is also what makes the shuffle verifiable at all |
+| "Evaluate a poker hand." | Where the real work goes | A `HandEvaluator` policy over `Counter(ranks)` plus suit counts — pairs and trips fall out of the counter, straights out of consecutive rank values, flushes out of a single suit count |
+| "Would you subclass per suit?" | The over-build trap | No — 4 suits × 13 ranks is 52 subclasses to express two fields. Suit is an `Enum`, rank is a value |
+
+## Self-check
+
+<Quiz
+  questions={[
+    {
+      q: "Why `@dataclass(frozen=True)` rather than a plain `@dataclass` for Card?",
+      options: [
+        "frozen is faster",
+        "A plain dataclass generates __eq__ but sets __hash__ to None, making the card unhashable — frozen restores the hash because the fields can no longer change",
+        "frozen generates __eq__ and plain does not",
+        "It has no practical effect for immutable-looking classes",
+      ],
+      answer: 1,
+      explain:
+        "Python removes hashability from mutable dataclasses on purpose: an object whose hash depends on its fields would break any set containing it the moment a field changed. So a plain @dataclass gives you value equality and takes away set/dict membership, and `{card}` raises TypeError. frozen=True is how you opt back in.",
+    },
+    {
+      q: "You use a plain class with no `__eq__`. What happens to `Card('A','spades') == Card('A','spades')` and to a set of both?",
+      options: [
+        "True, and 1 entry",
+        "False, and 2 entries — identity semantics, hashed by id",
+        "It raises TypeError",
+        "True, and 2 entries",
+      ],
+      answer: 1,
+      explain:
+        "Verified. And nothing raises, which is what makes it dangerous: `card in hand` returns False for a card that is present, and a 'set' of cards happily contains duplicates. The failure surfaces as a wrong game outcome far from the class definition.",
+    },
+    {
+      q: "Fisher-Yates with `randint(0, i - 1)` instead of `randint(0, i)`. How bad is it for three cards?",
+      options: [
+        "It sometimes returns something that is not a permutation",
+        "It produces only 2 of the 6 permutations and never the identity order — while still always returning a valid permutation",
+        "It is slower but still uniform",
+        "It biases toward the identity order",
+      ],
+      answer: 1,
+      explain:
+        "Measured over 6,000 trials: 2 distinct permutations at ~3000 each, against 6 at ~1000 each for the correct version. Excluding i forces every card to move, so the reachable set is permutations with no fixed point — strictly smaller. Because each result is still a valid permutation, a test asserting sorted(result) == sorted(deck) passes.",
+    },
+    {
+      q: "How should you test a shuffle?",
+      options: [
+        "Assert the result is a permutation of the input",
+        "Count outcomes over many trials for uniformity, and check the multiset is preserved with a Counter — validity alone passes even for the biased version",
+        "Assert the first card changed",
+        "Compare against random.shuffle",
+      ],
+      answer: 1,
+      explain:
+        "Validity is exactly the property the biased shuffle satisfies, which is why it is the wrong test. The two checks that catch real bugs are distributional (count permutations, or at least positions) and conservational (a Counter of the result equals a Counter of the deck, so no card was lost or duplicated).",
+    },
+    {
+      q: "Where does card ranking belong?",
+      options: [
+        "A method on Card, since rank is a card property",
+        "A Ranking policy owned by the game — ace high and ace low order the same three cards differently",
+        "A module-level constant used everywhere",
+        "A subclass per rank",
+      ],
+      answer: 1,
+      explain:
+        "Verified: [A, 2, K] sorts to ['2','K','A'] ace-high and ['A','2','K'] ace-low. Since the same card has different values in different games, the value is not a property of the card. A module constant is only marginally better than a method — it still assumes one global ordering.",
+    },
+    {
+      q: "What does blackjack prove about ranking?",
+      options: [
+        "That aces need a special subclass",
+        "That the ranking is not even injective — J, Q and K all map to 10 — and an ace's value depends on the rest of the hand, so it is not a function of the card at all",
+        "That blackjack needs its own Card class",
+        "Nothing; blackjack is a special case",
+      ],
+      answer: 1,
+      explain:
+        "This is the argument that closes the question. A method on Card could in principle return different numbers per game if you passed the game in — but it could never return a value that depends on the *other cards in the hand*, which an ace's 11-or-1 does. So the hand computes it, and Card stays a pure value object.",
+    },
+    {
+      q: "Six-deck shoe. What goes wrong with `set(cards)`?",
+      options: [
+        "Nothing — a set is the right structure",
+        "Six aces of spades are EQUAL, so the set collapses them: len(set(shoe)) is 52, not 312. Use a Counter where multiplicity matters",
+        "The set raises because of duplicate hashes",
+        "The cards become unhashable",
+      ],
+      answer: 1,
+      explain:
+        "This is the one place value semantics work against you — and it follows directly from the design being correct. Equal cards *should* be equal; a set of them *should* deduplicate. So reach for a Counter when you mean 'how many of each' and a set only when you mean 'which distinct cards exist'. Noticing it unprompted is a good signal.",
+    },
+    {
+      q: "`deal(5)` on a three-card deck. Raise or return three cards?",
+      options: [
+        "Return three cards, like a full parking lot returns None",
+        "Raise — unlike a full lot, this is a caller bug, and returning a short hand propagates the error somewhere harder to diagnose",
+        "Return None",
+        "Return three cards and log a warning",
+      ],
+      answer: 1,
+      explain:
+        "The distinction is whether the situation is a legitimate business outcome the caller must routinely handle, or a violation of the caller's own contract. A full car park is the former; asking for more cards than exist is the latter — there is no sensible value to return, and a short hand will be treated as a real hand.",
+    },
+    {
+      q: "Why inject `random.Random(seed)` rather than calling module-level `random.shuffle`?",
+      options: [
+        "It is faster",
+        "Reproducibility: a seeded generator makes games replayable and the shuffle itself testable — the distributional checks above are impossible otherwise",
+        "Module-level random is not thread-safe",
+        "It avoids importing random",
+      ],
+      answer: 1,
+      explain:
+        "Dependency injection here buys testability specifically. Without a controllable source of randomness you cannot write the count-the-permutations test that catches the biased bound, and you cannot reproduce a reported game. It is a small design choice with a direct effect on whether the most important bug on this page is catchable.",
+    },
+  ]}
+/>
+
+## Recall card
+
+- **A card is a value object**: `@dataclass(frozen=True)` with rank and suit. That is genuinely
+  most of the answer — over-building is the failure mode this prompt tests.
+- **`frozen=True` does three jobs**: `__eq__` by value, `__hash__`, and immutability. A plain
+  `@dataclass` gives `__eq__` and sets `__hash__` to `None`, so the card becomes **unhashable**.
+- **Without `__eq__` you get identity semantics** — two aces of spades compare unequal and a set
+  holds **2 entries**. `card in hand` silently fails.
+- **Fisher-Yates needs `randint(0, i)`, inclusive.** Excluding `i` gives **2 of 6** permutations
+  for three cards and never the identity.
+- **Test a shuffle by counting outcomes, not by asserting validity** — the biased version always
+  returns a valid permutation. Also check a `Counter` is preserved.
+- **Ranking belongs to the game, not the card.** Ace-high and ace-low sort `[A, 2, K]`
+  differently.
+- **Blackjack settles it**: J/Q/K all map to 10 (not injective), and an ace is 11 or 1 depending
+  on the *rest of the hand* — so the value is not a function of the card.
+- **A shoe breaks `set`** — six equal aces of spades collapse to one, giving 52 instead of 312.
+  Use a `Counter`.
+- **`deal` past the end raises** (caller bug), where a full parking lot returns `None`
+  (expected outcome).
+- **Inject `random.Random(seed)`** for reproducible games and a testable shuffle.
+- **No subclass per suit or rank** — that is 52 classes for two fields.

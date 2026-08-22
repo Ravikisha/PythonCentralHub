@@ -1,0 +1,889 @@
+---
+title: "String Algorithms: KMP, Z, and Rabin-Karp"
+description: Linear-time pattern matching with the Knuth-Morris-Pratt failure function, the Z-algorithm's prefix-match array, and Rabin-Karp's rolling hash, plus when each one is the right tool.
+sidebar:
+  order: 4
+patterns:
+  - string-algorithms-kmp-z-and-rabin-karp
+difficulty: medium
+prereqs:
+  - binary-trees-and-bst
+  - prefix-sums-and-difference-arrays
+sheets:
+  striver_a2z: step-18
+  striver_sde: day-16
+---
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+import ArrayStepper from "../../../../components/viz/ArrayStepper.tsx";
+
+
+import ProblemLadder from "../../../../components/dsa/ProblemLadder.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+Naively checking "does `pattern` occur starting at every index of `text`"
+costs $O(n \cdot m)$ -- for every one of the `n` starting positions, you
+might compare up to `m` characters before finding a mismatch. All three
+algorithms in this lesson bring that down to **linear time**, $O(n + m)$,
+by reusing information about the pattern (or the text) instead of
+re-comparing from scratch after every mismatch.
+
+## What you'll learn
+
+- **KMP's failure function** -- a precomputed array that tells the search
+  exactly how far to fall back after a mismatch, so the text pointer never
+  moves backward.
+- **The Z-algorithm** -- for every position, how long a prefix of the
+  string is repeated starting there; a single array that answers pattern
+  matching, string periodicity, and more.
+- **Rabin-Karp** -- comparing a rolling hash of each window instead of the
+  characters themselves, with a verification step to rule out hash
+  collisions.
+- Which of the three to reach for, based on the problem shape.
+
+## The cue
+
+:::tip[You are looking at a linear string algorithm when...]
+The problem is about **substring structure**, and the naive answer is a nested loop over
+positions and characters.
+
+- "Find all occurrences of `p` in `t`" with `n, m` up to $10^5$ or more. $O(nm)$ is
+  $10^{10}$; you need $O(n + m)$.
+- The words **prefix**, **suffix**, **border**, **period**, or **repeating unit** appear.
+  Anything phrased as "the longest prefix that is also a suffix" is the failure function
+  by definition -- LC 1392 is that sentence verbatim.
+- You need to **prepend or append the fewest characters** to make a string a palindrome or a
+  repetition. Reverse it, glue with a separator, and read one array. LC 214.
+- You must compare **many pairs of substrings for equality**, not search for one pattern.
+  That is a rolling hash, not KMP -- hashing gives $O(1)$ equality after $O(n)$ preprocessing;
+  KMP gives you nothing here.
+- The pattern set is **large** ("do any of these 1000 words appear?"). Hash every pattern into
+  a set and roll one window. KMP would need one pass per pattern.
+:::
+
+**When it is the wrong tool.** If the alphabet is tiny and the answer only needs *counts* of
+characters, a sliding window with a frequency map is simpler and faster -- LC 438 (find all
+anagrams) is a window problem, not a KMP problem, even though it sounds like matching. If you
+need every substring of a set queried repeatedly, a [trie](../../phase-03-core-data-structures/tries-prefix-trees/)
+or suffix automaton is the right structure. And if `n` is under a few thousand, Python's built-in
+`str.find` -- C-speed $O(nm)$ worst case, near-linear in practice -- beats a hand-written KMP on
+wall clock. Reach for these when the constraint forces you to, or when the *failure function
+itself* is the answer.
+
+## KMP: the failure function fixes "never move backward"
+
+A naive search that mismatches at text position `i` and pattern position
+`k` restarts the pattern from `0` -- but it re-checks characters that are
+*guaranteed* to match, because they matched the first time around. KMP's
+**failure function** (also called the prefix function) precomputes, for
+every prefix of the pattern, the length of the longest proper prefix that
+is *also* a suffix of it. That length is exactly how far the pattern
+pointer should fall back on a mismatch -- no re-scanning the text needed.
+
+```python title="kmp_failure_and_search.py" showLineNumbers{1}
+def build_failure(pattern):
+    m = len(pattern)
+    fail = [0] * m
+    k = 0                                  # length of the current matching prefix/suffix
+    for i in range(1, m):
+        while k > 0 and pattern[i] != pattern[k]:
+            k = fail[k - 1]                 # fall back to the next-best prefix length
+        if pattern[i] == pattern[k]:
+            k += 1
+        fail[i] = k
+    return fail
+
+
+def kmp_search(text, pattern):
+    if not pattern:
+        return []
+    fail = build_failure(pattern)
+    matches = []
+    k = 0                                   # how many pattern characters matched so far
+    for i, ch in enumerate(text):
+        while k > 0 and ch != pattern[k]:
+            k = fail[k - 1]                 # the same fallback trick, applied to the text scan
+        if ch == pattern[k]:
+            k += 1
+        if k == len(pattern):
+            matches.append(i - k + 1)       # full match ends here -- record its start
+            k = fail[k - 1]                 # keep scanning for overlapping matches
+
+    return matches
+
+
+pattern = "abc"
+text = "ababcababcabc"
+print("failure function of 'ababc':", build_failure("ababc"))
+print("matches of 'abc' in text:", kmp_search(text, pattern))
+```
+
+```mermaid title="KMP automaton for pattern 'ababc' -- solid edges match, dashed edges are the failure-function fallback"
+graph LR
+    N0(("0")) -- "a" --> N1(("1"))
+    N1 -- "b" --> N2(("2"))
+    N2 -- "a" --> N3(("3"))
+    N3 -- "b" --> N4(("4"))
+    N4 -- "c" --> N5(("5 match"))
+    N2 -.->|"mismatch: fail = 0"| N0
+    N3 -.->|"mismatch: fail = 1"| N1
+    N4 -.->|"mismatch: fail = 2"| N2
+```
+
+Each solid state is "this many characters of the pattern matched so far."
+On a mismatch, instead of resetting all the way to state `0`, the dashed
+edge jumps to the failure value -- the longest prefix of `"ababc"` that is
+also a suffix of what's matched so far. That's the entire speedup: the
+automaton never revisits a text character twice.
+
+:::note[The failure function has a name of its own]
+Outside of pattern matching, `build_failure` is often just called the
+**prefix function** of a string -- `fail[i]` is the length of the longest
+proper prefix of `pattern[0..i]` that's also a suffix of it. It shows up
+independently in problems about string periods and borders, not just KMP
+search.
+:::
+
+## Visual intuition
+
+The prefix function is the whole of KMP; the search loop is a re-run of the same idea against the
+text. Watch the fallback — `k = pi[k-1]` — because that single line is why the scan never rewinds:
+
+<ArrayStepper
+  client:visible
+  algo="kmp-prefix"
+  text="ababcabab"
+  title="Building the failure function: fall back, never restart"
+  lib="LC 28 · O(n)"
+  desc="pi[i] is the length of the longest proper prefix of s[0..i] that is also a suffix. On a mismatch the border shrinks to pi[k-1] rather than to 0, because everything matched so far still shares that much prefix. i only ever advances and each fallback strictly decreases k, so the total work is linear -- the amortised argument the code does not show."
+/>
+
+## The Z-algorithm: how far does the prefix repeat here?
+
+The **Z-array** answers a single question for every index `i` of a string
+`s`: what's the length of the longest substring starting at `i` that
+matches a prefix of `s`? `z[0]` is conventionally the whole string's length
+(or left undefined) since it's a trivial match with itself.
+
+```python title="z_algorithm.py" showLineNumbers{1}
+def z_array(s):
+    n = len(s)
+    z = [0] * n
+    z[0] = n
+    l, r = 0, 0                              # the rightmost Z-box found so far: s[l:r] == s[0:r-l]
+    for i in range(1, n):
+        if i < r:
+            z[i] = min(r - i, z[i - l])       # reuse work already done inside the current Z-box
+        while i + z[i] < n and s[z[i]] == s[i + z[i]]:
+            z[i] += 1                         # extend the match past what the Z-box guaranteed
+        if i + z[i] > r:
+            l, r = i, i + z[i]                # this match extends further right -- update the box
+    return z
+
+
+def z_search(text, pattern):
+    combined = pattern + "#" + text           # "#" can't appear in either string -- a safe separator
+    z = z_array(combined)
+    m = len(pattern)
+    return [i - m - 1 for i in range(m + 1, len(combined)) if z[i] == m]
+
+
+print("Z-array of 'aabxaab':", z_array("aabxaab"))
+print("matches of 'ab' via Z:", z_search("abcabcabab", "ab"))
+```
+
+The pattern-search trick: glue `pattern + "#" + text` together and compute
+one Z-array over the whole thing. Any position in the `text` part whose
+Z-value equals `len(pattern)` means the pattern matches starting there --
+because "the prefix repeats for exactly `len(pattern)` characters" *is*
+"the pattern occurs here."
+
+:::tip[The Z-array generalizes past pattern search]
+Because `z[i]` measures self-similarity to the prefix, it directly answers
+"is this string periodic," "what's the shortest repeating unit," and
+"longest common prefix between `s` and `s[i:]`" -- all without a second
+pass. KMP's failure function only encodes prefix-*suffix* overlaps; the
+Z-array encodes prefix-overlap at *every* position.
+:::
+
+## Rabin-Karp: compare hashes, not characters
+
+Instead of comparing characters directly, Rabin-Karp hashes each
+`m`-length window of the text and compares that hash against the
+pattern's hash. The key trick is a **rolling hash**: sliding the window
+one position right updates the hash in $O(1)$ by removing the outgoing
+character's contribution and adding the incoming one, instead of
+rehashing the whole window.
+
+```python title="rabin_karp.py" showLineNumbers{1}
+def rabin_karp(text, pattern, base=256, mod=10**9 + 7):
+    n, m = len(text), len(pattern)
+    if m > n:
+        return []
+
+    high_order = pow(base, m - 1, mod)        # value of the leading digit's place, mod `mod`
+    pattern_hash = 0
+    window_hash = 0
+    for i in range(m):
+        pattern_hash = (pattern_hash * base + ord(pattern[i])) % mod
+        window_hash = (window_hash * base + ord(text[i])) % mod
+
+    matches = []
+    for i in range(n - m + 1):
+        if window_hash == pattern_hash and text[i:i + m] == pattern:
+            matches.append(i)                 # hashes agree AND the substring itself checks out
+        if i < n - m:
+            window_hash = (
+                (window_hash - ord(text[i]) * high_order) * base + ord(text[i + m])
+            ) % mod                            # slide the window one character to the right
+
+    return matches
+
+
+print(rabin_karp("abracadabra", "abra"))   # expect [0, 7]
+```
+
+:::caution[Always verify a hash match with a real comparison]
+Two different substrings can hash to the same value -- a **collision**.
+The line `text[i:i + m] == pattern` above is not optional: it's what turns
+"probably a match" into "definitely a match." Skipping it (or using a weak
+modulus) is a classic source of wrong answers on Rabin-Karp problems,
+especially adversarial test cases designed to break a single fixed hash.
+:::
+
+## Dry run
+
+### The failure function of `ababcabab`
+
+`k` is the length of the border matched so far. The only interesting row is the one where the
+`while` fires.
+
+| `i` | `s[i]` | Fallbacks | `k` after | `fail` so far |
+| --- | --- | --- | --- | --- |
+| 1 | `b` | -- | 0 | `[0,0,·,·,·,·,·,·,·]` |
+| 2 | `a` | -- | 1 | `[0,0,1,·,·,·,·,·,·]` |
+| 3 | `b` | -- | 2 | `[0,0,1,2,·,·,·,·,·]` |
+| 4 | `c` | **`k: 2 -> 0`** | 0 | `[0,0,1,2,0,·,·,·,·]` |
+| 5 | `a` | -- | 1 | `[0,0,1,2,0,1,·,·,·]` |
+| 6 | `b` | -- | 2 | `[0,0,1,2,0,1,2,·,·]` |
+| 7 | `a` | -- | 3 | `[0,0,1,2,0,1,2,3,·]` |
+| 8 | `b` | -- | 4 | `[0,0,1,2,0,1,2,3,4]` |
+
+Final: `fail = [0, 0, 1, 2, 0, 1, 2, 3, 4]`.
+
+Row 4 is the algorithm. `k` was 2, meaning `ab` was matched; `s[4]` is `c` and `s[2]` is `a`, so
+they disagree. The fallback asks `fail[1]`, which is 0 -- there is no shorter border of `ab` to
+retry -- so `k` drops straight to 0. Contrast with a pattern like `aabaaab`, whose failure array
+is `[0, 1, 0, 1, 2, 2, 3]`: at `i = 5` the border shrinks from 2 to **1** and then immediately
+regrows to 2, because `s[5]` does match `s[1]`. That partial retry -- landing on a shorter border
+instead of restarting -- is exactly the work KMP saves over a naive restart.
+
+The last value, `fail[8] = 4`, says the longest proper border of `ababcabab` is `abab` -- length
+4. That single number is the answer to LC 1392 (longest happy prefix). The search is optional;
+often the array *is* the problem.
+
+### Searching with overlaps
+
+`text = "aabaabaaa"`, `pattern = "aabaa"`, `fail = [0, 1, 0, 1, 2]`. Note the pattern overlaps
+itself, which is what makes this trace worth reading.
+
+| `i` | `t[i]` | Fallbacks | `k` after | Event |
+| --- | --- | --- | --- | --- |
+| 0 | `a` | -- | 1 | |
+| 1 | `a` | -- | 2 | |
+| 2 | `b` | -- | 3 | |
+| 3 | `a` | -- | 4 | |
+| 4 | `a` | -- | 2 | **match at 0**, then `k = fail[4] = 2` |
+| 5 | `b` | -- | 3 | |
+| 6 | `a` | -- | 4 | |
+| 7 | `a` | -- | 2 | **match at 3**, then `k = fail[4] = 2` |
+| 8 | `a` | `k: 2 -> 1` | 2 | |
+
+Matches at `[0, 3]` -- and they **overlap**, sharing `text[3:5] == "aa"`. That is why the post-match
+line is `k = fail[k - 1]` and not `k = 0`. Resetting to 0 would throw away the two characters
+already matched at the tail and miss the occurrence starting at 3 entirely. If a problem wants
+*non*-overlapping occurrences, `k = 0` is the correct change -- and knowing which line to touch is
+the point.
+
+Nine text characters, nine iterations, exactly one fallback in the whole scan. `i` only ever
+advances and each fallback strictly decreases `k`, and `k` only grows by one per step -- so total
+fallbacks are bounded by total increments. That is the linear-time argument, and it is invisible
+in the code.
+
+### The Z-array reusing a Z-box
+
+`s = "aabxaab"`. The box `[l, r)` is the rightmost prefix-match found so far.
+
+| `i` | `s[i]` | Reused from box | Extra comparisons | `z[i]` | Box after |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `a` | no | 1 | 1 | `[1, 2)` |
+| 2 | `b` | no | 0 | 0 | `[1, 2)` |
+| 3 | `x` | no | 0 | 0 | `[3, 3)` |
+| 4 | `a` | no | **3** | **3** | `[4, 7)` |
+| 5 | `a` | **yes, 1** | **0** | 1 | `[4, 7)` |
+| 6 | `b` | **yes, 0** | 0 | 0 | `[4, 7)` |
+
+`Z = [7, 1, 0, 0, 3, 1, 0]`.
+
+Rows 5 and 6 are the entire optimisation. `i = 4` did three character comparisons and established
+a box covering positions 4 through 6. Positions 5 and 6 fall *inside* that box, so their answers
+are copied from `z[i - l]` -- `z[1] = 1` and `z[2] = 0` -- with **zero** character comparisons.
+The string inside a Z-box is by definition equal to the prefix, so work done at the prefix is
+already work done here.
+
+The `min(r - i, z[i - l])` matters: without the `min`, a copied value could run past the box's
+right edge into territory that was never verified. The `while` then extends past the guarantee
+when it can, and only a successful extension moves the box.
+
+### Pattern search by concatenation
+
+`z_search("abcabcabab", "ab")` builds `"ab#abcabcabab"` and reads one array:
+
+```
+index    0  1  2  3  4  5  6  7  8  9 10 11 12
+char     a  b  #  a  b  c  a  b  c  a  b  a  b
+z       13  0  0  2  0  0  2  0  0  2  0  2  0
+```
+
+Every index past the separator with `z[i] == 2` is a match: indices 3, 6, 9, 11, which map back to
+text positions **0, 3, 6, 8**. The separator earns its keep -- it must be a character appearing in
+neither string, or a Z-value could run from the pattern straight into the text and overcount.
+
+### Rabin-Karp, and why the verification line is not optional
+
+With a real modulus ($10^9 + 7$) on `"abracadabra"` searching `"abra"`, exactly two windows hash
+to `633841754` and both are genuine matches at 0 and 7. Now shrink the modulus to 101 and search
+`"abccabra"`:
+
+| `i` | Window | `hash % 101` | Equal to pattern hash (10)? | Real match? |
+| --- | --- | --- | --- | --- |
+| 0 | `abcc` | **10** | **yes** | **no -- collision** |
+| 1 | `bcca` | 0 | no | no |
+| 2 | `ccab` | 100 | no | no |
+| 3 | `cabr` | 95 | no | no |
+| 4 | `abra` | **10** | yes | **yes** |
+
+Without the `text[i:i+m] == pattern` check the function returns `[0, 4]`. With it, `[4]`. A small
+modulus makes this easy to demonstrate, but the failure mode is identical at $10^9 + 7$ -- it just
+takes an adversarial input rather than an eight-character one. The comparison is what converts
+"probably" into "definitely", and it costs nothing amortised because it only runs when the hashes
+already agree.
+
+## Complexity
+
+| Algorithm | Preprocess | Search | Space | Worst case |
+| --- | --- | --- | --- | --- |
+| Naive | -- | $O(nm)$ | $O(1)$ | $O(nm)$ -- `"aaaa…a"` against `"aaa…ab"` |
+| **KMP** | $O(m)$ | $O(n)$ | $O(m)$ | $O(n + m)$, **guaranteed** |
+| **Z-algorithm** | -- | $O(n + m)$ | $O(n + m)$ | $O(n + m)$, guaranteed |
+| **Rabin-Karp** | $O(m)$ | $O(n)$ expected | $O(1)$ | $O(nm)$ if every window collides |
+| `str.find` (CPython) | -- | $O(nm)$ worst | $O(1)$ | Near-linear in practice; C constant factor |
+
+Three points worth being precise about:
+
+- **KMP's linearity is amortised, not per-step.** One text character can trigger several
+  fallbacks. The bound comes from the potential argument: `k` rises by at most 1 per character
+  and every fallback strictly lowers it, so total fallbacks across the scan are at most `n`.
+  Say "each character is examined a constant number of times *on average*"; that is what the
+  trace above shows with one fallback in nine steps.
+- **Rabin-Karp's $O(n)$ is expected, not worst case.** With an adversarially chosen input and a
+  fixed base and modulus, every window can collide and each triggers an $O(m)$ verification --
+  $O(nm)$. The defences are a large prime modulus, a **randomised base** chosen at run time, or
+  double hashing with two independent moduli. Competitive-programming judges do hack fixed hashes.
+- **Space is where they differ most.** KMP needs $O(m)$ for the pattern only, which matters when
+  the text is streamed and never fully held. The Z-algorithm needs $O(n + m)$ because the
+  concatenation is materialised. Rabin-Karp needs $O(1)$ -- one integer -- which is why it is the
+  one that scales to 2D grids and to sets of patterns.
+
+## Which one to use
+
+| Algorithm | Time | Space | Best for |
+| --- | --- | --- | --- |
+| KMP | $O(n + m)$ | $O(m)$ | Single-pattern search where you want a hard guarantee of no backtracking; the failure function itself is often the real answer (periods, borders). |
+| Z-algorithm | $O(n + m)$ | $O(n + m)$ | Prefix-overlap questions -- pattern search via concatenation, shortest palindrome/period, longest happy prefix. |
+| Rabin-Karp | $O(n + m)$ average, $O(n \cdot m)$ worst case | $O(1)$ | Multiple-pattern search (hash every pattern once into a set), 2D grid or substring-equality checks, anagram-window problems. |
+
+:::tip[Default to whichever array you already need]
+If you need the failure function anyway (say, for a periodicity question),
+KMP search comes for free. If the problem is naturally about "prefix
+appears again here," reach for the Z-array. If you need to hash many
+windows for **equality checks** rather than a single pattern search (like
+comparing whether two substrings are equal in $O(1)$ after preprocessing),
+Rabin-Karp's rolling hash is the more general tool.
+:::
+
+## The variant map
+
+| Variant | The change | Canonical problem |
+| --- | --- | --- |
+| **First occurrence only** | Return on the first `k == m` instead of collecting | 28 |
+| **All occurrences, overlapping** | After a match, `k = fail[k - 1]` | 28 · 1408 |
+| **All occurrences, non-overlapping** | After a match, `k = 0` | greedy replace problems |
+| **Longest border / happy prefix** | The answer is `fail[m - 1]`; no search at all | 1392 |
+| **Shortest period of a string** | `n - fail[n - 1]`; it is a true period iff it divides `n` | 459 Repeated Substring Pattern |
+| **Shortest palindrome by prepending** | `fail` of `s + "#" + reverse(s)` -- the last value is the longest palindromic prefix | 214 |
+| **Longest common prefix of `s` and every suffix** | The Z-array, directly | -- |
+| **Many patterns, one text** | Hash each pattern into a set; roll one window per length | 1044 · 1316 |
+| **Substring equality in $O(1)$** | Prefix hashes + precomputed powers, then compare two ranges | 1044 Longest Duplicate Substring |
+| **Longest duplicate substring** | Binary search the length, Rabin-Karp each candidate | 1044 |
+| **2D pattern in a grid** | Hash each row, then run 1D matching over the row hashes | -- |
+| **Multiple patterns with a shared trie** | Aho-Corasick: KMP's failure links generalised to a trie | 1032 Stream of Characters |
+
+:::note[LC 459 in one line, and the trap in it]
+"Does `s` consist of a repeated substring?" The candidate period is `p = n - fail[n - 1]`, and the
+answer is yes **iff `n % p == 0`**.
+
+The divisibility check is not optional. For `s = "abcabcab"`, `n = 8` and `fail[7] = 5`, giving
+`p = 3` -- but `8 % 3 != 0`, so the string is *not* a clean repetition even though it has a
+period-3 structure. Skip the check and you answer yes. The border tells you the period; only
+divisibility tells you it tiles the whole string.
+:::
+
+## Practice -- real LeetCode problems
+
+All three are the **prefix function** -- KMP's failure table -- in three disguises.
+Write it once here and you own the family: substring search, longest
+border, and the palindrome trick.
+
+### LC 28 -- Find the Index of the First Occurrence in a String · Easy
+
+**Problem.** Return the index of the first occurrence of `needle` in `haystack`,
+or `-1` if it is not present.
+
+**Constraints.** `1 <= len(haystack), len(needle) <= 10**4`, lowercase letters.
+
+**Examples.** `"sadbutsad"`, `"sad"` gives `0` · `"leetcode"`, `"leeto"` gives
+`-1` · `"mississippi"`, `"issip"` gives `4`
+
+<DataCampExercise
+  lang="python"
+  hint={`Build the prefix function of needle + sentinel + haystack, where the sentinel is a character that appears in neither. Wherever that array reaches len(needle), a full copy of the needle has just ended. Convert that position back to an index in the haystack: the match ends at i, so it starts at i - 2 * len(needle), counting the needle and the sentinel that precede the haystack.`}
+  code={`class Solution:
+    def strStr(self, haystack, needle):
+        # TODO: prefix function of needle + sentinel + haystack.
+        # pi[i] == len(needle) means a full match just ended at i.
+        # Convert to a haystack index: i - 2 * len(needle).
+        pass
+
+
+sol = Solution()
+cases = [("sadbutsad", "sad"), ("leetcode", "leeto"), ("a", "a"),
+         ("mississippi", "issip"), ("aaa", "aaaa")]
+print([sol.strStr(h, n) for h, n in cases])
+# expect [0, -1, 0, 4, -1]`}
+  solution={`class Solution:
+    def strStr(self, haystack, needle):
+        # sentinel stops a match from straddling the two halves
+        pattern = needle + "\x00" + haystack
+
+        pi = [0] * len(pattern)           # pi[i] = longest proper border
+        k = 0
+        for i in range(1, len(pattern)):
+            while k and pattern[i] != pattern[k]:
+                k = pi[k - 1]             # fall back, never rewind i
+            if pattern[i] == pattern[k]:
+                k += 1
+            pi[i] = k
+
+        for i, v in enumerate(pi):
+            if v == len(needle):
+                return i - 2 * len(needle)
+        return -1
+
+
+sol = Solution()
+cases = [("sadbutsad", "sad"), ("leetcode", "leeto"), ("a", "a"),
+         ("mississippi", "issip"), ("aaa", "aaaa")]
+print([sol.strStr(h, n) for h, n in cases])`}
+  sct={`test_output_contains("[0, -1, 0, 4, -1]")
+success_msg("The prefix function never moves i backward -- that is why KMP is linear where the naive scan is quadratic.")
+`}
+  height={440}
+/>
+
+<details>
+<summary>Editorial · approach, complexity, follow-ups</summary>
+
+`pi[i]` is the length of the longest proper prefix of `pattern[:i+1]` that is also
+a suffix of it -- its longest **border**. On a mismatch you jump `k = pi[k-1]`,
+which is the next-longest border and therefore the next plausible alignment. The
+outer index `i` never decreases, and that is the entire reason KMP is $O(n + m)$
+where the naive double loop is $O(nm)$.
+
+The **concatenation trick** -- searching for `needle` by building the prefix
+function of `needle + sentinel + haystack` -- means you only ever have to remember
+one routine. Any `pi` value reaching `len(needle)` is a full occurrence.
+
+**Time** $O(n + m)$. **Space** $O(n + m)$.
+
+- **The sentinel is mandatory.** Without it a "match" could straddle the boundary,
+  half in the needle and half in the haystack. It must be a character that cannot
+  appear in either -- `"\x00"` here, or `"#"` when the alphabet is known to be
+  letters.
+- **The index arithmetic.** The match ends at position `i` in the concatenation, and
+  before the haystack sit `len(needle)` characters plus one sentinel. Working through
+  `"a"`, `"a"` -- where the answer must be 0 -- is the fastest way to convince
+  yourself of `i - 2 * len(needle)`.
+- **A needle longer than the haystack** returns `-1` naturally, since `pi` can never
+  reach `len(needle)`. `"aaa"`, `"aaaa"` checks it.
+- **`while k and ...` then `if`**, not `elif`. After the fallback loop you must still
+  test the character at the new `k`.
+- **In real code** you would write `haystack.find(needle)`. Say so, then show the
+  algorithm -- the problem exists to test the algorithm.
+
+**Follow-ups you should expect:** "All occurrences, not just the first?" -- collect
+every `i` where `pi[i]` hits `len(needle)`. "Rabin-Karp instead?" -- rolling hash
+with a verification step on a hash hit; $O(n + m)$ expected, $O(nm)$ worst case,
+and the trade-off worth articulating. "Many needles at once?" -- Aho-Corasick, which
+is KMP generalised to a trie. "The Z-algorithm?" -- an equivalent linear method on
+the same concatenation, often easier to reason about. "Why not use a suffix
+automaton?" -- overkill unless the haystack is fixed and queried many times.
+
+</details>
+
+### LC 1392 -- Longest Happy Prefix · Hard
+
+**Problem.** A **happy prefix** is a non-empty prefix that is also a suffix,
+excluding the whole string itself. Return the longest happy prefix of `s`, or `""`
+if there is none.
+
+**Constraints.** `1 <= len(s) <= 10**5`, lowercase letters.
+
+**Examples.** `"level"` gives `"l"` · `"ababab"` gives `"abab"` ·
+`"a"` gives `""`
+
+<DataCampExercise
+  lang="python"
+  hint={`This is literally the definition of the prefix function's last entry. Build pi for the whole string; pi[-1] is the length of the longest proper prefix that is also a suffix, so the answer is s[:pi[-1]]. Because pi counts only PROPER borders, the whole-string case is already excluded for free.`}
+  code={`class Solution:
+    def longestPrefix(self, s):
+        # TODO: build the prefix function of s.
+        # pi[-1] is the length of the longest proper prefix that is also
+        # a suffix, so return s[:pi[-1]].
+        pass
+
+
+sol = Solution()
+print([sol.longestPrefix(x) for x in
+       ("level", "ababab", "a", "aaaa", "abcd")])
+# expect ['l', 'abab', '', 'aaa', '']`}
+  solution={`class Solution:
+    def longestPrefix(self, s):
+        pi = [0] * len(s)
+        k = 0
+        for i in range(1, len(s)):
+            while k and s[i] != s[k]:
+                k = pi[k - 1]
+            if s[i] == s[k]:
+                k += 1
+            pi[i] = k
+        return s[:pi[-1]]                 # proper by construction
+
+
+sol = Solution()
+print([sol.longestPrefix(x) for x in
+       ("level", "ababab", "a", "aaaa", "abcd")])`}
+  sct={`test_output_contains("['l', 'abab', '', 'aaa', '']")
+success_msg("Rated Hard, and it is one line after the prefix function. That is what 'know your primitives' buys you.")
+`}
+  height={340}
+/>
+
+<details>
+<summary>Editorial · approach, complexity, follow-ups</summary>
+
+The problem is the prefix function's definition restated, so it is the cleanest
+possible drill on it. The value of doing it is that afterwards you will recognise
+"prefix that is also a suffix" instantly, in problems that hide it much better.
+
+**Time** $O(n)$. **Space** $O(n)$.
+
+- **Proper is automatic.** `pi[i]` never equals `i + 1`, because the fallback loop
+  only ever compares a prefix against a *shorter* suffix. So `"aaaa"` gives
+  `"aaa"`, not `"aaaa"`, with no explicit guard.
+- **`"abcd"` gives `""`** -- no border at all, and `s[:0]` is the empty string, which
+  is exactly what the problem wants returned.
+- **`"a"` gives `""`.** A single character has no proper non-empty border, and
+  `pi[-1]` is 0.
+- **`"ababab"` gives `"abab"`**, length 4 -- borders may overlap themselves. If you
+  expected `"ab"` you are thinking of *non-overlapping* repetitions, which is a
+  different question.
+- **Hashing would also work** -- compare prefix and suffix hashes for each length --
+  but it is $O(n)$ with a collision risk and no simpler. Mention it and move on.
+
+**Follow-ups you should expect:** "All borders, not just the longest?" -- follow the
+chain `pi[-1]`, `pi[pi[-1]-1]`, and so on; that chain is the complete set of
+borders. "Is the string a repetition of a shorter block (LC 459)?" -- yes exactly
+when `n % (n - pi[-1]) == 0` and `pi[-1] > 0`; `n - pi[-1]` is the smallest period.
+"Shortest string with `s` as both a prefix and a suffix, longer than `s`?" -- add
+`n - pi[-1]` characters. "Longest palindromic prefix?" -- the next problem.
+
+</details>
+
+### LC 214 -- Shortest Palindrome · Hard
+
+**Problem.** You may add characters only **in front** of `s`. Return the shortest
+palindrome you can make this way.
+
+**Constraints.** `0 <= len(s) <= 5 * 10**4`, lowercase letters.
+
+**Examples.** `"aacecaaa"` gives `"aaacecaaa"` · `"abcd"` gives `"dcbabcd"` ·
+`""` gives `""`
+
+<DataCampExercise
+  lang="python"
+  hint={`Find the LONGEST PALINDROMIC PREFIX of s -- everything after it must be mirrored in front. To get it with the prefix function, build pi over s + sentinel + reversed(s); the last value is the length of the longest prefix of s that equals a suffix of the reversal, which is exactly the longest palindromic prefix. Then the answer is reverse(s[overlap:]) + s.`}
+  code={`class Solution:
+    def shortestPalindrome(self, s):
+        # TODO: find the longest PALINDROMIC PREFIX of s.
+        # Build the prefix function of s + sentinel + reversed(s); the
+        # last value is that length. Then prepend the reverse of the rest:
+        # reverse(s[overlap:]) + s. Handle the empty string.
+        pass
+
+
+sol = Solution()
+print([sol.shortestPalindrome(x) for x in
+       ("aacecaaa", "abcd", "", "a", "aabba")])
+# expect ['aaacecaaa', 'dcbabcd', '', 'a', 'abbaabba']`}
+  solution={`class Solution:
+    def shortestPalindrome(self, s):
+        if not s:
+            return ""
+        combined = s + "\x00" + s[::-1]   # sentinel keeps the halves apart
+
+        pi = [0] * len(combined)
+        k = 0
+        for i in range(1, len(combined)):
+            while k and combined[i] != combined[k]:
+                k = pi[k - 1]
+            if combined[i] == combined[k]:
+                k += 1
+            pi[i] = k
+
+        overlap = pi[-1]                  # longest palindromic prefix of s
+        return s[overlap:][::-1] + s
+
+
+sol = Solution()
+print([sol.shortestPalindrome(x) for x in
+       ("aacecaaa", "abcd", "", "a", "aabba")])`}
+  sct={`test_output_contains("['aaacecaaa', 'dcbabcd', '', 'a', 'abbaabba']")
+success_msg("Prefix-of-s meeting suffix-of-reversed-s IS a palindromic prefix. Once you see that, the Hard collapses.")
+`}
+  height={440}
+/>
+
+<details>
+<summary>Editorial · approach, complexity, follow-ups</summary>
+
+Two steps, and the first is the real content.
+
+**Step 1: what do we actually need?** You may only prepend, so the tail of `s` is
+fixed at the end of the result. To make a palindrome with the fewest additions, you
+want the longest **palindromic prefix** of `s`; everything after it must be
+mirrored in front. If `s = "aacecaaa"`, the longest palindromic prefix is
+`"aacecaa"` (length 7), leaving `"a"`, so one `"a"` goes in front.
+
+**Step 2: find it with the prefix function.** A prefix of `s` that is also a suffix
+of `s` reversed is a string that reads the same forwards and backwards -- a
+palindromic prefix. So build `pi` over `s + sentinel + reverse(s)` and read the last
+value. The sentinel caps the value at `len(s)`, preventing the degenerate match of
+`s` against itself.
+
+**Time** $O(n)$. **Space** $O(n)$.
+
+- **The sentinel is what stops overshooting.** Without it, `"aaaa"` would report an
+  overlap longer than the string and produce nonsense.
+- **`s[overlap:][::-1] + s`**, not `s[::-1] + s`. Reversing the whole string always
+  yields *a* palindrome, just not the shortest.
+- **The empty string** returns `""`, guarded explicitly because `pi[-1]` would index
+  an empty list.
+- **An already-palindromic `s`** has `overlap == len(s)`, so nothing is prepended --
+  `"a"` returns `"a"`.
+- **`"aabba"` gives `"abbaabba"`.** The longest palindromic prefix is `"aa"`, so
+  `"bba"` gets mirrored to `"abb"` in front. Working this one by hand is the best
+  check that you have the right prefix rather than the longest palindromic
+  *substring*.
+
+**Follow-ups you should expect:** "Prove that the longest palindromic prefix is the
+right target?" -- any palindrome formed by prepending has `s` as its suffix, so its
+prefix of length `len(s)` must be `reverse(s)`-compatible; minimising additions is
+maximising the overlap. "Append instead of prepend?" -- longest palindromic
+*suffix*; reverse everything. "Both ends allowed?" -- a different and easier
+problem. "Longest palindromic substring?" -- not this at all; that is expand-around-
+centre or Manacher. "With hashing?" -- test each prefix length with a rolling hash
+in both directions, $O(n)$ with a collision risk. "Manacher's algorithm?" -- also
+finds the longest palindromic prefix in $O(n)$, and is the answer if the
+interviewer bans the concatenation trick.
+
+</details>
+
+## LeetCode problem set
+
+Generated from the problem database, so each entry carries its sheet
+membership and reported companies. Tick them off as you go — progress is
+saved in this browser, and the Export button writes it to a file you can keep.
+
+<ProblemLadder pattern="string-algorithms-kmp-z-and-rabin-karp"
+  notes={{"28":"KMP or the Z-algorithm search, applied directly: find the first occurrence of a pattern in a text","214":"Find the longest palindromic *prefix* using KMP's failure function on `s + \"#\" + reverse(s)`","438":"Not a KMP/Z problem directly, but the same \"slide a fixed-size window and compare in O(1)\" spirit as Rabin-Karp, using a character-count fingerprint instead of a hash","686":"How many times must `a` repeat before `b` could occur inside it; KMP search on the repeated string after a bound on the repeat count","1392":"Literally `build_failure(s)[-1]` characters of `s`: the failure function *is* the answer"}} />
+
+## Interview follow-ups
+
+| They ask | What they're checking | The answer |
+| --- | --- | --- |
+| "Prove KMP is $O(n)$ when there is a `while` inside the `for`" | Whether you understand amortisation | `k` increases by at most 1 per character and every `while` iteration strictly decreases it. Total decrements cannot exceed total increments, which is at most `n`. So the inner loop runs $O(n)$ times across the whole scan, not per character |
+| "What is `fail[i]` actually, in words?" | Definition over mechanics | The length of the longest **proper** prefix of `s[0..i]` that is also a suffix of it. "Proper" excludes the whole string, which is why `fail` can never equal `i + 1` |
+| "Your matches overlap. Was that intended?" | Reading the spec | It follows from `k = fail[k - 1]` after a match. For non-overlapping occurrences set `k = 0`. Worth stating which one the problem wants before writing it |
+| "Why does Rabin-Karp compare the substrings after the hashes match?" | Whether you know hashing is probabilistic | Two distinct strings can share a hash. The comparison converts "probably" into "certainly" and is free amortised, since it only runs on a hash hit. Without it, a single collision is a wrong answer |
+| "How would you make Rabin-Karp resistant to hacking?" | Adversarial thinking | Choose the base **randomly at run time**, use a large prime modulus, or hash twice with independent moduli. A fixed base and modulus published in a well-known template is exactly what gets hacked on Codeforces |
+| "KMP or Z -- does it matter?" | Judgement, not memorisation | For plain search, no; both are linear. Pick by what the problem asks: prefix-*suffix* overlap (borders, periods) is the failure function, prefix overlap *at every position* is Z. Z also needs a separator and $O(n+m)$ space, KMP does not |
+| "The text arrives as a stream you cannot store" | Space, not just time | KMP wins: it holds only the pattern's failure array and one integer `k`, so it never needs the text in memory. Z requires the concatenation to exist |
+| "Search for a thousand patterns at once" | Scaling the right axis | Hash all patterns of each length into a set and roll one window per distinct length, or build Aho-Corasick -- a trie with KMP-style failure links -- for $O(n + \text{total pattern length} + \text{matches})$ |
+| "Find the longest substring that appears twice" | Composing the tools | Binary search the length; for each candidate length, roll a hash over all windows and look for a repeat in a set. $O(n \log n)$ expected, and the classic case where you must verify collisions or the binary search converges on a lie |
+| "Why not just use `str.find`?" | Practicality | For a single search under a few thousand characters, use it -- CPython's C implementation beats hand-written Python KMP on wall clock despite the worse asymptotic bound. Write KMP when the constraint forces linearity, or when the failure array itself is the answer |
+
+## Self-check
+
+<Quiz
+  questions={[
+    {
+      q: "What is `fail[i]` in the KMP failure function?",
+      options: [
+        "The number of characters matched so far at position i",
+        "The length of the longest proper prefix of s[0..i] that is also a suffix of it",
+        "The index to jump to in the text after a mismatch",
+        "The length of the longest repeated substring in s[0..i]",
+      ],
+      answer: 1,
+      explain:
+        "It is a property of the pattern alone -- nothing to do with the text. `proper` excludes the whole string, which is why fail[i] can never be i + 1. For `ababcabab` the last value is 4, meaning `abab` is both a prefix and a suffix. That number alone answers LC 1392, with no search performed at all.",
+    },
+    {
+      q: "KMP has a `while` loop nested inside a `for`. Why is the search still O(n)?",
+      options: [
+        "The while loop runs at most twice per character",
+        "`k` grows by at most 1 per character and every while iteration strictly decreases it, so total fallbacks are bounded by total increments",
+        "Because the failure function is precomputed",
+        "It is not -- KMP is O(nm) in the worst case",
+      ],
+      answer: 1,
+      explain:
+        "This is a potential argument, the same shape as the two-stack queue's. `k` is the potential: n characters can add at most n to it, and each fallback removes at least 1, so there can be at most n fallbacks across the entire scan. In the nine-character trace above, exactly one fallback occurred. Per-character cost is not constant; the total is linear.",
+    },
+    {
+      q: "After recording a match, the code sets `k = fail[k - 1]` rather than `k = 0`. What does that change?",
+      options: [
+        "Nothing; it is an optimisation",
+        "It finds overlapping occurrences -- searching `aabaa` in `aabaabaaa` yields 0 and 3, which share two characters",
+        "It prevents an index error on the last character",
+        "It makes the search non-overlapping",
+      ],
+      answer: 1,
+      explain:
+        "Resetting to 0 discards the suffix already matched, so the occurrence starting at 3 -- which reuses text[3:5] -- is never found. Both behaviours are legitimate; the problem decides which. If it asks for non-overlapping occurrences, `k = 0` is the one-line change, and knowing which line to touch is the point.",
+    },
+    {
+      q: "In the Z-algorithm, why is the copied value `min(r - i, z[i - l])` rather than just `z[i - l]`?",
+      options: [
+        "To keep z[i] non-negative",
+        "The guarantee only extends to the box's right edge -- past r nothing has been verified, so the value must be clamped and then extended by explicit comparison",
+        "Because z[i - l] may be uninitialised",
+        "To make the algorithm O(n) rather than O(n log n)",
+      ],
+      answer: 1,
+      explain:
+        "Inside the box, the string equals the prefix, so answers computed at the prefix transfer for free -- in the `aabxaab` trace, positions 5 and 6 cost zero comparisons. But that equality is only known up to r. Copy past it and you assert a match on characters nobody has looked at. The clamp keeps the copy honest; the while loop then extends past the guarantee when the characters really do continue.",
+    },
+    {
+      q: "Searching a pattern with the Z-algorithm requires `pattern + '#' + text`. Why the separator?",
+      options: [
+        "To make the indices line up",
+        "Without a character absent from both strings, a Z-value could run out of the pattern into the text and report a length that is not a real occurrence",
+        "To mark where the pattern ends for the return statement",
+        "It is optional; any character works",
+      ],
+      answer: 1,
+      explain:
+        "The separator must appear in neither string. If it can occur, a prefix match could continue across the boundary and produce a z-value of len(pattern) at a position where no real occurrence starts -- or overcount lengths near the join. When the alphabet has no free character, a common fix is to compare `min(z[i], m)` and check indices explicitly rather than trusting equality.",
+    },
+    {
+      q: "Rabin-Karp on `abccabra` searching `abra`, with modulus 101. Window `abcc` hashes to 10, the same as the pattern. What saves the answer?",
+      options: [
+        "A larger base would make the hashes differ",
+        "The `text[i:i+m] == pattern` check, which rejects the collision and leaves only the real match at index 4",
+        "The rolling update recomputes the hash correctly on the next step",
+        "Nothing -- Rabin-Karp is wrong on this input",
+      ],
+      answer: 1,
+      explain:
+        "Drop the verification and the function returns [0, 4]; keep it and you get [4]. A small modulus makes the collision easy to exhibit, but the failure mode is identical at 1e9 + 7 -- it just takes an adversarial input. The check is free amortised, since it only runs when the hashes already agree.",
+    },
+    {
+      q: "LC 459: does `s` consist of a repeated substring? You compute `p = n - fail[n - 1]`. What else is needed?",
+      options: [
+        "Nothing -- p is the answer",
+        "Check that `n % p == 0`; for `abcabcab`, p is 3 but 8 % 3 != 0, so the string does not tile",
+        "Check that p is prime",
+        "Check that p <= n / 2 and that the substring is a palindrome",
+      ],
+      answer: 1,
+      explain:
+        "The border gives the smallest period, but a period only means the string repeats *structurally* -- it need not tile the whole length. `abcabcab` has period 3 and length 8; the final `ab` is a partial copy. Only divisibility proves a clean repetition, and skipping it is the standard wrong answer.",
+    },
+    {
+      q: "The text arrives as a stream you cannot store, and you need every occurrence of one pattern. Which algorithm?",
+      options: [
+        "Z-algorithm, since it is a single pass",
+        "KMP -- it holds only the pattern's failure array and one integer, so the text never needs to be in memory",
+        "Rabin-Karp, since it uses O(1) space",
+        "Any of them; all three are streaming algorithms",
+      ],
+      answer: 1,
+      explain:
+        "Z needs the concatenation `pattern + '#' + text` materialised, so it is not streaming. Rabin-Karp is O(1) in hash state but its verification step re-reads the window, so it needs the last m characters buffered -- workable, but it also needs a random base to be safe. KMP carries O(m) state and consumes the text one character at a time, which is exactly the streaming interface.",
+    },
+  ]}
+/>
+
+## Recall card
+
+- **All three replace $O(nm)$ with $O(n + m)$** by never re-examining a text character after a
+  mismatch.
+- **`fail[i]` = longest *proper* prefix of `s[0..i]` that is also a suffix.** Property of the
+  pattern only. `fail[m - 1]` alone answers longest-happy-prefix.
+- **The fallback is `k = fail[k - 1]`**, both when building the array and when scanning.
+- **Linearity is amortised**: `k` rises by at most 1 per character, every fallback lowers it, so
+  fallbacks total at most `n`. That sentence is the proof.
+- **After a match, `k = fail[k - 1]` finds overlaps; `k = 0` does not.** Decide which the problem
+  wants.
+- **Period = `n - fail[n - 1]`, and it tiles only if `n % period == 0`.** The divisibility check
+  is the whole of LC 459.
+- **`z[i]` = longest prefix of `s` starting at `i`.** Reuse inside the Z-box via
+  `min(r - i, z[i - l])` -- the `min` is what keeps the copy inside verified territory.
+- **Z search needs a separator** absent from both strings, or matches leak across the join.
+- **Rabin-Karp is expected linear, worst case $O(nm)$.** Always verify a hash hit with a real
+  comparison; randomise the base against hacking.
+- **Pick by shape**: borders and periods -> KMP · prefix overlap everywhere -> Z · many patterns,
+  substring equality, 2D, or $O(1)$ space -> rolling hash. Streamed text -> KMP, the only one that
+  never needs the text in memory.
+
+## Recap
+
+- **KMP**: precompute the failure function (longest prefix-that's-also-a-
+  suffix for every prefix), then never move the text pointer backward
+  during the search. $O(n + m)$.
+- **Z-algorithm**: `z[i]` is how far the prefix repeats starting at `i`;
+  glue `pattern + "#" + text` and look for `z[i] == len(pattern)`. Also
+  the go-to for periodicity and border questions. $O(n + m)$.
+- **Rabin-Karp**: roll a hash across the text in $O(1)$ per step, but
+  always verify a hash match with a real substring comparison to rule out
+  collisions.
+- Reach for KMP or Z when you need a hard linear-time guarantee on a
+  single pattern; reach for Rabin-Karp when you're matching many patterns
+  at once or need cheap substring-equality checks.
+
+Next: **Bit Manipulation Tricks** -- the low-level operations (masks,
+shifts, XOR) that power bitmask DP, subset enumeration, and a whole class
+of O(1)-space interview and CP problems.

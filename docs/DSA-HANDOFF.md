@@ -941,13 +941,32 @@ the in-place extend succeeds because the *list* is mutable, and the write-back f
 | `OOPS / Methods` | `C.m` is a plain function, `c.m` is bound with `__self__ is c`; `C.m()` raises `TypeError: missing 'self'`; **`c.m is c.m` is `False`** |
 | `Control Statement / For Loop` | `else` after completion -> runs; after `break` -> **skipped**; over an **empty** iterable -> **still runs** |
 | `Control Statement / Assert` | flow only — `-O` strips asserts; documented, not exercised here |
-| `MultiProcessing / Common Pitfalls` | **flow only, no numbers** — see below |
+| `MultiProcessing / Common Pitfalls` | **flow only, no numbers** — see the correction below |
+| `Function / Built-in Module` | **151** public builtins (49 functions, 26 types, **71 exceptions**) against **35** keywords; `list = [1,2,3]` then `list((1,2))` -> `TypeError: 'list' object is not callable`; `sum([1,1e100,1,-1e100])` **1.0** but `math.fsum` **2.0**, and reordering to `[1e100,1,1,-1e100]` makes `sum` give **2.0** |
+| `Tuple / Access the Tuple` | **`t[:] is t` is `True`** while `nums[:] is nums` is `False`; `t[99]` raises but `t[99:]` returns `()` silently; `first,*mid,last` makes `mid` a **`list`**; `(1,[2,3],4)[1].append(99)` succeeds |
+| `File Handling / File Operations` | `r+` writing `X` onto `SEED` gives **`XEED`** (overwrites in place, no truncation); text mode turns `a\nb\n` into **6 bytes** on Windows against 4 in binary; **0 B on disk until `close()`**; second `read()` returns `''` |
+| `Modern Python / Concurrency` | 4 CPU-bound workers: threads CPU/wall **1.00x**, processes **3.05x**; 10 sleeps of 0.1 s: threads **9.17x**, `asyncio.gather` **8.64x**; 500 threads **104.2 ms** against 500 coroutines **3.0 ms** (**35x** cheaper); pool startup ~**1 s** |
 
-**Something I could not measure, and did not pretend to.** The multiprocessing page was meant to
-carry a measured demonstration of memory isolation. Spawning a process in this environment fails
-with `PermissionError: [WinError 5] Access is denied`, so there is no measurement. That page got
-a flow diagram describing what the text already says and **no numeric claims**. Worth recording
-so a future session does not assume the number is simply missing.
+**Correction (batch 6): multiprocessing is NOT blocked here.** An earlier session recorded that
+spawning failed with `PermissionError: [WinError 5] Access is denied` and concluded the machine
+forbids child processes. That conclusion was wrong. The failure was an artifact of running the
+benchmark through `python3 - <<EOF` (stdin): `spawn` re-imports the parent module, and there is no
+such path, so it dies with `OSError: [Errno 22] Invalid argument: '<stdin>'`. **Run the script from
+a real `.py` file with an `if __name__ == "__main__":` guard and process pools work normally**
+(measured: 4 workers, 8 logical CPUs, CPU-time/wall = **3.05x**). The `MultiProcessing` pages can
+therefore carry real measurements; they are still visual-backlog items, not blocked ones.
+
+**But do not publish wall-clock speedup for processes on this box.** Measured 0.53x-1.45x across
+runs for the same workload, because per-core throughput roughly halves once four workers are busy
+and pool startup costs ~1 s. Single-task timing is stable (1.06x spread), so the noise is specific
+to the parallel case. Use the within-run ratio instead — see the instrument note below.
+
+**The instrument matters more than the benchmark.** Timing a worker with `time.perf_counter`
+measures how long it was *alive*, and a thread parked on the GIL still accrues duration. That
+metric reported **3.79x overlap for CPU-bound threads**, i.e. it "proved" the GIL does not exist.
+The valid instrument is `time.thread_time` / `time.process_time` (CPU actually burned) over wall
+time, measured inside one run: **threads 1.00x, processes 3.05x**. Four broken instruments
+preceded that one; if a concurrency number looks too good, suspect the clock first.
 
 **A correction to how the memory figure is usually explained.** The `list` against `array` ratio
 came out **identical** for small and large integers, which contradicts the common shorthand that
@@ -1115,6 +1134,673 @@ directions.
 by sorting twice — least significant key first.
 
 **Backlog: tutorials 34 left.**
+
+### The tutorial backfill — closing a gap I had left open
+
+**The user checked my work twice and was right both times.** The Tier B treatment I had been
+applying to tutorials was mermaid-only. Page Spec v2 wants a mermaid concept diagram **and** a p5
+"see it move" sketch **and** a 4-question `<Quiz>`. Measured state of the 40 tutorial pages I had
+enhanced:
+
+| Element | Before | After |
+| --- | --- | --- |
+| mermaid | 40 / 40 | 40 |
+| **p5 sketch** | **1 / 40** | **40** |
+| **`<Quiz>`** | **0 / 171 site-wide** | **40** |
+| `DataCampExercise` | 171 / 171 (pre-existing) | untouched |
+
+Two separate failures worth recording:
+
+1. **I applied the wrong tier's standard.** Mermaid-only is right for Flask, Testing and
+   Automation, which have no exercise/quiz convention. It was wrong for tutorials.
+2. **`<Quiz>` was absent from all 171 tutorial pages**, not just mine — a section-wide shortfall
+   that predates this work. The DSA section uses Quiz in its spine; tutorials never had one.
+
+Closed in ten tranches: **35 new p5 sketches and 160 quiz questions**, every question drawn from a
+measurement taken this session rather than invented, so the distractors are the answers people
+actually give. A shared helper (`scratchpad/bf.py`) computes the `Quiz` import depth per file and
+**asserts it resolves**, because guessing that depth was already a known trap here.
+
+Final audit: **40 / 40 pages carry p5 + mermaid + Quiz + DataCampExercise with a resolving
+import.**
+
+Two claims verified rather than assumed while writing the questions:
+
+- **`assert (cond, 'msg')` can never fail** — it asserts a non-empty tuple, which is always
+  truthy. Confirmed it does not raise, and 3.14 emits a `SyntaxWarning`.
+- **Annotation timing is version-dependent**: 3.11 raises `NameError` at the `def` line, 3.14
+  defers it until `__annotations__` is read. Both measured on the two interpreters here.
+
+### Full-spec batch — 3 new pages
+
+`Thread Synchronization with Lock`, `Operator Function`, `Update the Tuple` — built with all
+three elements from the start rather than backfilled.
+
+New measurements: an exception inside `with lock:` **released** the lock while a manual
+`acquire()` with no `try`/`finally` left it **held**; `itemgetter` beat an equivalent lambda
+**1812 ns -> 1098 ns (1.65x)**; and `t = (1, [2,3]); t[1].append(4)` mutates the list inside a
+tuple to give `(1, [2, 3, 4])`, which is also why `hash((1, [2]))` raises.
+
+**Backlog: tutorials 31 left**, all future pages built at full spec.
+
+### Full-spec batch 2 — 3 pages
+
+`Tuple Methods`, `Access the Set`, `Access the Dictionary`. Measured:
+
+| Fact | Value |
+| --- | --- |
+| `dir(tuple)` public methods | **2** — `count`, `index` |
+| list-only methods | 9 — eight mutators plus `copy` |
+| membership, absent value, n=10,000 | list **413.02 us**, set **0.192 us** — **2,146x** |
+| the same at n=100 | list 3.10 us, set 0.170 us — the set barely moved |
+| `d['a']` / `d.get('a')` | **112.6 / 145.1 ns** — a method call, not an algorithmic gap |
+| `d.keys() & other` | works; `d.values() & other` raises `TypeError` |
+
+**Two things I corrected in my own draft before shipping.**
+
+- I had written "every list method a tuple lacks is a mutator". **`copy` is not a mutator** — it
+  is absent because a tuple is already safe to share. The page says that instead, which is a
+  better explanation than the one I nearly shipped.
+- I measured `try`/`except` on a dict miss at 1,222 ns, but the timing **included building the
+  dict inside the loop**, so it was not comparable with the other three. Dropped rather than
+  published — an unfair benchmark is worse than no benchmark.
+
+**The dictionary page's conclusion is deliberately not about speed.** Thirty nanoseconds
+separates `d[k]` from `d.get(k)`; what should decide is what a missing key means. `KeyError`
+names the key at the line that wanted it, while a silent `None` travels and surfaces later as a
+`TypeError` with no obvious connection to the real mistake.
+
+**Backlog: tutorials 28 left.**
+
+### Full-spec batch 3 — 3 pages
+
+`File Handling`, `OS Methods`, `Argparse and sys.argv`.
+
+**The find of the batch is silent mojibake.** A file written with `encoding='utf-8'` and read
+back with a plain `open(path)` came back with every non-ASCII character replaced — and **nothing
+was raised**:
+
+| Read as | Round-trips? |
+| --- | --- |
+| `encoding='utf-8'` | yes |
+| no `encoding=` (cp1252 here) | **no, and no exception** |
+
+`locale.getpreferredencoding(False)` reported **`cp1252`** on this machine; most Linux systems
+report `utf-8`. So the same script produces different text depending where it runs, silently.
+
+A genuinely misleading pair of names sits next to it: **`sys.getdefaultencoding()` returned
+`'utf-8'`** while file I/O used `cp1252`. That function governs `str`/`bytes` conversion, not
+files — reading it to answer "what encoding do my files use?" gives the wrong answer with
+confidence. Both are on the page.
+
+**Two more measured:**
+
+- Newline translation is real: text-mode `write("a
+b
+")` put **`b'a
+b
+'`** on disk
+  here, read back as `'a
+b
+'` in text mode and `'a
+b
+'` with `newline=''` — which is
+  exactly why the `csv` module asks for `newline=''`.
+- `with open(...)` closed the file after an exception (`closed=True`); a manual `open()` with no
+  `try`/`finally` left it **open**, with buffered data possibly never written.
+
+`os.path.exists` is True for a **directory** too, and the page frames check-then-act as the race
+it is rather than as a safety measure.
+
+**Backlog: tutorials 25 left.**
+
+### Full-spec batch 4 — 3 pages
+
+`Building a Simple HTTP Server`, `Anonymous Class`, `Add and Remove in Dictionary`.
+
+**A real server was started and fetched from**, rather than described:
+
+| Request | Response |
+| --- | --- |
+| `GET /hello.txt` | `200 text/plain b'served content'` |
+| `GET /` | `200`, a generated 299-byte directory listing |
+| `GET /missing.txt` | `404 File not found` |
+| `POST /hello.txt` | **`501 Unsupported method ('POST')`** |
+
+The 501 is the useful one: `SimpleHTTPRequestHandler` implements only GET and HEAD, so it is a
+file viewer rather than a framework. The page also states plainly that the document root is
+`os.getcwd()` and that it binds all interfaces by default — started in the wrong folder on a
+shared network, it serves your source and your `.env`.
+
+**`type()` verified as the mechanism behind `class`**: `type('Dyn', (object,), {...})` produced a
+class whose `isinstance` and `__bases__` are indistinguishable from a class statement, and
+`type(NormalClass) is type` is True. Python has **no anonymous class** — `lambda` gives an
+anonymous function and `SimpleNamespace` gives attributes without one.
+
+**`popitem()` removes the LAST inserted pair**, not an arbitrary one, because dicts remember
+insertion order — verified as `('c', 3)`. And `{'a':1} | {'a':9}` gives `{'a': 9}`, so
+`defaults | overrides` is the correct order and reversing it silently discards the overrides.
+
+**Backlog: tutorials 22 left.**
+
+### Full-spec batch 5 — the whole Python Array section, 4 pages
+
+`Access the Array`, `Add and Remove in Array`, `Array Methods`, `Array Operations` — the section
+is now complete.
+
+| Measured | Value |
+| --- | --- |
+| `a[0]` vs `a[1:3]` | a plain **`int`** vs **`array('i', [2, 3])`** — slicing preserves the container |
+| list methods `array` lacks | exactly two: **`sort`** and **`copy`** |
+| `array('b').append(128)` | **`OverflowError: signed char is greater than maximum`** |
+| `array('b').append('x')` | **`TypeError`** — a different exception for a different rule |
+| `array('i',[1,2,3]).tobytes()` read back as `'h'` | **`[1, 0, 2, 0, 3, 0]`** — silently |
+| `a + b` / `a * 3` | concatenation / repetition, never element-wise |
+| mixing typecodes in `+` | `TypeError: bad argument type for built-in operation` |
+| 1000 ints | list **36,056 B** vs array **4,200 B** — 8.6x |
+
+**The `tobytes` result is the one worth the page space.** Twelve bytes read back with a 2-byte
+typecode produced six values instead of three, with no error at all — because the bytes record
+neither the width, the count, nor the byte order. The page says to store the typecode alongside
+the data or use a format that carries its own metadata.
+
+**Two exceptions, two rules.** `TypeError` means the value is not an integer; `OverflowError`
+means it is one but will not fit. Catching only the first misses half the cases when the values
+come from outside.
+
+**And the honest framing for the section**: `array` is a container, not a vector. `+` concatenates
+and `*` repeats, exactly as on a list. The moment you want arithmetic across the block, that is
+where NumPy starts — which the last page states directly rather than leaving the reader to find
+out.
+
+**Backlog: tutorials 18 left.**
+
+### Full-spec batch 6 — Built-in Module, Access the Tuple, File Operations, Concurrency
+
+Four pages, each with mermaid + p5 + a 4-question Quiz. Facts in the table in §-verified above.
+
+**Two file-specific traps, both routed around rather than discovered late.** `Built-in Module.mdx`
+and `File Operations.mdx` contain `import math` / `import os` **inside python code fences**, and
+`bf.py` anchors the Quiz import to the first `^import` line — which would have injected an MDX
+import into a Python block. `bf16.py` anchors to the existing
+`components/DataCampExercise.astro` line instead (always outside a fence) and **reuses its
+prefix** rather than recomputing the depth.
+
+**A pre-existing break found by `mdxcheck`, not by me.** `File Methods.mdx` (an earlier batch)
+had `` mode `"w"` `` inside a double-quoted Quiz string, so the inner `"` closed the string and
+acorn failed at 627:56. Two sites, fixed to single quotes. **`npm run dsa` does not run
+`mdxcheck`** — the p5 and mermaid linters both passed this file. Worth running `mdxcheck` over a
+module after every Quiz batch; it is the only check that parses the JSX expression.
+
+**On validators: I wrote three bad ones in a row here** trying to assert the fix myself — first
+`` '`"' not in body `` (matches the legitimate `` "`w+`" ``), then a regex that spanned newlines
+and matched the option list. The real oracle already existed. Make the edit, write, run
+`mdxcheck`. Do not hand-roll a checker for something a working checker already covers.
+
+**Backlog: tutorials 14 left**, site-wide 163.
+
+### Full-spec batch 7 — the three MultiProcessing pages
+
+Previously recorded as unbuildable. They were not; see the correction above. All three
+built with mermaid + p5 + Quiz.
+
+**These pages deliberately lead with clock-free evidence.** Wall-clock parallel speedup is
+not reproducible on this box — the same `Pool(4)` config timed **9.42 s and 6.98 s** in one
+sitting, and the overlap ratio decayed **2.95x → 2.49x → 1.77x** across three consecutive
+trials as load built. So the headline facts are exact instead: 216,816 primes below
+3,000,000 with every split agreeing to the digit, and **trial divisions counted rather than
+timed**.
+
+**The best find in the batch.** The obvious fix for load imbalance — interleave with a
+stride instead of contiguous blocks — is a *disaster* for primes, and provably so without a
+stopwatch. Stride 4 gives two workers only even numbers:
+
+| split | primes per worker | divisions (n < 60,000) |
+| --- | --- | --- |
+| contiguous | 60,238 / 53,917 / 51,926 / 50,735 | 106,939 / 164,962 / 200,344 / 226,698 — **2.1x** |
+| stride 4 | **1 / 108,532 / 0 / 108,283** | 15,000 / 333,980 / 14,999 / 334,949 — **22x** |
+
+Even the good split is uneven: the last block holds the **fewest** primes yet does 2.1x the
+divisions, because cost grows with sqrt(n). Equal width is not equal work.
+
+**Other measured facts.** Under spawn a child re-imports the module, so a `counter = 5` set
+inside the `__main__` guard is invisible to it — the child printed **100**, not 105. A child
+that raises exits **1** and `join()` does **not** re-raise, so a parent that ignores
+`exitcode` treats dead workers as successful. `for p in ps: p.start(); p.join()` took
+**2.82 s** against **0.74 s** for start-all-then-join. Two processes doing 10,000 `+=` each
+on a shared `Value`: **20,000** with a lock, **15,347** without.
+
+**Backlog: tutorials 11 left**, site-wide 160.
+
+### Full-spec batch 8 — Asyncio (3) and Networking (2)
+
+**HTTP numbers come from a local server, deliberately.** A `ThreadingHTTPServer` whose
+`/slow` endpoint sleeps exactly 0.20 s, plus endpoints returning 404, a non-JSON body and
+a 3 s delay. That makes every figure reproducible, keeps the claims about the *client*
+rather than someone else's network, and avoids hammering a public API. `aiohttp` 3.14.3
+and `requests` 2.33.1 were installed into the scratch venv for this
+(`scratchpad/flaskenv`, which lives under the session scratchpad, not the repo).
+
+**The load-bearing result is the one that matches theory exactly.** 12 requests at 0.20 s:
+
+| approach | measured | predicted |
+| --- | --- | --- |
+| `requests.get` loop | 2.53 s | — |
+| `requests.Session` loop | 2.47 s (**1.03x**) | — |
+| `aiohttp` + `gather` | **0.22 s** (11.6x) | 0.20 s |
+| `Semaphore(3)` | **0.83 s** | ceil(12/3) x 0.2 = 0.80 s |
+| `Semaphore(6)` | **0.42 s** | ceil(12/6) x 0.2 = 0.40 s |
+
+So the page can state a *model* — `time ≈ ceil(N / limit) × latency` — instead of a
+benchmark, which is what survives being read on different hardware. The 1.03x Session row
+is kept because it is honestly unimpressive: connection reuse is not what buys the 11.6x,
+and saying so pre-empts the obvious wrong conclusion.
+
+**Core asyncio facts.** 5 coroutines x 0.2 s: sequential awaits **1.005 s** against
+`gather` **0.215 s** (4.7x) — `await` is not where concurrency comes from. Two
+`time.sleep(0.3)` inside async took **0.602 s** against **0.310 s** for
+`asyncio.sleep` — one blocking call stalls the whole loop. `gather` returns in **argument**
+order (`['slow','fast','mid']`) though completion order was `['fast','mid','slow']`.
+
+**requests facts.** A 404 raises nothing: `status_code` 404, `r.ok` False, `bool(r)` False,
+and `.json()` still parses the body. `.json()` on HTML gives `JSONDecodeError: Expecting
+value: line 1 column 1` — which nearly always means an HTML error page, not bad JSON.
+`params` encodes: `q=a+b%26c&page=2`. **There is no default timeout**; `timeout=0.5` raised
+`ReadTimeout` after 0.51 s.
+
+**JSON round-trip is silently lossy.** `tuple` -> `list`, and integer dict key `1` ->
+string `"1"`, neither with a warning — so `data[1]` starts raising `KeyError` after a round
+trip. `set` and `datetime` raise `TypeError`. `json.loads('1e400')` returns **`inf`
+silently**. Python round-trips `10**25` exactly, but 2**53 is the limit for a JavaScript
+consumer, which is why APIs send large ids as strings.
+
+**Backlog: tutorials 6 left**, site-wide 155. The remaining six are `Operators`, `String`,
+`Naming Convention`, `Synchronization in Python`, `Modern Python/Networking`, and
+`Testing with unittest and pytest`.
+
+### Full-spec batch 9 — the last six tutorial pages. **tutorials is now 171/171.**
+
+I expected four of these to be reference-only pages needing no visual. On inspection all
+six had a genuine mechanism, so all six were built at full spec.
+
+**The synchronization page is built around a demonstration that failed.** Four threads,
+200,000 plain `counter += 1` each, no lock: **lost 0 of 800,000**. Widening it to an
+explicit read-modify-write with a 1 µs switch interval: **still 0 of 480,000**. Only an
+explicit `time.sleep(0)` between the read and the write exposed it — **12,000 of 16,000
+lost (75%)**, and identically on 3.11.9, so it is not version-specific.
+
+That failure IS the lesson and the page leads with it: a race you cannot reproduce is
+still a race. Publishing only the 75% figure would have implied these bugs are easy to
+observe. Two other demos on that page also failed first — `Semaphore(3)` reported peak
+concurrency **2** until a `Barrier` made all 12 threads start together (reports 3 now), and
+the deadlock **did not deadlock** until a `Barrier` guaranteed both threads held their
+first lock. None of the broken versions were published.
+
+**Two of my own claims were wrong before they were right:**
+
+- `257 is 257` reports `True` and I first labelled it the small-int cache. It is **constant
+  folding** — both literals in one expression become one constant. `int("257") is
+  int("257")` is `False`. CPython even emits `SyntaxWarning: "is" with 'int' literal`.
+- `'banana.txt'.strip('.txt')` returns `'banana'` — the *right* answer, which makes it
+  useless for showing that `strip` is not `removesuffix`. `'text.txt'.strip('.txt')` is
+  **`'e'`** and `'xxt.txt'` is **`''`**. The page uses those and says explicitly that
+  `banana.txt` working is why the bug survives testing.
+
+**Other measured facts.** `-2 ** 2` is **-4**, `2 ** 3 ** 2` is **512**, `1 + 2 << 3` is
+**24**. `-7 // 2` is **-4** and `-7 % 2` is **1** (sign follows the divisor). `tup[0] += [2]`
+on `([1],)` raises **and mutates anyway**. `+=` building 20,000 chars took **13.73 ms**
+against **1.44 ms** for `''.join(list)` (9.6x). `self.__private` becomes **`_C__private`**
+at compile time. Identifiers are **NFKC-normalised**, so the `fi` ligature and ascii `fi`
+are the same name. pytest rewrites asserts to print **`assert 5 == 6`** where unittest's
+bare assert prints only `AssertionError`. `urljoin('https://x.com/a/b', 'c')` is
+**`/a/c`**, not `/a/b/c` — one trailing slash changes the target. Three 5-byte sends plus
+one 100,000-byte send arrived as **28 `recv()` chunks**.
+
+**A trap in the backfill script itself:** a `"""docstring"""` inside a Python code sample
+closes the outer triple-quoted string holding the page content. Use `#` comments in
+embedded samples.
+
+**Backlog: tutorials 0 left. Site-wide 149**, all of it Flask (47), Testing (30),
+Automation (28), DSA (26, deliberate), projects/guides/root (18).
+
+### Flask Phase 1 — Fundamentals, 7 pages. **First Flask batch at full spec.**
+
+I flagged that Flask/Testing/Automation were mermaid-only by design and asked whether to
+re-baseline; the answer was to continue, so these are built at full tutorial spec —
+mermaid + p5 + Quiz — matching what has been getting verified.
+
+**A new insertion mode was needed.** Flask pages have **zero** component imports (measured
+in all 7), so there is no `DataCampExercise` line to anchor the Quiz import to. `bf22.py`
+inserts it after the frontmatter instead, matching `^---\\n.*?\\n---\\n` **anchored to the
+start of the file** so a horizontal rule in the body cannot be mistaken for the
+frontmatter terminator. Depth is **4** for `Flask Tutorials/Phase N - .../Page.mdx`,
+asserted to resolve before writing.
+
+**The Flask-vs-Django numbers are the ones worth keeping.** Measured in two clean venvs:
+
+| | Flask 3.1.3 | Django 6.1 |
+| --- | --- | --- |
+| packages installed | **9** | **5** |
+| site-packages on disk | **19 MB** | **56 MB** |
+| minimal app | 1 file, **6 lines** | 6 files, **203 lines** |
+
+**Django installs FEWER packages than Flask**, which contradicts the usual "Flask is
+lightweight" shorthand. Flask is smaller on disk but is assembled from Werkzeug, Jinja2,
+click, itsdangerous and blinker. The page reframes it as **assembled versus included**
+rather than small versus large.
+
+**The reloader demo ran a real dev server**, in a subprocess bounded to 6 s, and the port
+was verified closed afterwards. It measured the thing that confuses everyone: module-level
+code executes **twice, in two processes** — pid 17536 with `WERKZEUG_RUN_MAIN=None` (the
+watcher) then pid 8324 with `'true'` (the server). Guard one-shot setup with that variable.
+
+**Other measured Flask facts.** `/static/<path:filename>` is in `url_map` without being
+written, and `HEAD`/`OPTIONS` are auto-added to every GET rule. `DELETE` on a GET/POST rule
+gives **405** with `Allow: GET, POST, OPTIONS, HEAD`, not 404. Trailing slashes are
+**asymmetric**: rule `/dir/` requested as `/dir` gives a **308 redirect**, but rule `/file`
+requested as `/file/` gives **404**. With debug off an unhandled exception returns a 500
+HTML page; with debug on it **propagates**. `static_folder` comes back absolute while
+`template_folder` comes back relative. `VIRTUAL_ENV` is **not** a reliable venv test —
+running `venv/Scripts/python.exe` directly leaves it unset; compare `sys.prefix` with
+`sys.base_prefix`.
+
+**Scratch venvs created for this batch** (all under the session scratchpad, not the repo):
+`cleanflask` and `cleandj` exist purely to make the dependency counts reproducible.
+
+**Backlog: Flask 40 left**, site-wide 142.
+
+### Flask Phase 2 (JSON) + Phase 3 (Jinja2), 6 pages
+
+**The find worth the batch.** Autoescaping is chosen by file extension, and Flask's rule is
+literally `filename.endswith((".html", ".htm", ".xml", ".xhtml", ".svg"))`. So:
+
+| template name | autoescaped |
+| --- | --- |
+| `page.html` / `page.svg` / `page.xml` | yes |
+| `page.txt` / `report.csv` / `page.j2` | no |
+| **`index.html.j2`** | **no** |
+
+The widespread `name.html.j2` convention **silently disables HTML escaping**, making every
+`{{ user_input }}` in such a template an XSS hole. That gets a `:::danger` on the
+delimiters page with the fix (`select_autoescape` including `j2`, or just name it `.html`).
+
+**The filter security contrast, measured.** With `v = <script>x</script>`:
+`{{ v|badge_unsafe|safe }}` emits `<span class='b'><script>x</script></span>` — the script
+runs. `Markup("<span class='b'>{}</span>").format(s)` emits the wrapper as markup with the
+value escaped. `Markup.format` escapes its arguments as it substitutes; `|safe` unescapes
+everything including the user value.
+
+**Other measured facts.** Returning a plain `dict` or `list` gives `application/json` — no
+`jsonify` needed — and keys come back **sorted** (`app.json.sort_keys` is True). `datetime`
+serialises as an **HTTP date** (`Sun, 09 Aug 2026 12:00:00 GMT`), not ISO 8601; `Decimal`
+works; `set` is a 500. An **undefined template variable renders as empty and is falsy, with
+no warning**, but attribute access on it raises `UndefinedError` — the quiet case is the
+one that ships. Jinja's `{% for %}...{% else %}` runs when the sequence is **empty**, which
+is the opposite of Python's `for/else`. `loop.index` is 1-based.
+
+**A pitfall I hit twice while probing**, so it went on the page: Flask refuses to register a
+route after the first request — `AssertionError: The setup method 'route' can no longer be
+called on the application.`
+
+**Escaping trap in the backfill script, third time now.** Writing `\\"` in a Python string
+produces a LITERAL `"` in the output, which terminates the surrounding JS string. It broke
+4 Quiz props and 1 p5 sketch here. In the same file I had used `\\\\"` correctly in one
+block and `\\"` in another — and **`lint-p5` caught exactly the bad one**
+(`Invalid regular expression flags`), which is what that linter is for. Rule: inside p5
+sketches and Quiz props, prefer **single-quoted JS strings** so no escaping is needed.
+
+**Backlog: Flask 34 left**, site-wide 136.
+
+### Flask Phase 4 (Forms, 4 pages) + Phase 5 (Databases, 7 pages)
+
+Both batches applied clean on the first run — the `_assert_no_stray_quotes` guard added to
+the backfill helper plus a rule of **single-quoted JS strings only** ended the escaping
+bugs that broke the previous three batches.
+
+**Phase 4, measured** (flask-wtf 1.3.0, wtforms 3.2.2). `validate_on_submit()` is exactly
+`is_submitted() and validate()`, so it is False on GET without running validators — that
+short-circuit is why one view handles both directions. A POST with no CSRF token is an
+**ordinary validation error**, `{'csrf_token': ['The CSRF token is missing.']}`, not a
+crash or a 403. Validators generate HTML5 attributes: `DataRequired()` renders `required`
+and `Length(min=2)` renders `minlength="2"` — a convenience for honest users, never a
+control. An unchecked `BooleanField` is **omitted from the request entirely**, so `.data`
+is `False`. Field coercion measured: `'42'` -> `42` (int), `'y'` -> `True` (bool).
+
+**A dependency wtforms does not declare.** `Email()` imports `email_validator` lazily
+*inside the validator*, so a form class defines fine and fails on the first POST with
+`Exception: Install 'email_validator' for email validation support.` My first CSRF probe
+reported a 500 that was actually this, not CSRF — installed it, then the real behaviour
+appeared.
+
+**Phase 5, measured** (Flask-SQLAlchemy 3.x, SQLAlchemy 2.0.51). `sqlite:///demo.db`
+resolves to **`<root_path>/instance/demo.db`**, not the working directory. `db.engine`
+outside an app context raises `RuntimeError: Working outside of application context.`
+Table names are the class name lowercased (`User` -> `user`). **`Mapped[str]` compiles to
+NOT NULL and `Mapped[str | None]` to nullable** — the `| None` is the entire difference.
+A primary key is `None` after `add()` and assigned after `commit()`.
+
+**`create_all()` cannot fix a changed model.** Measured: added a column, re-ran it, and
+the table was unchanged — no ALTER, no error, no warning. The mismatch surfaces later as
+`no such column`. That gets a `:::danger` pointing at Flask-Migrate.
+
+**The injection demo is the strongest thing in the batch.** Same input `a' OR '1'='1`,
+same table: bound parameter -> **0 rows**, f-string -> **1 row**. On a login check that
+difference is the whole authentication.
+
+**A demo that failed first.** The ORM-staleness probe ran a raw UPDATE and *then* loaded
+the object, reporting 99 both before and after `expire_all()` — i.e. no staleness at all.
+The object must be loaded FIRST for the identity map to have something to go stale:
+load (1) -> raw UPDATE -> read (still **1**) -> expire -> read (**99**). The first version
+would have taught that the identity map is not a concern, which is the opposite of true.
+
+**Backlog: Flask 23 left**, site-wide 125.
+
+### Flask Phase 6 (auth, 2 pages) + Phase 7 (config, extensions, 2 pages)
+
+**The headline measurement.** A live Flask session cookie's first segment is plain base64.
+Decoding it gave **`{"role":"admin","user_id":42}`** — no key, no effort. The session is
+**signed, not encrypted**: a forged payload with the original signature was rejected
+outright (`/whoami` returned `None None`), and changing `SECRET_KEY` invalidated every
+existing session. So the rule the page states is: store identity in the session, never a
+secret. "Put it in the session" is widely treated as equivalent to "keep it private", and
+it is not.
+
+**Password hashing, measured.** Werkzeug defaults to `scrypt:32768:8:1`. Hashing
+`hunter2` twice produced two different strings — each carries its own random salt, so
+identical passwords do not share a digest. One hash took **~300 ms**, which is the point:
+an attacker pays the same 300 ms per guess per user.
+
+**Config, measured.** `from_object` loads **only UPPERCASE** names — `lowercase_ignored`
+came back `None`, silently. `from_prefixed_env()` parses values as **JSON**, so
+`FLASK_MAX_ITEMS=25` becomes `int` 25 and `FLASK_FEATURE_ON=true` becomes `bool` True
+(not the truthy string `'true'`, which would have hidden the bug). Unprefixed variables
+are ignored. `from_pyfile` raises `FileNotFoundError` unless `silent=True`. Precedence is
+simply last-write-wins: DATABASE moved `dev.db` -> `instance.db` -> `env.db` as each
+source was applied.
+
+**Extensions, measured.** One module-level `db = SQLAlchemy()` bound to two apps via
+`init_app` gave each its own engine (`instance/a.db`, `instance/b.db`) from the same
+object. `app.extensions` was `['sqlalchemy']` — per-app state lives on the app, which is
+what keeps them apart. Skipping `init_app` gives
+`RuntimeError: The current Flask app is not registered with this 'SQLAlchemy' instance.`
+
+**Backlog: Flask 19 left**, site-wide 121. **Of those 19, ten are phase-overview pages**
+(`Phase N - ....mdx` plus the module landing page) which need a different treatment —
+phase map, prerequisites, outcomes, page table — not a measured mechanism. The other nine
+are Flask-Admin, Flask-Mail, the three Phase 8 REST pages, and the four Phase 9 deployment
+pages.
+
+**Deployment pages cannot be verified here.** Render, PythonAnywhere and Docker deploys
+are not runnable in this environment. Those pages must be built from mechanism and say
+plainly what was not executed, rather than implying a deploy was tested. `.env` handling
+and `Dockerfile` *content* can be checked locally; an actual deploy cannot.
+
+### Flask Phase 8 (REST, 3 pages) + Flask-Mail
+
+**No email was sent.** The Flask-Mail page was measured with `MAIL_SUPPRESS_SEND=True`,
+placeholder credentials pointing at `smtp.example.com`, and `mail.record_messages()` to
+capture in memory. No SMTP connection was opened.
+
+**Two rate-limiter defaults that break real APIs.** The 429 body is **HTML**
+(`text/html; charset=utf-8`), which a JSON client cannot parse — fixed with an
+`errorhandler(429)` returning `jsonify`, measured as `application/json`. And storage is
+**`MemoryStorage`**, per process: two limiters held separate storage objects, so behind
+`gunicorn -w 4` a limit of `100 per hour` allows up to **400**. With headers enabled,
+`X-RateLimit-Remaining` counted 2, 1, 0 then 429 on the fourth call.
+
+**Flask-RESTful against plain Flask, measured.** Identical 200 responses; the difference
+is at the edges. A missing item gave plain Flask **404 `text/html`** and Flask-RESTful
+**404 `application/json`**. `reqparse` coerced `qty="7"` to `int` 7 and returned
+`400 {"message": {"name": "name is required"}}` for a missing required field. Routing
+differs too: plain Flask registered **two rules** for one path (one per method), RESTful
+**one** with class dispatch. The page's conclusion is that every RESTful advantage is
+reachable in plain Flask with an `errorhandler` — it decides them for you — and notes
+`reqparse` has long been documented as deprecated.
+
+**The Postman page is the one honest limitation.** Postman is a GUI and cannot run here.
+Every HTTP behaviour on the page WAS measured against a real Flask app; the Postman
+*interface* steps are described, not executed, and the page says so in a `:::note`.
+Measured: the same body sent three ways gave `is_json` True/False/False — a correct JSON
+body with **no Content-Type** leaves `request.json` as `None` while the server still
+received 15 bytes. Malformed JSON with the right header is **400**; valid JSON with
+`text/plain` is **415**.
+
+**Backlog: Flask 15 left**, site-wide 117. Remaining: Flask-Admin (1), the four Phase 9
+deployment pages, and **ten overview pages** (nine `Phase N - ....mdx` plus the module
+landing) which need the phase-map treatment rather than a measured mechanism.
+
+### Flask overview pages — all 10, generated
+
+Nine phase overviews plus the module landing. Nothing here claims a measurement, because
+there is nothing to run: each page gets a phase map built from the real files, a shared
+track sketch showing what each phase unlocks, the page list in reading order, and a Quiz
+about scope and prerequisites.
+
+**The page tables are generated from disk, not typed.** `phase_pages()` reads every
+`.mdx` in the phase and sorts by sidebar `order`, asserting each file declares one. The
+regex is `^\\s+order:` — an earlier pass used `^order:`, matched nothing because the key
+is indented under `sidebar:`, and silently fell back to **alphabetical**, which would have
+printed a plausible but wrong reading order on all nine pages. The grouping is also
+asserted: `mermaid_map()` fails if the declared clusters do not cover exactly the pages
+that exist, so adding a page to a phase breaks the build rather than being quietly
+dropped. Verified 88 content + 9 overviews + 1 landing = **98**, the module total.
+
+**Page names are listed as PLAIN TEXT, not links.** Starlight lowercases and hyphenates,
+but the repo has no existing internal link to any Flask page, so the slug treatment of
+parentheses in names like `Custom Error Pages (404, 500)` and
+`Phase 5 - Databases (Flask-SQLAlchemy)` is unverified here. Guessing would have shipped
+ten pages of broken links at once; the sidebar already navigates. **If someone verifies
+the parenthesis rule, these tables are the place to add links.**
+
+**Backlog: Flask 5 left**, site-wide 107 — Flask-Admin plus the four Phase 9 deployment
+pages.
+
+### Flask Phase 9 (deployment) + Flask-Admin. **Flask is now 98/98.**
+
+**A correction I made mid-batch, recorded because it nearly shipped as a false claim.**
+`docker --version` reported 29.6.2 and I said Docker was available and the image build
+would be genuinely verified. That was wrong twice over: the version string reports the
+**client only**, and the daemon is not running —
+`failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`. Worse,
+the backgrounded `docker build ... | tail -25` exited **0** because the exit code came
+from `tail`, so the task notification said "completed" for a build that never ran. The
+page now marks the image build as unverified and says exactly why.
+
+**What each of the five pages actually verified**, stated on the pages themselves:
+
+| page | verification |
+| --- | --- |
+| `Environment Variables (.env)` | **fully measured** (python-dotenv 1.2.2) |
+| `Flask-Admin Interface` | **fully measured** (flask-admin 2.2.0) |
+| `Dockerizing Flask App` | **partial** — entry point resolved and served 200; image NOT built |
+| `Deploying to Render` | **not executed** — mechanism only, dashboard steps described |
+| `Deploying to PythonAnywhere` | **not executed** — mechanism only |
+
+**The .env trap worth the page.** Every value is a string, so `DEBUG=false`, `DEBUG=0`,
+`DEBUG=no` and `DEBUG=False` are **all truthy** — `if os.environ.get("DEBUG"):` turns the
+interactive debugger **on** when you wrote `false`. Also measured: `load_dotenv()` does
+**not** overwrite a real environment variable (the host always wins) unless
+`override=True`.
+
+**Flask-Admin is the most alarming measurement in the whole Flask module.** One
+`add_view()` registered **11 routes** including `/new/`, `/edit/`, `/delete/` and
+`/export/`, and `GET /admin/` and `/admin/user/` both returned **200 with no
+authentication configured**. `column_list` also exposed `secret_note` without being asked.
+An unprotected admin is a full database compromise, not an information leak.
+
+**Two version notes.** flask-admin 2.2.0 removed `template_mode` — passing it raises
+`TypeError`. gunicorn is POSIX-only and cannot run on this Windows host, so the local WSGI
+check used `waitress`; the Dockerfile still targets gunicorn because the image is linux.
+
+**Backlog: Flask 0 left. Site-wide 102** — Testing (30), Automation (28), DSA (26,
+deliberate), projects/guides/root (18).
+
+### Testing Phase 6 — Static Analysis, 6 pages
+
+**All six tools were run against the SAME deliberately flawed 29-line file**, so the pages
+compare what each one actually sees instead of describing them in isolation. Versions:
+flake8 7.3.0, pylint 4.0.6, mypy 2.3.0, black 26.5.1, bandit 1.9.4, radon 6.0.1.
+
+| tool | reported on `sample.py` |
+| --- | --- |
+| flake8 | 5 style / dead-code issues, **zero security findings** |
+| pylint | 4 issues, score **8.10/10** |
+| mypy | **1 type error** no other tool saw |
+| bandit | 5 security issues, **3 HIGH** |
+| radon | complexity **A (5)**, maintainability **A (56.30)** |
+
+The spine of all six pages is that **no tool subsumes another**: flake8 read the
+`os.system` shell injection and said nothing; bandit read the type error and said nothing.
+
+**The accidental finding worth the batch.** My sample named an unused variable
+`unused_var`. flake8 reported it (F841); pylint did **not**, even with
+`--enable=W0612` forced. The cause is pylint's default
+`dummy-variables-rgx = "_+$|(_[a-zA-Z0-9_]*[a-zA-Z0-9]+?$)|dummy|^ignored_|^unused_"` —
+`^unused_` matches, so pylint treats the name as a deliberate discard. Renaming it to
+`spare_value` made pylint report it immediately. **I nearly wrote this up as "pylint missed
+it"**; it is a configured convention, not a gap, and that distinction is what the page
+teaches.
+
+**Two other measured results worth keeping.** black-formatted code **fails default flake8**
+(`E501 line too long (84 > 79)`) because black targets 88 columns and flake8 defaults to
+79 — the fix is `max-line-length = 88` plus `extend-ignore = E203, W503`. And running black
+over a function left its complexity at **C (15) before and after**: formatting is
+cosmetic, complexity is structural, and conflating them is how a codebase ends up
+beautifully formatted and unmaintainable.
+
+**Backlog: Testing 24 left**, site-wide 96.
+
+### Testing Phase 3 (unittest, 5 pages) + Phase 4 (pytest, 5 pages)
+
+**The best measurement in the batch**, on the coverage page: a module with one `if`, and a
+single test exercising only the true side, reports **100% statement coverage** and
+**86% branch coverage** (missing branch `3->5`). Every *line* ran; one *outcome* never
+happened. That pair of numbers is the entire argument for `--cov-branch`, and it is exact
+rather than rhetorical.
+
+**A measurement that was invalid before it was right.** A shell loop ran
+`pytest -q -m 'not slow'` with the quotes word-split, so pytest got a broken argument and
+reported "no tests ran". Quoted properly it reports **7 passed, 1 deselected**. The broken
+figure would have made marker negation look useless.
+
+**unittest facts.** Tests run in **alphabetical order by method name**, not definition
+order. `assertTrue([1,2,3] == [1,2,4])` reports only `AssertionError: False is not true`
+because Python collapsed the comparison before unittest saw it, while `assertEqual` gives a
+full diff naming the differing element — the strongest argument on the assertions page.
+An `@expectedFailure` that **passes** is an "unexpected success" and **fails the run**:
+measured `FAILED (skipped=2, expected failures=1, unexpected successes=1)` with no ordinary
+failure present. `Ran 0 tests` exits **0**, so green CI does not prove tests ran.
+
+**pytest facts.** Assertion rewriting reports operands *and* sub-expressions
+(`assert 120.0 == 121.0` plus `where 120.0 = price_with_tax(100)`). Five test functions
+became **8 tests** via one `parametrize`. Selection measured: `-m slow` 1/7, `-m "not slow"`
+7/1, `-k discount` 1/7. A **typo'd marker deselects everything and exits 5**; an
+unregistered marker only warns (`PytestUnknownMarkWarning`), which is why `--strict-markers`
+matters. `--cov-fail-under=90` against 83% exits **1**. Artefacts produced and sized:
+`report.html` 37,274 B, `htmlcov/index.html` 4,686 B, `coverage.xml` with
+`line-rate="0.8333"`, `.coverage` 53,248 B.
+
+**Backlog: Testing 14 left**, site-wide 86.
 
 ### `scripts/lint-p5.mjs` — new, wired into `npm run dsa`
 

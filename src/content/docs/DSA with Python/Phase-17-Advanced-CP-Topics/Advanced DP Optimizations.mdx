@@ -1,0 +1,889 @@
+---
+title: Advanced DP Optimizations
+description: Digit DP for counting numbers with a digit property, monotonic-deque-optimized sliding-window DP, and a tour of further speedups -- convex hull trick, divide and conquer DP, and Knuth's optimization.
+sidebar:
+  order: 5
+patterns:
+  - advanced-dp-optimizations
+difficulty: hard
+prereqs:
+  - binary-trees-and-bst
+  - prefix-sums-and-difference-arrays
+sheets:
+  striver_a2z: step-16
+---
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+import ArrayStepper from "../../../../components/viz/ArrayStepper.tsx";
+
+
+import ProblemLadder from "../../../../components/dsa/ProblemLadder.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+Phase 6 covered DP as a *modeling* discipline: pick the right state, write
+the recurrence, fill the table. This page is about a different
+question -- once the recurrence is right, can it run **faster**? A
+handful of named optimizations turn an $O(n^2)$ or $O(n^3)$ transition
+into something close to linear, by exploiting extra structure
+(monotonicity, convexity) that the naive recurrence doesn't use. This is
+not an exhaustive list -- competitive programming has a deep well of
+these -- but the ones below cover the techniques that actually show up
+repeatedly.
+
+## What you'll learn
+
+- **Digit DP**: counting how many numbers up to `N` satisfy a per-digit
+  property, without ever enumerating the numbers themselves.
+- A pointer back to **bitmask DP** (Phase 6) for the subset-state family
+  of optimizations.
+- **Monotonic-deque-optimized DP**: when a transition needs "the best DP
+  value in a sliding window," a deque keeps that lookup $O(1)$ amortized
+  instead of $O(k)$.
+- A conceptual tour of three further speedups -- the **convex hull
+  trick**, **divide-and-conquer DP**, and **Knuth's optimization** -- and
+  the shape of recurrence each one targets.
+
+## The cue
+
+Every technique on this page speeds up a recurrence you have **already written correctly**. The
+cue is never "what is the DP?" -- it is "the DP is right and it is too slow, and the constraint
+says that was expected."
+
+:::tip[You are looking at a DP optimisation when...]
+- **The bound is astronomically large but the property is digit-local.** "How many integers in
+  $[0, 10^{18}]$ have no two adjacent equal digits." You cannot enumerate; the state is
+  `(position, tight, whatever the rule needs)`. Any constraint written as $10^{18}$, or as a
+  string rather than an integer, is announcing digit DP.
+- **The transition scans a fixed-width window of previous `dp` values.** `dp[i]` needs
+  $\max_{i-k \le j < i} dp[j]$, `n` and `k` are both large, and $O(nk)$ is $10^{10}$. Monotonic
+  deque.
+- **The transition is `dp[j] + b_j * a_i`** -- a *product* of something indexed by `j` with
+  something indexed by `i`. That factorisation is the convex hull trick's signature; without it,
+  CHT does not apply.
+- **A 2D partition DP whose optimal split drifts right as `j` grows.** "Split the array into `k`
+  groups minimising total cost", $O(kn^2)$, `n` in the thousands. D&C optimisation.
+- **Interval DP at $O(n^3)$** with a cost function satisfying the quadrangle inequality. Knuth.
+:::
+
+**When it is the wrong page.** If the recurrence is not yet correct, none of this helps -- go back
+to [the DP phase](../../phase-12-dynamic-programming/) and get the state right first. If the
+state is *which subset has been used*, that is [bitmask DP](../../phase-12-dynamic-programming/bitmask-and-tree-dp/),
+a modelling technique rather than an optimisation. And if `n` is small enough that $O(n^2)$ fits,
+write the $O(n^2)$ -- these optimisations trade a large amount of implementation risk for a
+constant you may not need.
+
+**In an interview**, digit DP and the monotonic deque are fair game and appear on LeetCode. CHT,
+D&C optimisation and Knuth essentially do not; know the recurrence shape and the name to look up,
+and say so rather than pretending to recall the implementation.
+
+## Digit DP: counting without enumerating
+
+Some problems ask "how many integers from `0` to `N` satisfy some
+per-digit property" where `N` can be astronomically large (`10^18`).
+Enumerating every number is impossible, but the property only ever
+depends on **which digits appear** and **whether the number built so far
+is still capped by `N`'s own digits** -- so the DP state is
+`(position, tight)`, where `tight` means "every digit chosen so far
+exactly matches `N`'s digits" (so the next digit is capped) versus
+"already strictly smaller" (so the next digit can be anything `0-9`).
+
+```python title="digit_dp.py" showLineNumbers{1}
+from functools import lru_cache
+
+
+def count_without_digit(n, forbidden):
+    digits = [int(c) for c in str(n)]
+
+    @lru_cache(maxsize=None)
+    def dp(pos, tight):
+        if pos == len(digits):
+            return 1                          # built a full, valid number
+        limit = digits[pos] if tight else 9    # capped only while still matching N's prefix
+        total = 0
+        for d in range(0, limit + 1):
+            if d == forbidden:
+                continue                       # this digit isn't allowed anywhere
+            total += dp(pos + 1, tight and d == limit)
+        return total
+
+    result = dp(0, True)
+    dp.cache_clear()                           # dp is only valid for THIS n's digit string
+    return result
+
+
+n = 50
+result = count_without_digit(n, forbidden=4)
+brute_force = sum(1 for x in range(n + 1) if "4" not in str(x))
+print("digit DP:", result)
+print("brute force (sanity check):", brute_force)
+```
+
+The state space is tiny -- `len(digits) * 2` states, each doing $O(10)$
+work -- so this counts numbers up to `10^18` in about 20 states total,
+versus enumerating $10^{18}$ numbers directly.
+
+:::tip[Digit DP generalizes past "forbidden digit"]
+Swap the per-digit rule and the same skeleton answers "how many numbers
+have digit sum $\le S$," "how many have no two adjacent equal digits," or
+"how many are divisible by `k`" -- add whatever extra state
+(`digit_sum_so_far`, `last_digit`, `remainder_mod_k`) the property needs,
+alongside `(pos, tight)`.
+:::
+
+## Bitmask DP: already covered in Phase 6
+
+The other major "state isn't an index" family -- **bitmask DP**, where
+the state is *which subset* of items has been used (Traveling Salesman
+being the canonical example) -- is covered in depth in **Bitmask and Tree
+DP** back in Phase 6. If subset-shaped state is new to you, that's the
+page to revisit; this lesson focuses on the optimizations that speed up
+an *already-correct* recurrence rather than the modeling itself.
+
+## Visual intuition
+
+The deque optimisation is the monotonic-deque sliding-window maximum, applied to a DP row instead of
+an input array. Watch what gets discarded:
+
+<ArrayStepper
+  client:visible
+  algo="sliding-window-max"
+  values={[1, 3, -1, -3, 5, 3, 6, 7]}
+  k={3}
+  title="A value is dropped the moment something newer and better arrives"
+  lib="LC 239 · O(n) total"
+  desc="Once a newer element is at least as large, every older smaller element is dead -- it can never be the maximum of any future window. In the DP setting these values are dp[j] candidates and the window is the transition range, so the same eviction rule turns an O(nk) recurrence into O(n). Each element is pushed and popped at most once, which is the amortised argument."
+/>
+
+## Monotonic-deque-optimized DP
+
+Some recurrences need, at each step, the **best DP value within a sliding
+window** of the last `k` positions:
+
+$$
+dp[i] = nums[i] + \max\bigl(0,\ \max_{\,i-k \,\le\, j \,<\, i} dp[j]\bigr)
+$$
+
+Computing that inner max naively costs $O(k)$ per step -- $O(nk)$ total. A
+**monotonic deque** keeps the window's maximum available in $O(1)$: push
+indices onto the back, but first pop off any index whose `dp` value is
+`<=` the new one (they can never be the answer again, since the new index
+is both more recent *and* at least as good), and pop stale indices off the
+front once they fall outside the window.
+
+```python title="monotonic_deque_dp.py" showLineNumbers{1}
+from collections import deque
+
+
+def constrained_subset_sum(nums, k):
+    n = len(nums)
+    dp = [0] * n
+    dq = deque()                          # holds indices, dp[dq[0]] .. dp[dq[-1]] decreasing
+
+    for i in range(n):
+        while dq and dq[0] < i - k:
+            dq.popleft()                   # front index fell outside the window -- drop it
+
+        best_prev = dp[dq[0]] if dq and dp[dq[0]] > 0 else 0
+        dp[i] = nums[i] + best_prev
+
+        while dq and dp[dq[-1]] <= dp[i]:
+            dq.pop()                       # a worse-or-equal, older candidate is now useless
+        dq.append(i)
+
+    return max(dp)
+
+
+nums = [10, 2, -10, 5, 20, -7, -15]
+k = 2
+print("constrained subset sum:", constrained_subset_sum(nums, k))   # expect 37
+```
+
+Every index enters and leaves the deque at most once, so the whole
+sliding-window maximum bookkeeping is $O(n)$ total -- the deque turns an
+$O(nk)$ DP into an $O(n)$ one.
+
+:::caution[The deque holds indices, not values]
+Storing raw `dp` values in the deque loses the position information
+needed to know when an index has aged out of the window (`dq[0] < i -
+k`). Always store the **index**; look up `dp[index]` only when you need
+the value itself.
+:::
+
+## Further reading: three more named optimizations
+
+These show up less often than digit DP or the monotonic-deque trick, but
+recognizing the recurrence *shape* that triggers each one is worth
+knowing even without memorizing the implementation.
+
+**Convex hull trick (CHT).** Targets recurrences of the form
+
+$$
+dp[i] = \min_{j < i} \bigl(dp[j] + b_j \cdot a_i\bigr)
+$$
+
+-- read each `j` as defining a line `y = b_j \cdot x + dp[j]`, and `dp[i]`
+as the minimum of all those lines evaluated at `x = a_i`. Maintaining the
+**lower envelope** of the lines added so far (a monotonic stack of lines,
+popping ones that are never optimal) answers each query in $O(\log n)$ or
+even amortized $O(1)$ if the `a_i` queries arrive in sorted order --
+turning an $O(n^2)$ recurrence into $O(n \log n)$.
+
+**Divide-and-conquer DP optimization.** Targets 2D recurrences
+
+$$
+dp[i][j] = \min_{k < j} \bigl(dp[i-1][k] + \text{cost}(k, j)\bigr)
+$$
+
+where the optimal split point `opt(i, j)` is **monotonic in `j`** for a
+fixed `i` (`opt(i, j) \le opt(i, j+1)`). Solving for the middle `j` first,
+then recursing on the left and right halves with `k`'s search range
+narrowed by that monotonicity, computes an entire DP row in
+$O(n \log n)$ instead of $O(n^2)$.
+
+**Knuth's optimization.** Targets interval DP recurrences
+
+$$
+dp[i][j] = \min_{i \le k < j} \bigl(dp[i][k] + dp[k+1][j]\bigr) + \text{cost}(i, j)
+$$
+
+when `cost` satisfies the **quadrangle inequality**. Under that condition,
+the optimal split `opt(i, j)` satisfies `opt(i, j-1) \le opt(i, j) \le
+opt(i+1, j)` -- bounding each split point's search range enough that the
+total work across the whole table drops from $O(n^3)$ to $O(n^2)$.
+
+:::note[These are deep-CP territory]
+Convex hull trick, D&C DP optimization, and Knuth's optimization are
+genuinely advanced -- they show up in harder competitive-programming
+contests far more often than in coding interviews. Treat this section as
+"recognize the recurrence shape and know the name to look up," not
+something to have memorized cold; the monotonic-deque trick above is the
+one worth being fully fluent in.
+:::
+
+## Dry run
+
+### Digit DP: counting `0..50` with no digit `4`
+
+`N = 50`, so `digits = [5, 0]` and there are exactly **four** reachable states. The whole point is
+that this table does not grow with `N` -- only with the number of digits.
+
+| State | Meaning | Value | Why |
+| --- | --- | --- | --- |
+| `dp(2, ·)` | past the last digit | `1` | one complete number built |
+| `dp(1, False)` | second digit free | **9** | `0-9` minus the forbidden `4` |
+| `dp(1, True)` | second digit capped at `0` | **1** | only `0` is allowed, and it is not `4` |
+| `dp(0, True)` | the answer | **37** | see below |
+
+The top-level sum: the first digit ranges over `0..5` because `tight` starts true and `digits[0]`
+is 5. `4` is skipped. For `d` in `{0, 1, 2, 3}` the number is already strictly below 50, so
+`tight` becomes false and each contributes `dp(1, False) = 9` -- **36**. For `d = 5` the prefix
+still matches, so it contributes `dp(1, True) = 1`, the number 50 itself. Total **37**.
+
+Brute force over `range(51)` counting strings without a `4`: **37**. Agreed, and the same
+agreement holds at `N = 100` (82), `N = 444` (324), `N = 1000` (730) and `N = 10^6` (531,442).
+
+Two things the trace is really showing:
+
+- **`tight` is the entire trick.** Once a digit is chosen strictly below `N`'s digit, every
+  remaining position is unconstrained, and *all* such prefixes share one subproblem. That is why
+  `dp(1, False)` is computed once and reused by four different first digits. Drop `tight` from the
+  state and you count numbers above `N`; make it part of the key incorrectly -- for instance by
+  memoising on `pos` alone -- and the capped branch poisons the free branch.
+- **Leading zeros are counted as numbers here.** `dp` treats `00` as a valid build, which is what
+  makes the count include `0` itself. If a problem forbids leading zeros or asks about the *number
+  of digits*, that needs a third state flag (`started`), and forgetting it is the most common
+  digit-DP bug after `tight`.
+
+The `dp.cache_clear()` after the call is not decoration. The cache key is `(pos, tight)`, which
+says nothing about *which* `N` produced it -- call the function again with a different `N` and
+every cached value is silently wrong for the new digit string.
+
+### Monotonic deque: `nums = [10, 2, -10, 5, 20, -7, -15, 3]`, `k = 2`
+
+The deque holds **indices**, and `dp` values along it are non-increasing front to back.
+
+| `i` | `nums[i]` | Expired from front | `best_prev` (from) | `dp[i]` | Popped from back | Deque (dp values) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | 10 | -- | 0 (--) | 10 | -- | `[0]` (10) |
+| 1 | 2 | -- | 10 (idx 0) | 12 | `[0]` | `[1]` (12) |
+| 2 | -10 | -- | 12 (idx 1) | 2 | -- | `[1, 2]` (12, 2) |
+| 3 | 5 | -- | 12 (idx 1) | 17 | `[2, 1]` | `[3]` (17) |
+| 4 | 20 | -- | 17 (idx 3) | **37** | `[3]` | `[4]` (37) |
+| 5 | -7 | -- | 37 (idx 4) | 30 | -- | `[4, 5]` (37, 30) |
+| 6 | -15 | -- | 37 (idx 4) | 22 | -- | `[4, 5, 6]` (37, 30, 22) |
+| 7 | 3 | **`[4]`** | **30 (idx 5)** | 33 | `[6, 5]` | `[7]` (33) |
+
+`dp = [10, 12, 2, 17, 37, 30, 22, 33]`, answer `max(dp) = 37`, matching an $O(nk)$ brute-force
+oracle -- as do `[-1,-2,-3] k=1` (`-1`), `[1,-1,1,-1,1] k=1` (`1`) and `[10,-2,-10,-5,20] k=2`
+(`23`).
+
+**Row 7 is why the deque holds indices.** Index 4 carries the best value in the whole array, 37,
+and at `i = 7` it falls outside the window `[5, 6]` and must be discarded. The only way to know
+that is to compare the stored *index* against `i - k`. Store raw `dp` values, as the caution
+warns, and there is no way to tell an aged-out 37 from a live one -- the DP happily reaches back
+past the window and returns an answer that is too large.
+
+**Row 3 is why the back-popping is `<=` and not `<`.** Indices 2 and 1 both die when `dp[3] = 17`
+arrives, because 17 is at least as good as both *and* more recent. An equal-valued older index is
+strictly worse -- same value, shorter remaining lifetime -- so evicting on equality keeps the
+deque shorter for free.
+
+**Rows 5 and 6 are why the deque grows.** Both new values are worse than 37, so nothing is
+evicted; they queue up behind it as the heirs apparent for when 37 expires. And at row 7, that is
+exactly what happens: index 5's 30 becomes the answer.
+
+Count the operations: eight iterations, eight pushes, eight pops. Each index enters the deque once
+and leaves once, which is the $O(n)$ total -- not $O(n)$ per step. Same amortised accounting as
+the [two-stack queue](../../phase-14-design-problems/design-with-stacks-and-queues/) and
+[KMP](../string-algorithms-kmp-z-and-rabin-karp/).
+
+One detail the table hides: `best_prev` is `max(0, …)`, not just `dp[dq[0]]`. Row 0 uses 0 because
+the deque is empty, but the guard matters later too -- if every value in the window is negative,
+starting a fresh subsequence at `i` beats extending anything. Drop the `max(0, …)` and the DP is
+forced to chain through a loss it should have abandoned.
+
+## Complexity summary
+
+| Technique | Naive cost | Optimized cost | Trigger condition |
+| --- | --- | --- | --- |
+| Digit DP | $O(N)$ enumeration | $O(\text{digits} \times \text{extra state} \times 10)$ | Counting numbers up to `N` by a digit-local property |
+| Monotonic-deque DP | $O(nk)$ | $O(n)$ | Transition needs a sliding-window max/min of previous `dp` values |
+| Convex hull trick | $O(n^2)$ | $O(n \log n)$ or $O(n)$ | Transition is `dp[j] + b_j * a_i`, a line evaluated at a query point |
+| D&C DP optimization | $O(n^2)$ per layer | $O(n \log n)$ per layer | Optimal split point is monotonic across `j` |
+| Knuth's optimization | $O(n^3)$ | $O(n^2)$ | Interval DP whose cost satisfies the quadrangle inequality |
+
+## The variant map
+
+| Variant | The state or structure that changes | Canonical problem |
+| --- | --- | --- |
+| **Count numbers with a forbidden digit** | `(pos, tight)` | 1012-style counting |
+| **Count numbers by digit sum** | add `sum_so_far` to the state | 1067 · 902 |
+| **Count numbers divisible by `k`** | add `remainder mod k` | 1397 |
+| **Count numbers with no adjacent equal digits** | add `last_digit` | 1012 Numbers With Repeated Digits |
+| **Numbers with a leading-zero rule** | add a `started` boolean | 902 Numbers At Most N Given Digit Set |
+| **Range `[L, R]` instead of `[0, N]`** | answer is `f(R) - f(L - 1)`; never write a two-bound DP | all of the above |
+| **Sliding-window max in a DP transition** | monotonic deque of indices | 1425 Constrained Subsequence Sum |
+| **Fixed jump range** | same deque, window is the jump range | 1696 Jump Game VI |
+| **Window plus an extra constraint** | deque keyed on the DP value, filtered on the constraint | 239 · 862 |
+| **Linear transition `dp[j] + b_j * a_i`** | convex hull trick -- lower envelope of lines | CP only |
+| **`k`-way partition with monotone split** | divide and conquer optimisation | 1478 Allocate Mailboxes |
+| **Interval DP with quadrangle-inequality cost** | Knuth -- bound `k` by `opt(i, j-1)` and `opt(i+1, j)` | 1000 Merge Stones |
+
+:::note[Two-bound ranges are one function, called twice]
+"How many integers in `[L, R]` satisfy P?" is always `count(R) - count(L - 1)`. Writing a digit DP
+that tracks a lower *and* upper bound simultaneously doubles the state, doubles the bugs, and buys
+nothing. The subtraction is the whole technique -- the same prefix-difference idea as
+[prefix sums](../../phase-05-patterns-arrays-and-strings/prefix-sum-and-difference-arrays/),
+applied to counting.
+:::
+
+## Practice -- real LeetCode problems
+
+Three partition DPs. All three share one skeleton -- *split the array into `k`
+consecutive groups, minimise the sum of group costs* -- and each adds a different
+twist: a running maximum, a divisibility constraint, and a precomputed cost matrix
+that opens the door to divide-and-conquer optimisation.
+
+### LC 1335 -- Minimum Difficulty of a Job Schedule · Hard
+
+**Problem.** Jobs must be done in order over exactly `d` days, at least one job
+per day. A day's difficulty is the maximum difficulty among its jobs; the
+schedule's difficulty is the sum over days. Return the minimum, or `-1` if
+impossible.
+
+**Constraints.** `1 <= len(jobDifficulty) <= 300`, `0 <= jobDifficulty[i] <= 1000`,
+`1 <= d <= 10`.
+
+**Examples.** `jobDifficulty = [6,5,4,3,2,1], d = 2` gives `7` -- day one takes
+the first five jobs (difficulty 6), day two takes the last (difficulty 1) ·
+`[9,9,9], d = 4` gives `-1` · `[1,1,1], d = 3` gives `3`
+
+<DataCampExercise
+  lang="python"
+  hint={`Fewer jobs than days is instantly -1. Otherwise let dp(i, days) be the best cost for jobDifficulty[i:] split into exactly that many days. With one day left you must take everything remaining, so the cost is its maximum. Otherwise try each cut point j, tracking the running maximum from i to j as you extend, and add dp(j+1, days-1). The loop must stop early enough to leave one job per remaining day: j goes up to n - days.`}
+  code={`class Solution:
+    def minDifficulty(self, jobDifficulty, d):
+        # TODO: -1 when there are fewer jobs than days.
+        # dp(i, days) = best cost for jobDifficulty[i:] over that many days.
+        # days == 1 -> max of the rest.
+        # Otherwise scan cut points j, carrying the running max, and stop
+        # at n - days so each remaining day still gets a job.
+        pass
+
+
+sol = Solution()
+cases = [([6, 5, 4, 3, 2, 1], 2), ([9, 9, 9], 4), ([1, 1, 1], 3),
+         ([7, 1, 7, 1, 7, 1], 3), ([11, 111, 22, 222, 33, 333, 44, 444], 6)]
+print([sol.minDifficulty(list(a), d) for a, d in cases])
+# expect [7, -1, 3, 15, 843]`}
+  solution={`from functools import lru_cache
+
+
+class Solution:
+    def minDifficulty(self, jobDifficulty, d):
+        n = len(jobDifficulty)
+        if n < d:
+            return -1                     # cannot give every day a job
+
+        @lru_cache(maxsize=None)
+        def dp(i, days):
+            if days == 1:
+                return max(jobDifficulty[i:])      # forced to take the rest
+            best = float("inf")
+            hardest = 0
+            # leave at least days-1 jobs for the remaining days
+            for j in range(i, n - days + 1):
+                hardest = max(hardest, jobDifficulty[j])
+                best = min(best, hardest + dp(j + 1, days - 1))
+            return best
+
+        result = dp(0, d)
+        dp.cache_clear()
+        return result
+
+
+sol = Solution()
+cases = [([6, 5, 4, 3, 2, 1], 2), ([9, 9, 9], 4), ([1, 1, 1], 3),
+         ([7, 1, 7, 1, 7, 1], 3), ([11, 111, 22, 222, 33, 333, 44, 444], 6)]
+print([sol.minDifficulty(list(a), d) for a, d in cases])`}
+  sct={`test_output_contains("[7, -1, 3, 15, 843]")
+success_msg("Carrying the running maximum inside the cut loop is what keeps this O(n^2 d) instead of O(n^3 d).")
+`}
+  height={480}
+/>
+
+<details>
+<summary>Editorial · approach, complexity, follow-ups</summary>
+
+The canonical **partition DP**: split a sequence into exactly `k` consecutive
+groups, minimising the total group cost. State is *(start index, days remaining)*;
+the transition is *where does this day end*.
+
+**Time** $O(n^2 d)$ -- $nd$ states, $O(n)$ cut points each. About
+$300 \times 300 \times 10 = 9 \times 10^5$. **Space** $O(nd)$.
+
+- **The loop bound `n - days + 1`** is the constraint "at least one job per day"
+  expressed as arithmetic. Letting `j` run to `n - 1` lets a later day get zero jobs,
+  which returns a too-small answer rather than crashing -- the nastiest kind of bug.
+- **`if n < d: return -1`** must come first. `[9,9,9]` with `d = 4` is that check.
+- **The running maximum is carried inside the loop**, not recomputed with
+  `max(jobDifficulty[i:j+1])` on each iteration. That is the difference between
+  $O(n^2 d)$ and $O(n^3 d)$, and it is what the extra `hardest` variable buys.
+- **Greedy fails.** Balancing the job counts per day is wrong -- the first example
+  puts *five* jobs on day one and one on day two, because the 6 dominates its day
+  regardless of how many cheap jobs sit with it.
+- **Difficulty 0 is allowed** by the constraints, so a day can cost nothing;
+  initialising `hardest` to 0 is therefore correct rather than lucky.
+
+**Follow-ups you should expect:** "$d$ up to $n$?" -- $O(n^3)$ becomes uncomfortable,
+so look at the structure. "Sum per day instead of maximum?" -- prefix sums make each
+group cost $O(1)$, and the cost function becomes convex, which unlocks the
+optimisations. "Minimise the *maximum* day difficulty (LC 410, LC 1011)?" -- binary
+search the answer and greedily pack; a different and usually easier technique.
+"Which jobs on which day?" -- store the chosen `j` per state. "Days need not be
+non-empty?" -- the bound relaxes and the answer becomes monotone in `d`.
+
+</details>
+
+### LC 1000 -- Minimum Cost to Merge Stones · Hard
+
+**Problem.** Merge exactly `k` **consecutive** piles into one at a cost equal to
+the total number of stones in those `k` piles. Return the minimum cost to end with
+one pile, or `-1` if impossible.
+
+**Constraints.** `1 <= len(stones) <= 30`, `2 <= k <= 30`,
+`1 <= stones[i] <= 100`.
+
+**Examples.** `stones = [3,2,4,1], k = 2` gives `20` ·
+`stones = [3,2,4,1], k = 3` gives `-1` · `stones = [3,5,1,2,6], k = 3` gives `25`
+
+<DataCampExercise
+  lang="python"
+  hint={`Each merge reduces the pile count by k-1, so reaching one pile from n requires (n-1) to be divisible by (k-1) -- check that first and return -1 otherwise. The state needs THREE parts: dp(i, j, piles) is the cost to reduce stones[i..j] to exactly that many piles. Reducing to 1 means first reaching k piles and then paying the whole range sum. Reducing to more than 1 means splitting off a first pile at a cut point stepping by k-1, because only those cuts can themselves collapse to one pile.`}
+  code={`class Solution:
+    def mergeStones(self, stones, k):
+        # TODO: impossible unless (n - 1) % (k - 1) == 0.
+        # dp(i, j, piles) = cost to reduce stones[i..j] to that many piles.
+        #   piles == 1: dp(i, j, k) + sum(stones[i..j])
+        #   otherwise:  split at mid, STEPPING BY k-1, into
+        #               dp(i, mid, 1) + dp(mid+1, j, piles-1)
+        # Use prefix sums for the range total.
+        pass
+
+
+sol = Solution()
+cases = [([3, 2, 4, 1], 2), ([3, 2, 4, 1], 3), ([3, 5, 1, 2, 6], 3), ([1], 2)]
+print([sol.mergeStones(list(a), k) for a, k in cases])
+# expect [20, -1, 25, 0]`}
+  solution={`from functools import lru_cache
+
+
+class Solution:
+    def mergeStones(self, stones, k):
+        n = len(stones)
+        if (n - 1) % (k - 1) != 0:
+            return -1                     # each merge removes exactly k-1 piles
+
+        prefix = [0] * (n + 1)
+        for i, v in enumerate(stones):
+            prefix[i + 1] = prefix[i] + v
+
+        @lru_cache(maxsize=None)
+        def dp(i, j, piles):
+            # cost to reduce stones[i..j] to exactly this many piles
+            if i == j:
+                return 0 if piles == 1 else float("inf")
+            if piles == 1:
+                # get to k piles, then pay the whole range to merge them
+                return dp(i, j, k) + prefix[j + 1] - prefix[i]
+
+            best = float("inf")
+            # the first pile spans i..mid; only steps of k-1 can collapse to 1
+            for mid in range(i, j, k - 1):
+                best = min(best, dp(i, mid, 1) + dp(mid + 1, j, piles - 1))
+            return best
+
+        result = dp(0, n - 1, 1)
+        dp.cache_clear()
+        return -1 if result == float("inf") else result
+
+
+sol = Solution()
+cases = [([3, 2, 4, 1], 2), ([3, 2, 4, 1], 3), ([3, 5, 1, 2, 6], 3), ([1], 2)]
+print([sol.mergeStones(list(a), k) for a, k in cases])`}
+  sct={`test_output_contains("[20, -1, 25, 0]")
+success_msg("The third dimension -- how many piles this range becomes -- is what makes the subproblems independent. That is the whole trick.")
+`}
+  height={560}
+/>
+
+<details>
+<summary>Editorial · approach, complexity, follow-ups</summary>
+
+Interval DP with a **third dimension**, and it is worth understanding why the
+obvious two-dimensional version fails. `dp[i][j]` alone cannot express "this range
+is not finished yet" -- a range may need to be left as several piles so its
+neighbour can merge with them. Tracking how many piles a range collapses into is
+exactly the missing information.
+
+**The feasibility check.** Every merge turns `k` piles into 1, removing `k - 1`.
+Going from `n` piles to 1 removes `n - 1`, so `(n - 1) % (k - 1) == 0` is necessary
+-- and, given the freedom to choose consecutive groups, sufficient.
+
+**Why `range(i, j, k - 1)`.** The first pile, spanning `i..mid`, must itself collapse
+to a single pile, which requires `(mid - i) % (k - 1) == 0`. Stepping by `k - 1`
+enumerates precisely those cut points and skips the impossible ones. Stepping by 1
+still gives the right answer -- the infeasible branches return infinity -- but does
+`k - 1` times more work.
+
+**Time** $O(n^3 k / (k-1))$, roughly $O(n^3)$ with $n \le 30$. **Space** $O(n^2 k)$.
+
+- **`k = 2` always works**, since `(n-1) % 1 == 0`. The first example is the
+  classic "merge adjacent pairs" problem and answers 20.
+- **`[3,2,4,1]` with `k = 3` is `-1`**: 3 mod 2 is 1, so no sequence of merges lands
+  on one pile.
+- **A single pile costs 0** and needs no merges, which the `i == j` base gives --
+  and note `[1]` with `k = 2` passes the divisibility check because `n - 1` is 0.
+- **`piles == 1` recurses into `dp(i, j, k)`**, the same range with a different pile
+  count. It looks circular but is not: `piles` strictly decreases toward the split
+  cases, so the recursion terminates.
+- **The range sum is charged exactly once per merge**, at the moment `k` piles
+  become 1. Charging it anywhere else double-counts, which is the most common wrong
+  recurrence.
+
+**Follow-ups you should expect:** "Why is $O(n^3)$ acceptable?" -- `n <= 30` says so;
+at $n = 1000$ you would need Knuth's optimisation, which applies because the cost
+function satisfies the quadrangle inequality. "Merge any `k` piles, not
+consecutive?" -- a completely different problem: sort and use a heap, greedily
+merging the smallest, which is Huffman coding. "`k = 2` only?" -- the two-dimensional
+interval DP suffices. "Maximise the cost instead?" -- the same table with `max`.
+"Reconstruct the merge order?" -- store the chosen `mid` per state.
+
+</details>
+
+### LC 1478 -- Allocate Mailboxes · Hard
+
+**Problem.** Given house positions on a street and `k` mailboxes to place, return
+the minimum total distance between each house and its nearest mailbox.
+
+**Constraints.** `1 <= k <= len(houses) <= 100`,
+`1 <= houses[i] <= 10**4`, all positions distinct.
+
+**Examples.** `houses = [1,4,8,10,20], k = 3` gives `5` ·
+`houses = [2,3,5,12,18], k = 2` gives `9`
+
+<DataCampExercise
+  hint={`Sort the houses first, because each mailbox serves a CONTIGUOUS block of them -- so the problem is a partition into k blocks. For a single block, the best mailbox position is the MEDIAN, and the cost is the sum of distances to it; precompute cost[i][j] for every block. Then it is the same partition DP as the other two: dp(i, boxes) tries every end point for the current block.`}
+  lang="python"
+  code={`class Solution:
+    def minDistance(self, houses, k):
+        # TODO: sort. Precompute cost[i][j] = total distance for houses
+        # i..j served by ONE mailbox placed at their median.
+        # Then partition DP: dp(i, boxes) tries every block end j.
+        pass
+
+
+sol = Solution()
+cases = [([1, 4, 8, 10, 20], 3), ([2, 3, 5, 12, 18], 2), ([7, 4, 6, 1], 1),
+         ([3, 6, 14, 10], 4)]
+print([sol.minDistance(list(a), k) for a, k in cases])
+# expect [5, 9, 8, 0]`}
+  solution={`from functools import lru_cache
+
+
+class Solution:
+    def minDistance(self, houses, k):
+        houses.sort()                     # blocks are contiguous once sorted
+        n = len(houses)
+
+        # cost[i][j] = best total distance for houses i..j with ONE mailbox
+        cost = [[0] * n for _ in range(n)]
+        for i in range(n):
+            for j in range(i, n):
+                median = houses[(i + j) // 2]
+                cost[i][j] = sum(abs(houses[t] - median)
+                                 for t in range(i, j + 1))
+
+        @lru_cache(maxsize=None)
+        def dp(i, boxes):
+            if i == n:
+                return 0 if boxes == 0 else float("inf")
+            if boxes == 0:
+                return float("inf")       # houses left but no mailboxes
+            best = float("inf")
+            for j in range(i, n):         # this mailbox serves i..j
+                best = min(best, cost[i][j] + dp(j + 1, boxes - 1))
+            return best
+
+        result = dp(0, k)
+        dp.cache_clear()
+        return result
+
+
+sol = Solution()
+cases = [([1, 4, 8, 10, 20], 3), ([2, 3, 5, 12, 18], 2), ([7, 4, 6, 1], 1),
+         ([3, 6, 14, 10], 4)]
+print([sol.minDistance(list(a), k) for a, k in cases])`}
+  sct={`test_output_contains("[5, 9, 8, 0]")
+success_msg("Median for one block, partition DP for many. Two standard results composed -- that is what most Hards actually are.")
+`}
+  height={520}
+/>
+
+<details>
+<summary>Editorial · approach, complexity, follow-ups</summary>
+
+Two independent facts, composed.
+
+**Fact 1: one mailbox goes at the median.** Minimising $\sum |x_i - p|$ over $p$ is
+minimised at the median, not the mean. The argument: moving $p$ right by
+$\delta$ changes the total by $\delta \cdot (\text{houses left of } p -
+\text{houses right of } p)$, so the total decreases until the counts balance. With
+an even count any point between the two middle houses is optimal, which is why
+`(i + j) // 2` is fine. Being able to give that argument is the main thing being
+tested -- guessing "mean" is the classic error.
+
+**Fact 2: blocks are contiguous.** Once the houses are sorted, an optimal solution
+never has a mailbox serving houses on both sides of a house served by another --
+you could swap and do no worse. So this is a partition into `k` consecutive blocks,
+the same skeleton as the previous two problems.
+
+**Time** $O(n^3)$ for the cost table plus $O(n^2 k)$ for the DP -- $10^6$ and
+$10^6$ at $n = 100$. The cost table can be built in $O(n^2)$ with the recurrence
+`cost[i][j] = cost[i+1][j-1] + houses[j] - houses[i]`, which is worth mentioning.
+**Space** $O(n^2 + nk)$.
+
+- **Sort first.** The third test case `[7,4,6,1]` arrives unsorted; without sorting
+  the contiguity argument is false and the answer is wrong.
+- **`boxes == 0` with houses remaining is infinity**, not 0. Without that guard the
+  DP would happily serve houses with no mailbox.
+- **`k == n` gives 0** -- one mailbox per house, every distance zero. That is the
+  fourth test case.
+- **Leftover mailboxes are never a problem**, since the DP consumes exactly `k` and
+  extra boxes could always be dumped on an existing house at no cost. Requiring
+  `boxes == 0` at `i == n` is still correct because splitting a block is free.
+- **Median, not mean.** On `[1,4,8,10,20]` served by one mailbox, the median 8 costs
+  25 while the mean 8.6 rounds to 9 and costs 26.
+
+**Follow-ups you should expect:** "$n = 10^5$?" -- the cost function satisfies the
+quadrangle inequality, so **divide-and-conquer optimisation** brings the DP to
+$O(kn \log n)$; that is the intended answer and the reason this problem sits on this
+page. "Why does D&C optimisation apply?" -- the optimal split point is monotone in
+the block index, which follows from the quadrangle inequality. "Squared distances
+instead?" -- the optimum per block becomes the mean, and it is $k$-means in one
+dimension. "Mailboxes only at given candidate positions?" -- add a dimension over
+candidates. "Minimise the *maximum* distance instead?" -- binary search the radius
+and greedily cover.
+
+</details>
+
+## LeetCode problem set
+
+Generated from the problem database, so each entry carries its sheet
+membership and reported companies. Tick them off as you go — progress is
+saved in this browser, and the Export button writes it to a file you can keep.
+
+<ProblemLadder pattern="advanced-dp-optimizations"
+  notes={{"902":"Digit DP over a restricted digit alphabet, plus a length-based combinatorial count for numbers shorter than `N`","1425":"The monotonic-deque DP above, applied directly","1696":"The same monotonic-deque shape: `dp[i] = nums[i] + max(dp[j] for j in the last k indices)`, without the \"reset to 0\" clamp that Constrained Subsequence Sum needs"}} />
+
+## Interview follow-ups
+
+| They ask | What they're checking | The answer |
+| --- | --- | --- |
+| "`N` is $10^{18}$. What does that tell you?" | Reading constraints as hints | Enumeration is out and the answer is a *count*, so the state is positional, not numeric. Digit DP over roughly 19 positions with a `tight` flag -- about 40 states, not $10^{18}$ |
+| "What does `tight` actually mean?" | Whether you understand the state | "Every digit chosen so far equals `N`'s digit at that position." While true, the next digit is capped at `digits[pos]`; once false, all prefixes below `N` share one subproblem, which is where the compression comes from |
+| "Why clear the memo cache afterwards?" | Care with `lru_cache` | The key is `(pos, tight)` and encodes nothing about *which* `N` built the digit list. A second call with a different `N` reads stale values and returns a wrong answer with no error |
+| "Count in `[L, R]` instead" | Whether you reach for two bounds | `count(R) - count(L - 1)`. Never track two bounds in one DP -- it doubles the state for no gain |
+| "Your DP is $O(nk)$ and `n = k = 10^5`. Fix it." | Recognising the window shape | If the transition is a max or min over a fixed-width window of previous `dp` values, a monotonic deque makes it $O(n)$. Each index is pushed and popped once |
+| "Why does the deque store indices rather than values?" | The detail that breaks it | Expiry is `dq[0] < i - k`, a question about *position*. With raw values there is no way to tell an aged-out entry from a live one, and the DP reads outside its own window |
+| "Should the back-popping use `<` or `<=`?" | Precision | `<=`. An older index with an equal value is strictly worse -- same value, expires sooner -- so evicting on equality is free and keeps the deque shorter. Both are correct; `<=` is better |
+| "Prove the deque version is $O(n)$" | Amortisation, again | Every index is appended exactly once and removed at most once, so total deque operations across the scan are at most `2n`, regardless of `k`. Per-step cost is not constant; the total is linear |
+| "The transition is `dp[j] + b_j * a_i`. Anything better than $O(n^2)$?" | Recognising the shape | Each `j` is a line `y = b_j x + dp[j]` and the query is the minimum at `x = a_i`. Maintain the lower envelope -- convex hull trick -- for $O(n \log n)$, or amortised $O(1)$ if the queries arrive sorted |
+| "You do not remember the CHT implementation. Now what?" | Honesty and judgement | Say what the shape implies, name the technique, and offer the $O(n^2)$ with a note on where the envelope would slot in. That reads far better than a half-recalled monotonic stack of lines with an off-by-one in the intersection test |
+
+## Self-check
+
+<Quiz
+  questions={[
+    {
+      q: "In digit DP, what does the `tight` flag mean?",
+      options: [
+        "The remaining digits must be non-decreasing",
+        "Every digit chosen so far exactly matches N's digits, so the next digit is capped at digits[pos]",
+        "The number built so far is already larger than N",
+        "The memo cache is currently valid",
+      ],
+      answer: 1,
+      explain:
+        "While tight, the next digit cannot exceed N's digit at that position. Once a strictly smaller digit is chosen, tight goes false and every remaining position is free -- and crucially, *all* such prefixes collapse into one subproblem. In the N = 50 trace, dp(1, False) = 9 is computed once and reused by four different first digits. That sharing is the whole compression.",
+    },
+    {
+      q: "Counting 0..50 with no digit 4: the digit DP returns 37. Where does that number come from?",
+      options: [
+        "5 x 9 minus the forbidden values",
+        "First digit in {0,1,2,3} each contributes dp(1, False) = 9, giving 36; first digit 5 contributes dp(1, True) = 1, the number 50",
+        "10 x 10 minus 63 numbers containing a 4",
+        "It is 51 minus the 14 numbers that contain a 4",
+      ],
+      answer: 1,
+      explain:
+        "The first digit ranges 0..5 because tight starts true; 4 is skipped. Choosing 0-3 makes the number strictly below 50, so the second digit is free -- nine choices each, 36 total. Choosing 5 keeps it tight, so the second digit is capped at 0, giving exactly the number 50. Brute-forcing range(51) also gives 37.",
+    },
+    {
+      q: "Why does `count_without_digit` call `dp.cache_clear()` before returning?",
+      options: [
+        "To free memory, which is otherwise unbounded",
+        "The cache key is (pos, tight) and says nothing about which N built the digit list, so a later call with a different N would read stale values",
+        "Because lru_cache is not thread-safe",
+        "It is unnecessary; the decorator resets per call",
+      ],
+      answer: 1,
+      explain:
+        "The closure captures `digits`, but the memo key does not include it. Call the function again with a different N and every cached (pos, tight) entry silently answers for the *previous* digit string -- a wrong answer with no error and no crash. Defining dp inside the function is what makes the bug possible; clearing the cache, or keying on the digit string, is what fixes it.",
+    },
+    {
+      q: "The monotonic deque stores indices rather than dp values. What breaks if you store values?",
+      options: [
+        "The comparison `dp[dq[-1]] <= dp[i]` becomes ambiguous",
+        "Expiry is tested as `dq[0] < i - k`, a question about position -- with values there is no way to know an entry has left the window",
+        "Nothing; storing values is a valid optimisation",
+        "The deque would no longer be monotonic",
+      ],
+      answer: 1,
+      explain:
+        "In the eight-step trace, index 4 holds 37 -- the largest value anywhere -- and at i = 7 it falls out of the window and must be dropped in favour of 30. Only the index tells you that. Store raw values and the DP reads outside its own window, returning an answer that is too large on exactly the inputs where the window constraint bites.",
+    },
+    {
+      q: "Back-popping uses `while dq and dp[dq[-1]] <= dp[i]`. Why `<=` rather than `<`?",
+      options: [
+        "`<` would produce a wrong answer on ties",
+        "Both are correct, but an older index with an equal value expires sooner and can never be needed, so evicting it keeps the deque shorter for free",
+        "`<=` is required to keep the deque strictly decreasing, which the expiry check depends on",
+        "`<` would make the algorithm O(nk)",
+      ],
+      answer: 1,
+      explain:
+        "Same value, less remaining lifetime -- the older index is dominated, never uniquely optimal. Keeping it costs memory and iterations without ever changing an answer, so `<` is correct but wasteful. In the trace, dp[3] = 17 evicts both index 2 and index 1 at once, collapsing the deque to a single entry.",
+    },
+    {
+      q: "The transition reads `best_prev = dp[dq[0]] if dq and dp[dq[0]] > 0 else 0`. What does the `> 0` guard do?",
+      options: [
+        "It avoids an IndexError on the first iteration",
+        "It allows starting a fresh subsequence at i when every candidate in the window is negative",
+        "It keeps the deque monotonic",
+        "It is redundant, since dp values are always non-negative",
+      ],
+      answer: 1,
+      explain:
+        "Extending through a negative prefix is worse than starting over. Without the guard the DP is forced to chain through a loss it should have abandoned, which is wrong on any array with a stretch of negatives -- verified against a brute-force oracle on [-1,-2,-3], where the answer is -1, not -6. The deque handles *which* previous value is best; this guard handles whether to use one at all.",
+    },
+    {
+      q: "You have a correct O(n^2) DP with transition `dp[i] = min over j of (dp[j] + b_j * a_i)`, and n = 10^5. What is the shape telling you?",
+      options: [
+        "Use a monotonic deque over a sliding window",
+        "Each j is a line y = b_j x + dp[j], and dp[i] queries the lower envelope at x = a_i -- the convex hull trick, O(n log n)",
+        "Use divide-and-conquer optimisation on the split point",
+        "Add memoisation; the recurrence is recomputing subproblems",
+      ],
+      answer: 1,
+      explain:
+        "The signature is the *product* of a j-indexed term with an i-indexed term. That factorisation is what makes each j a line and each query a point evaluation. A deque needs the candidates to form a fixed-width window, which they do not here; D&C optimisation needs a monotone split point in a 2D partition recurrence, a different shape entirely.",
+    },
+    {
+      q: "How would you count integers in [L, R] with some digit property?",
+      options: [
+        "Track both a lower and an upper tight flag in the DP state",
+        "Compute count(R) - count(L - 1) with the single-bound DP",
+        "Run the DP on R and subtract L",
+        "Enumerate L..R directly if the range is under 10^9",
+      ],
+      answer: 1,
+      explain:
+        "The prefix-difference idea, applied to counting. A two-bound DP doubles the state and the bug surface for nothing. Watch the off-by-one: it is L - 1, not L, because count() is inclusive of its argument -- the same fencepost as prefix sums.",
+    },
+  ]}
+/>
+
+## Recall card
+
+- **These techniques speed up a recurrence that is already correct.** If the state is wrong, no
+  optimisation will save it.
+- **Digit DP** -- state is `(pos, tight)` plus whatever the rule needs. `tight` means "still
+  matching `N`'s prefix", so the next digit is capped; once false, every prefix shares one
+  subproblem. About 40 states for $N = 10^{18}$.
+- **Clear the memo** (or key on the digit string). `(pos, tight)` does not identify which `N` it
+  was computed for -- a second call returns a confident wrong answer.
+- **Range `[L, R]` = `count(R) - count(L - 1)`.** Never a two-bound DP.
+- **Leading zeros need a `started` flag** if the problem cares about digit count.
+- **Monotonic deque** turns $O(nk)$ into $O(n)$ when the transition is a max or min over a
+  fixed-width window of previous `dp` values.
+- **Store indices, not values** -- expiry is `dq[0] < i - k`, a question about position.
+- **Pop the back on `<=`.** An older index with an equal value is dominated: same value, expires
+  sooner.
+- **Keep the `max(0, …)` guard** so a fresh subsequence can start when the whole window is negative.
+- **The $O(n)$ is amortised**: each index is pushed once and popped once, so at most $2n$ deque
+  operations regardless of `k`.
+- **Recognise, then name**: `dp[j] + b_j·a_i` -> convex hull trick · monotone split point ->
+  divide and conquer · interval DP with the quadrangle inequality -> Knuth. In an interview, name
+  the shape and write the $O(n^2)$ rather than half-recalling the envelope.
+
+## Recap
+
+- **Digit DP**: state `(position, tight, ...extra)` counts numbers up to
+  `N` without enumerating them -- extend the extra state to match
+  whatever per-digit property the problem asks about.
+- **Bitmask DP** (subset state) lives in Phase 6's *Bitmask and Tree DP* --
+  revisit that page for the modeling side of subset-shaped DP.
+- **Monotonic-deque DP** turns an $O(nk)$ sliding-window-max transition
+  into $O(n)$ by keeping the deque's indices' `dp` values decreasing.
+- **Convex hull trick**, **D&C DP optimization**, and **Knuth's
+  optimization** each target a specific recurrence shape -- lines
+  evaluated at a point, a monotonic split point, and the quadrangle
+  inequality, respectively -- worth recognizing by name even without full
+  fluency in the implementation.
+
+That closes out the advanced-CP-topics phase -- between string automatons,
+bit-level tricks, and these DP speedups, you now have the toolkit for the
+recurring "how do I make this fast enough" questions that separate CP
+problems from a typical coding interview.

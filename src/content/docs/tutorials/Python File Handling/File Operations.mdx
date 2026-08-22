@@ -393,12 +393,275 @@ usage(total=97676207104, used=97676207104, free=0)
 
 In the above example, we are using the `disk_usage()` function to get the size of a directory. The `disk_usage()` function takes one argument. The argument is the name of the directory whose size is to be obtained.
 
+## What the mode string actually decides
+
+The mode you pass to `open()` settles three separate questions at once: may the file be
+missing, is existing content destroyed, and where does the cursor start. Choosing the
+wrong letter is how data disappears.
+
+```mermaid
+flowchart TD
+  O["open(path, mode)"] --> M{"mode"}
+  M -->|"r"| R["must exist<br/>read only, cursor at 0"]
+  M -->|"w"| W["created or TRUNCATED<br/>write only, cursor at 0"]
+  M -->|"a"| A["created if missing<br/>every write goes to the END"]
+  M -->|"x"| X["must NOT exist<br/>else FileExistsError"]
+  M -->|"r+"| RP["must exist, read and write<br/>cursor at 0, OVERWRITES in place"]
+  M -->|"w+"| WP["read and write<br/>but still truncates first"]
+```
+
+Measured, starting from a file containing `SEED` and writing a single `X`:
+
+| mode | file afterwards | note |
+|:--|:--|:--|
+| `w` | `X` | old contents gone before you wrote anything |
+| `a` | `SEEDX` | appended |
+| `x` | `SEED` | `FileExistsError`, nothing written |
+| `r+` | `XEED` | **overwrote one character in place** |
+| `w+` | `X` | `+` does not prevent truncation |
+
+:::danger[`r+` does not mean "edit safely"]
+`r+` writes *over* bytes at the cursor rather than replacing the file. Writing `X` onto
+`SEED` gives `XEED`, not `X`. There is no mode that inserts — to change the middle of a
+text file, read it, change it in memory, and write it back.
+:::
+
+### Opening is not writing: the buffer
+
+```python title="buffering.py" showLineNumbers{1}
+import os
+
+f = open("demo.txt", "w")
+f.write("buffered, not yet on disk")
+print(os.path.getsize("demo.txt"))    # 0    <- nothing on disk yet
+f.close()
+print(os.path.getsize("demo.txt"))    # 25   <- flushed on close
+```
+
+Writes land in a buffer and reach the disk when the buffer fills, when you call
+`flush()`, or when the file is closed. A crash before that point loses the data — and a
+script that never closes its files can leave them empty. `with` closes for you even if
+an exception is raised, which is the entire reason to prefer it:
+
+```python title="with_block.py" showLineNumbers{1}
+with open("demo.txt", "w") as g:
+    g.write("hello")
+    print(os.path.getsize("demo.txt"))    # 0
+print(os.path.getsize("demo.txt"))        # 5
+print(g.closed)                           # True
+```
+
+## See it move
+
+A file handle is a **cursor** over bytes. Every read moves it forward; nothing rewinds
+it for you. Step through the operations and watch where the cursor lands — and why the
+second `read()` comes back empty.
+
+```p5 title="The file cursor" desc="Reads advance the cursor and never rewind it. A second read() returns an empty string because the cursor is already at EOF." height="330"
+let data = "one\ntwo\n";
+let pos = 0;
+let log = [];
+let buttons = [];
+
+function setup() {
+  createCanvas(600, 330);
+  textFont("monospace");
+  buttons = [
+    { label: "read(3)", x: 24 },
+    { label: "read()", x: 124 },
+    { label: "seek(0)", x: 224 },
+    { label: "reset", x: 324 },
+  ];
+  log = ["opened, tell() = 0"];
+}
+
+function charLabel(c) {
+  if (c === "\n") return "\\n";
+  return c;
+}
+
+function doRead(n) {
+  const end = n < 0 ? data.length : min(data.length, pos + n);
+  const got = data.slice(pos, end);
+  pos = end;
+  let shown = "";
+  for (let i = 0; i < got.length; i++) shown += charLabel(got[i]);
+  log.push((n < 0 ? "read()" : "read(" + n + ")") + " -> '" + shown + "', tell() = " + pos);
+  if (got.length === 0) log[log.length - 1] += "   <- empty, at EOF";
+  while (log.length > 5) log.shift();
+}
+
+function draw() {
+  background(13, 17, 23);
+  noStroke();
+  fill(230);
+  textSize(13);
+  textAlign(LEFT, TOP);
+  text("file contents, one box per byte", 24, 20);
+
+  const bw = 46;
+  for (let i = 0; i < data.length; i++) {
+    const x = 24 + i * (bw + 6);
+    const consumed = i < pos;
+    stroke(consumed ? color(48, 56, 68) : color(75, 139, 190));
+    strokeWeight(1);
+    fill(consumed ? color(18, 23, 30) : color(20, 30, 42));
+    rect(x, 52, bw, 46, 4);
+    noStroke();
+    fill(consumed ? 70 : 220);
+    textSize(15);
+    textAlign(CENTER, CENTER);
+    text(charLabel(data[i]), x + bw / 2, 75);
+    fill(consumed ? 55 : 110);
+    textSize(10);
+    textAlign(CENTER, TOP);
+    text(i, x + bw / 2, 102);
+  }
+
+  const cx = 24 + pos * (bw + 6);
+  stroke(255, 211, 67);
+  strokeWeight(2);
+  line(cx, 44, cx, 104);
+  noStroke();
+  fill(255, 211, 67);
+  triangle(cx - 6, 36, cx + 6, 36, cx, 44);
+  textAlign(LEFT, BOTTOM);
+  textSize(11);
+  text("cursor, tell() = " + pos, cx + 8, 36);
+
+  for (const b of buttons) {
+    const hot = mouseX > b.x && mouseX < b.x + 92 && mouseY > 128 && mouseY < 156;
+    stroke(hot ? color(255, 211, 67) : color(60, 70, 84));
+    strokeWeight(1);
+    fill(hot ? color(34, 40, 50) : color(22, 28, 36));
+    rect(b.x, 128, 92, 28, 4);
+    noStroke();
+    fill(hot ? color(255, 211, 67) : 200);
+    textSize(12);
+    textAlign(CENTER, CENTER);
+    text(b.label, b.x + 46, 142);
+  }
+
+  fill(120);
+  textSize(11);
+  textAlign(LEFT, TOP);
+  for (let i = 0; i < log.length; i++) {
+    fill(i === log.length - 1 ? 210 : 95);
+    text(log[i], 24, 178 + i * 20);
+  }
+  fill(80);
+  text("the cursor only moves forward unless you seek", 24, 300);
+}
+
+function mousePressed() {
+  if (mouseY < 128 || mouseY > 156) return;
+  for (const b of buttons) {
+    if (mouseX > b.x && mouseX < b.x + 92) {
+      if (b.label === "read(3)") doRead(3);
+      else if (b.label === "read()") doRead(-1);
+      else if (b.label === "seek(0)") { pos = 0; log.push("seek(0), tell() = 0"); }
+      else { pos = 0; log = ["reopened, tell() = 0"]; }
+      while (log.length > 5) log.shift();
+    }
+  }
+}
+```
+
+```python title="cursor.py" showLineNumbers{1}
+with open("demo.txt") as f:          # contains "one\ntwo\nthree\n"
+    print(f.tell())                  # 0
+    print(f.read(3))                 # 'one'
+    print(f.tell())                  # 3
+    print(f.read())                  # '\ntwo\nthree\n'
+    print(f.read())                  # ''      <- cursor is at EOF, file is NOT re-read
+    f.seek(0)
+    print(f.read(3))                 # 'one'
+```
+
+An empty string from `read()` means end of file, not an empty file. Code that reads a
+handle twice and finds nothing the second time is almost always missing a `seek(0)`.
+
+### Text mode rewrites your newlines
+
+```python title="newlines.py" showLineNumbers{1}
+with open("demo.txt", "w") as f:
+    f.write("a\nb\n")
+print(open("demo.txt", "rb").read())     # b'a\r\nb\r\n'  -> 6 bytes on Windows
+
+with open("demo.txt", "wb") as f:
+    f.write(b"a\nb\n")
+print(open("demo.txt", "rb").read())     # b'a\nb\n'      -> 4 bytes
+
+with open("demo.txt", "w", newline="") as f:
+    f.write("a\nb\n")                    # translation off -> 4 bytes
+```
+
+Four characters became **six bytes**. In text mode on Windows, `\n` is translated to
+`\r\n` on write and back on read, so you rarely notice — until a byte count, a hash,
+or a file sent to another platform disagrees. For any non-text payload, open in binary.
+
+## Check yourself
+
+<Quiz
+  questions={[
+    {
+      q: "A file contains SEED. You open it with mode 'r+' and write 'X'. What does it contain?",
+      options: [
+        "X",
+        "XEED",
+        "SEEDX",
+        "SEED, since r+ cannot write",
+      ],
+      answer: 1,
+      explain:
+        "r+ positions the cursor at 0 and overwrites bytes in place rather than truncating. The X replaces the S and the rest survives, giving XEED.",
+    },
+    {
+      q: "Which mode raises FileExistsError when the file is already there?",
+      options: [
+        "w",
+        "a",
+        "x",
+        "r+",
+      ],
+      answer: 2,
+      explain:
+        "x is exclusive creation: it succeeds only if the file does not exist, which is how you avoid silently destroying data the way w would.",
+    },
+    {
+      q: "On Windows you write the 4-character string a\\nb\\n in text mode. How many bytes land on disk?",
+      options: [
+        "4, since text mode does not change bytes",
+        "6, because each newline escape is translated to carriage-return plus newline",
+        "5, because only the final newline is translated",
+        "8, because every character is stored as two bytes",
+      ],
+      answer: 1,
+      explain:
+        "Text mode translates a newline to the platform line ending on write. Both newlines become two bytes each, giving 6. Open in binary, or pass newline='', to stop it.",
+    },
+    {
+      q: "You call f.read() on an open handle, then call f.read() again. What does the second call return?",
+      options: [
+        "the same contents again",
+        "an empty string, because the cursor is at end of file",
+        "None",
+        "it raises, because the handle is exhausted",
+      ],
+      answer: 1,
+      explain:
+        "Reading advances the cursor and nothing rewinds it. The second read starts at EOF and returns ''. Call f.seek(0) first to read the file again.",
+    },
+  ]}
+/>
+
 ## Conclusion
 In this tutorial, we learned how to perform file operations in Python. We learned how to create, rename, delete, and move files and directories. We also learned how to list files and directories, check if a file or directory exists, get the current working directory, change the current working directory, and get the size of a file or directory. Now you can perform file operations in Python. For more information, visit the [official documentation](https://docs.python.org/3/library/os.html) of the `os` module and the [official documentation](https://docs.python.org/3/library/shutil.html) of the `shutil` module. For more tutorials, visit our Python Central Hub.
 
 ---
 
 import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Quiz from "../../../../components/Quiz.astro";
 
 ## Try it: File Operations Exercises
 

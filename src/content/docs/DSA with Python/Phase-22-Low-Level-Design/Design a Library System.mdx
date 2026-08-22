@@ -1,0 +1,690 @@
+---
+title: Design a Library System
+description: The catalogue-and-transactions archetype — why the Item/Copy split is the whole design, loans with fines, and a hold queue that is FIFO for a reason.
+sidebar:
+  order: 5
+difficulty: medium
+---
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+The library is the **catalogue plus transactions** archetype, and it turns on a single
+modelling decision that most candidates get wrong in the first thirty seconds: *"Dune"* is not
+a thing you can borrow. **Three copies of Dune** are.
+
+Get that split right and the rest of the design falls out. Get it wrong and every follow-up —
+availability, holds, overdue notices, damaged stock — needs a workaround.
+
+## The cue
+
+:::tip[You are looking at catalogue-and-transactions when...]
+- There is a **catalogue of *kinds*** and a set of **physical instances** of each kind. Books
+  and copies, films and discs, products and units of stock.
+- The prompt involves a **loan, rental or reservation** — something goes out, comes back, and
+  the *record* of that matters as much as the thing.
+- There are **dates and consequences**: due dates, overdue fines, expiry.
+- Someone can **queue for a thing that is currently out**, which is a hold list.
+- Follow-ups are about **the transaction**, not the item: "who has it?", "when is it due?",
+  "how much do they owe?"
+:::
+
+**When it is not this.** If every instance is interchangeable and you only need a count, you
+have [resource allocation](../design-a-parking-lot/) — a car park does not care *which* bay you
+took, only that one is free. If the interesting part is modes rather than records, it is
+[a state machine](../design-an-elevator-system/).
+
+## The Item / Copy split
+
+This is the whole design, so it is worth being explicit about why.
+
+A catalogue of two titles — Dune with 3 copies, Neuromancer with 1 — gives **2 items and 4
+copies**. Every interesting question is about copies:
+
+| Question | About |
+| --- | --- |
+| "Do you have Dune?" | the **Item** — it is in the catalogue |
+| "Can I borrow Dune today?" | the **Copies** — is any of the three on the shelf? |
+| "Who has it?" | a **Loan** — which links one copy to one member |
+| "Copy 2 is water-damaged" | one **Copy** — the other two are fine |
+
+With two of three Dune copies on loan, availability is **1 of 3**. A design that stores
+`available: bool` on the title cannot express that, and a design that stores only a count
+cannot express "copy 2 is damaged".
+
+Verified on per-copy state — three Dune copies with states `shelf`, `on loan`, `damaged`:
+
+| Model | Reports available |
+| --- | --- |
+| A bare count of 3 copies | **3** — wrong |
+| Per-copy state | **1** — correct |
+
+That is the argument for `Copy` being a real object rather than an integer.
+
+```mermaid title="Library: the catalogue on the left, the transactions on the right"
+classDiagram
+    class Item {
+        +isbn: str
+        +title: str
+        +author: str
+    }
+    class Copy {
+        +copy_id: str
+        +item: Item
+        +state: CopyState
+    }
+    class Member {
+        +member_id: str
+        +name: str
+        +max_loans: int
+    }
+    class Loan {
+        +copy: Copy
+        +member: Member
+        +out_day: int
+        +due_day: int
+        +returned_day: int
+    }
+    class Hold {
+        +item: Item
+        +queue: deque
+    }
+    class Library {
+        +checkout(member, item) Loan
+        +return_copy(copy, day) float
+        +place_hold(member, item) int
+    }
+    class LoanPolicy {
+        <<abstract>>
+        +loan_days() int
+        +fine(due, returned) float
+    }
+    Item "1" o-- "many" Copy
+    Loan --> Copy
+    Loan --> Member
+    Hold --> Item
+    Library --> LoanPolicy
+    Library o-- Hold
+```
+
+Note `Loan` points at a **`Copy`**, never at an `Item`. That single arrow is the design.
+
+## The skeleton
+
+```python title="library.py" showLineNumbers{1}
+from abc import ABC, abstractmethod
+from collections import deque
+from dataclasses import dataclass, field
+from enum import Enum
+
+
+class CopyState(Enum):
+    SHELF = "shelf"
+    ON_LOAN = "on loan"
+    DAMAGED = "damaged"
+    LOST = "lost"
+
+
+@dataclass(frozen=True)
+class Item:
+    """A catalogue entry. You cannot borrow this."""
+
+    isbn: str
+    title: str
+
+
+@dataclass
+class Copy:
+    """A physical thing. This is what a Loan points at."""
+
+    copy_id: str
+    item: Item
+    state: CopyState = CopyState.SHELF
+
+    def is_available(self) -> bool:
+        return self.state is CopyState.SHELF
+
+
+class LoanPolicy(ABC):
+    """The extension point: different rules per member tier or item type."""
+
+    @abstractmethod
+    def loan_days(self) -> int: ...
+
+    @abstractmethod
+    def fine(self, due_day: int, returned_day: int) -> float: ...
+
+
+class StandardPolicy(LoanPolicy):
+    def __init__(self, days=14, per_day=0.25, cap=10.0):
+        self.days, self.per_day, self.cap = days, per_day, cap
+
+    def loan_days(self) -> int:
+        return self.days
+
+    def fine(self, due_day: int, returned_day: int) -> float:
+        overdue = max(0, returned_day - due_day)
+        return round(min(overdue * self.per_day, self.cap), 2)
+
+
+@dataclass
+class Loan:
+    copy: Copy
+    member_id: str
+    out_day: int
+    due_day: int
+    returned_day: int | None = None
+
+
+class Library:
+    def __init__(self, policy: LoanPolicy):
+        self.policy = policy
+        self.copies: dict[str, list[Copy]] = {}          # isbn -> its copies
+        self.loans: dict[str, Loan] = {}                 # copy_id -> open loan
+        self.holds: dict[str, deque[str]] = {}           # isbn -> member queue
+
+    def add_copy(self, copy: Copy) -> None:
+        self.copies.setdefault(copy.item.isbn, []).append(copy)
+
+    def available(self, isbn: str) -> list[Copy]:
+        return [c for c in self.copies.get(isbn, []) if c.is_available()]
+
+    def checkout(self, member_id: str, isbn: str, day: int) -> Loan | None:
+        free = self.available(isbn)
+        if not free:
+            return None                                  # expected outcome, not an error
+        copy = free[0]
+        copy.state = CopyState.ON_LOAN
+        loan = Loan(copy, member_id, day, day + self.policy.loan_days())
+        self.loans[copy.copy_id] = loan
+        return loan
+
+    def return_copy(self, copy_id: str, day: int) -> float:
+        loan = self.loans.pop(copy_id)
+        loan.returned_day = day
+        loan.copy.state = CopyState.SHELF
+        return self.policy.fine(loan.due_day, day)
+
+    def place_hold(self, member_id: str, isbn: str) -> int:
+        q = self.holds.setdefault(isbn, deque())
+        q.append(member_id)
+        return len(q)                                    # the member's position
+
+
+lib = Library(StandardPolicy())
+dune = Item("978-0441013593", "Dune")
+for i in (1, 2, 3):
+    lib.add_copy(Copy(f"dune-{i}", dune))
+lib.copies[dune.isbn][2].state = CopyState.DAMAGED       # copy 3 is damaged
+
+l1 = lib.checkout("amy", dune.isbn, day=0)
+l2 = lib.checkout("bob", dune.isbn, day=0)
+print([l1.copy.copy_id, l2.copy.copy_id, len(lib.available(dune.isbn))])
+print([lib.checkout("cal", dune.isbn, day=0) is None,
+       lib.place_hold("cal", dune.isbn)])
+print(lib.return_copy("dune-1", day=20))
+# expect ['dune-1', 'dune-2', 0]
+# expect [True, 1]
+# expect 1.5
+```
+
+Three boundaries worth stating:
+
+- **`Loan` holds a `Copy`, not an `Item`.** Everything else follows: "who has it" is answerable,
+  and "copy 3 is damaged" does not affect copies 1 and 2.
+- **`checkout` returns `None` when nothing is free**, because that is an expected outcome — the
+  member then places a hold. `return_copy` uses `self.loans.pop(copy_id)` and *will* raise on an
+  unknown copy, which is correct: returning a copy that was never lent is a caller bug.
+- **`LoanPolicy` is the seam** for the follow-ups that always come: different loan lengths for
+  DVDs, no fines for students, longer loans for staff.
+
+## Dry run
+
+### Availability with a damaged copy
+
+Dune has three copies; copy 3 is damaged. Amy and Bob both check out on day 0:
+
+| Step | Copy states | `available()` |
+| --- | --- | --- |
+| start | `shelf, shelf, damaged` | **2** |
+| amy checks out | `on loan, shelf, damaged` | 1 — got **dune-1** |
+| bob checks out | `on loan, on loan, damaged` | **0** — got **dune-2** |
+| cal checks out | unchanged | `None` — nothing free |
+| cal places a hold | unchanged | queue position **1** |
+
+Verified: `['dune-1', 'dune-2', 0]` then `[True, 1]`.
+
+**The damaged copy never enters the picture** and no special case was needed — `is_available()`
+checks for `SHELF`, so `DAMAGED` and `LOST` are excluded by construction. Adding a `WITHDRAWN`
+state later requires no change to `checkout` at all. That is what the state enum buys over a
+boolean: a boolean would have needed `available and not damaged and not lost`, and the fourth
+state would have meant editing every such expression.
+
+### Due dates and fines, including the cap
+
+Loan period 14 days, 0.25 per day overdue, capped at 10.00:
+
+| Out day | Due day | Returned | Days overdue | Fine |
+| --- | --- | --- | --- | --- |
+| 0 | 14 | 14 | 0 | **0.00** |
+| 0 | 14 | 15 | 1 | **0.25** |
+| 0 | 14 | 20 | 6 | **1.50** |
+| 0 | 14 | 100 | 86 | **10.00** — capped |
+
+Verified. Two things to say out loud:
+
+- **Returning *on* the due day is not overdue.** `max(0, returned - due)` gives 0, not −1 or 1.
+  Off-by-one here is the most likely bug in the whole design and it is invisible unless you test
+  the boundary exactly.
+- **The cap is applied to the final amount**, which is what a cap should mean — unlike the
+  parking lot's pricing, where the cap sits *before* a multiplier and therefore does not cap
+  what is billed. Same word, two different behaviours, and this page has the correct one.
+
+A fine cap also has a business consequence worth naming: past 40 days overdue there is no
+marginal incentive to return the book, which is why real libraries switch to "replacement cost"
+rather than an ever-growing fine. That is the kind of observation that lands well.
+
+### The hold queue
+
+| Event | Queue | Note |
+| --- | --- | --- |
+| amy places a hold | `[amy]` | position 1 |
+| bob places a hold | `[amy, bob]` | position 2 |
+| cal places a hold | `[amy, bob, cal]` | position 3 |
+| a copy is returned | `[bob, cal]` | reserved for **amy** — `popleft` |
+| — | — | bob is now position **1** |
+
+Verified. **FIFO, and deliberately so.** Any priority scheme — shortest loan first, highest
+tier first — can starve someone indefinitely, and for a public service that is unacceptable
+regardless of what it does to average wait. This is the same argument as
+[SSTF versus SCAN](../design-an-elevator-system/) on the elevator page: starvation-freedom beats
+average-case optimality when a human is waiting.
+
+The subtlety the queue introduces: a returned copy is now **reserved**, not available. So
+`available()` must exclude it, which means either a `RESERVED` copy state or a separate
+reservation record with an expiry. Say which you would pick — the state is simpler, the record
+handles "amy has 3 days to collect it" properly.
+
+## Complexity
+
+| Operation | Cost | Note |
+| --- | --- | --- |
+| `available(isbn)` | $O(c)$ in copies of that title | `c` is small — a library has 1–20 copies of a title |
+| `checkout` | $O(c)$ | dominated by `available` |
+| `return_copy` | $O(1)$ | dict pop by `copy_id` |
+| `place_hold` | $O(1)$ | deque append |
+| Serve the next hold | $O(1)$ | `popleft` |
+| "Who has copy X?" | $O(1)$ | the `loans` dict is keyed by `copy_id` |
+| "What does member M have out?" | **$O(L)$** over all open loans | needs a second index if asked often |
+| "What is overdue today?" | $O(L)$ scan | or a heap keyed on `due_day` |
+| Search the catalogue by title | $O(n)$ | a real system uses an inverted index — that is a different problem |
+
+Two things worth being precise about:
+
+- **`available` being $O(c)$ is fine and worth saying so**: a title has a handful of copies, not
+  thousands. Bucketing available copies separately is possible but it duplicates state, and
+  duplicate state is how availability and copy status drift apart.
+- **"What does this member have out?" is the missing index.** Keying `loans` by `copy_id` makes
+  return $O(1)$ and makes the member query a full scan. If that query matters — and for overdue
+  notices it does — add a second dict `member_id -> set[copy_id]` and accept that two structures
+  must be kept in step. Naming that trade rather than silently picking one is the answer.
+
+## The variant map
+
+| Variant | The change | Notes |
+| --- | --- | --- |
+| **One copy per title** | The `Item`/`Copy` split collapses | The toy version, and the trap |
+| **Multiple copies** | `Loan` points at a `Copy` | The real design |
+| **Damaged / lost / withdrawn** | `CopyState` enum, not booleans | New states need no `checkout` change |
+| **Fines** | `LoanPolicy.fine`, capped | Boundary: returning *on* the due day is not overdue |
+| **No fines for students** | A `LoanPolicy` subclass | Why the policy is abstract |
+| **Different loan lengths per item type** | `loan_days()` per policy, chosen by item type | DVDs 3 days, books 14 |
+| **Holds** | A FIFO `deque` per title | Plus a `RESERVED` state or a reservation record |
+| **Hold expiry** | A reservation *record* with a collect-by date | The state-only version cannot express this |
+| **Renewals** | Extend `due_day` — **refuse if a hold exists** | The rule people forget |
+| **Borrowing limits** | `Member.max_loans`, checked in `checkout` | Needs the member index |
+| **Overdue notices** | A heap keyed on `due_day`, or a daily scan | $O(L)$ scan is fine daily |
+| **Search by title/author** | Inverted index over the catalogue | A different problem — say so |
+| **Video rental / equipment loan** | Identical design | Same archetype |
+
+:::note[Renewals are the follow-up that catches people]
+"Can I renew?" seems trivial — bump `due_day` by another loan period. The rule that is always
+missed: **you cannot renew if someone has placed a hold**, because renewal would let the current
+borrower starve the queue indefinitely.
+
+So `renew` must consult the hold queue, which means renewal is a `Library` operation and not a
+`Loan` method — a loan does not know about holds and should not. That is a boundary question
+disguised as a feature request, which is exactly what this round is testing.
+:::
+
+## Pitfalls
+
+- **Modelling only the title.** `Book.is_available` cannot express "1 of 3 available", and per-copy
+  state cannot be recovered from a count. Verified: three copies with one on loan and one damaged
+  gives **1** available, where a bare count says 3.
+- **`Loan` pointing at an `Item` rather than a `Copy`.** Then "who has it?" is unanswerable when
+  three copies are out to three people, and a damaged copy taints the title.
+- **Booleans instead of a `CopyState` enum.** `available and not damaged and not lost` has to be
+  edited everywhere the moment a fourth state appears. `state is SHELF` does not.
+- **Off-by-one on the due date.** Returning **on** the due day is not overdue. Test that exact
+  boundary — `max(0, returned - due)`, and the day-14 row of the table is the case that catches it.
+- **An uncapped fine.** 86 days overdue at 0.25/day is 21.50 with no cap and **10.00** with one.
+  And past the cap there is no incentive to return the book — real libraries switch to
+  replacement cost.
+- **Capping in the wrong place.** Cap the amount the member owes. (Contrast the parking lot,
+  where the cap sits before a size multiplier and therefore fails to cap the bill — same word,
+  different behaviour.)
+- **A priority hold queue.** Any priority rule can starve someone forever. FIFO for a public
+  service, and say that starvation-freedom is the reason.
+- **Forgetting that a returned copy under hold is *reserved*, not available.** `available()` must
+  exclude it, or the next walk-in borrower takes the copy the queue was waiting for.
+- **Allowing renewal while a hold exists.** The borrower could hold the queue off indefinitely.
+  Renewal must consult the holds, which makes it a `Library` operation, not a `Loan` method.
+- **Keying loans only by `copy_id`.** Return becomes $O(1)$ and "what does this member have out?"
+  becomes a full scan. Add a member index if that query matters — and say the two structures must
+  be kept in step.
+- **Putting catalogue search in scope.** Full-text search over titles and authors is an inverted
+  index, a different problem. Say so and stay at the class level.
+- **A `LibraryManager` doing everything.** Catalogue, loans, fines, holds and notices in one
+  class. Each of those is a noun with one responsibility.
+
+## Try it yourself
+
+### Drill 1 — availability is about copies
+
+<DataCampExercise
+  lang="python"
+  hint={`Count only the copies whose state is exactly "shelf". A copy that is on loan or damaged is not available, and a bare count of copies cannot tell you that.`}
+  code={`def available(copies):
+    """copies: dict of copy_id -> state string."""
+    # TODO: how many copies are actually borrowable?
+    pass
+
+
+dune = {"dune-1": "shelf", "dune-2": "on loan", "dune-3": "damaged"}
+neuro = {"neuro-1": "shelf"}
+print([len(dune), available(dune)])
+print([len(neuro), available(neuro)])
+print(available({"x-1": "lost", "x-2": "on loan"}))
+# expect [3, 1]
+# expect [1, 1]
+# expect 0`}
+  solution={`def available(copies):
+    return sum(1 for state in copies.values() if state == "shelf")
+
+
+dune = {"dune-1": "shelf", "dune-2": "on loan", "dune-3": "damaged"}
+neuro = {"neuro-1": "shelf"}
+print([len(dune), available(dune)])
+print([len(neuro), available(neuro)])
+print(available({"x-1": "lost", "x-2": "on loan"}))
+# a bare count of copies would report 3, 1 and 2 -- all wrong except the middle one`}
+  sct={`test_output_contains("[3, 1]")
+success_msg("Three copies, one available. A model that stores a count on the title reports 3, and one that stores a single available flag cannot represent 'one of three' at all. Note the third case returns 0 with no special-casing: checking for 'shelf' excludes lost and damaged by construction, so adding a fourth state later needs no change here.")`}
+  height={480}
+/>
+
+### Drill 2 — the due-date boundary and the fine cap
+
+<DataCampExercise
+  lang="python"
+  hint={`Due day is checkout + loan_days. Overdue days is max(0, returned - due) -- returning ON the due day is not overdue. Then cap the total.`}
+  code={`def due_day(checkout_day, loan_days=14):
+    # TODO
+    pass
+
+
+def fine(due, returned, per_day=0.25, cap=10.0):
+    # TODO: 0 if returned on or before the due day; otherwise per_day per
+    # day late, capped.
+    pass
+
+
+print([due_day(0), due_day(5)])
+print([fine(14, 14), fine(14, 15), fine(14, 20), fine(14, 100)])
+# expect [14, 19]
+# expect [0.0, 0.25, 1.5, 10.0]`}
+  solution={`def due_day(checkout_day, loan_days=14):
+    return checkout_day + loan_days
+
+
+def fine(due, returned, per_day=0.25, cap=10.0):
+    overdue = max(0, returned - due)          # ON the due day is not late
+    return round(min(overdue * per_day, cap), 2)
+
+
+print([due_day(0), due_day(5)])
+print([fine(14, 14), fine(14, 15), fine(14, 20), fine(14, 100)])`}
+  sct={`test_output_contains("[0.0, 0.25, 1.5, 10.0]")
+success_msg("The first fine value is the one that matters: returning ON the due day costs 0.00, not one day's fine. That off-by-one is the single most likely bug in this design and it is invisible unless you test the boundary exactly. The last value shows the cap doing its job -- 86 days overdue would be 21.50 uncapped.")`}
+  height={480}
+/>
+
+### Drill 3 — the hold queue is FIFO
+
+<DataCampExercise
+  lang="python"
+  hint={`A deque. Joining appends and returns the new length as the position. A returned copy serves the head with popleft, and everyone behind moves up one.`}
+  code={`from collections import deque
+
+
+class Holds:
+    def __init__(self):
+        self.q = deque()
+
+    def place(self, member):
+        # TODO: join the queue; return this member's position (1-based).
+        pass
+
+    def serve(self):
+        # TODO: a copy came back -- reserve it for the head of the queue and
+        # return that member, or None if nobody is waiting.
+        pass
+
+    def position(self, member):
+        return self.q.index(member) + 1 if member in self.q else None
+
+
+h = Holds()
+print([h.place("amy"), h.place("bob"), h.place("cal")])
+print([h.serve(), list(h.q), h.position("bob")])
+print([h.serve(), h.serve(), h.serve()])
+# expect [1, 2, 3]
+# expect ['amy', ['bob', 'cal'], 1]
+# expect ['bob', 'cal', None]`}
+  solution={`from collections import deque
+
+
+class Holds:
+    def __init__(self):
+        self.q = deque()
+
+    def place(self, member):
+        self.q.append(member)
+        return len(self.q)
+
+    def serve(self):
+        return self.q.popleft() if self.q else None
+
+    def position(self, member):
+        return self.q.index(member) + 1 if member in self.q else None
+
+
+h = Holds()
+print([h.place("amy"), h.place("bob"), h.place("cal")])
+print([h.serve(), list(h.q), h.position("bob")])
+print([h.serve(), h.serve(), h.serve()])`}
+  sct={`test_output_contains("['amy', ['bob', 'cal'], 1]")
+success_msg("FIFO, and deliberately: any priority rule -- shortest loan, highest tier -- can starve someone indefinitely, which is unacceptable for a public service regardless of average wait. Same argument as SCAN over SSTF on the elevator page. Note serve() returns None on an empty queue rather than raising: a copy coming back with nobody waiting is entirely normal.")`}
+  height={620}
+/>
+
+## Interview follow-ups
+
+| They ask | What they're checking | The answer |
+| --- | --- | --- |
+| "Model a library." | The one decision that matters | Separate `Item` (catalogue entry) from `Copy` (physical thing), and have `Loan` point at a **Copy**. Two titles with 3 and 1 copies is 2 items and 4 copies |
+| "Is Dune available?" | Whether the split is real | A question about copies, not the title. With 2 of 3 out it is "1 of 3" — a boolean on the title cannot say that |
+| "Copy 2 is water-damaged." | Whether per-copy state exists | A `CopyState` enum on the copy. Verified: three copies with one on loan and one damaged gives 1 available, where a bare count says 3 |
+| "Why an enum rather than booleans?" | Extensibility | `state is SHELF` needs no change when a fourth state appears; `available and not damaged and not lost` needs editing everywhere |
+| "A member returns a book on the due date." | The off-by-one | Not overdue — `max(0, returned - due)` is 0. This is the likeliest bug in the design and only an exact-boundary test catches it |
+| "Cap the fines." | Where the cap goes | On the final amount owed. 86 days at 0.25 is 21.50 uncapped and 10.00 capped — and past the cap there is no incentive to return the book, which is why real libraries switch to replacement cost |
+| "Someone wants a book that is out." | Holds | A FIFO `deque` per title, returning the member's position. And a returned copy under hold is **reserved**, not available — otherwise a walk-in takes it |
+| "Should the hold queue have priority tiers?" | Starvation | No for a public service: any priority rule can starve someone indefinitely. Same reasoning as SCAN over SSTF |
+| "Can they renew?" | The rule everyone forgets | Only if **no hold exists** — otherwise the borrower starves the queue. Which makes `renew` a `Library` operation, not a `Loan` method, because a loan does not know about holds |
+| "What does member M have out?" | The missing index | $O(L)$ scan as written, because `loans` is keyed by `copy_id`. Add `member_id -> set[copy_id]` if the query matters, and accept that two structures must stay in step |
+| "What is overdue today?" | A second access pattern | Daily $O(L)$ scan is genuinely fine, or a heap keyed on `due_day` if you need it continuously |
+| "Search by author." | Scope | An inverted index over the catalogue — a different problem from the loan lifecycle. Say so rather than bolting a `find_by_author` loop onto `Library` |
+| "Would this work for equipment hire?" | The archetype | Almost unchanged: items, serial-numbered units, loans with due dates, holds. Only the fine policy differs |
+
+## Self-check
+
+<Quiz
+  questions={[
+    {
+      q: "What is the central modelling decision in a library design?",
+      options: [
+        "Whether to use inheritance for books versus DVDs",
+        "Separating Item (the catalogue entry) from Copy (the physical thing), with Loan pointing at a Copy",
+        "How to index the catalogue for search",
+        "Whether fines are stored on the member or the loan",
+      ],
+      answer: 1,
+      explain:
+        "\"Dune\" is not borrowable; three copies of Dune are. Every follow-up depends on this: availability is a question about copies, \"who has it\" needs a copy-to-member link, and \"copy 2 is damaged\" must not affect copies 1 and 3. Get it wrong and each of those needs a workaround.",
+    },
+    {
+      q: "Dune has 3 copies: one on the shelf, one on loan, one damaged. What does a bare copy count report versus per-copy state?",
+      options: [
+        "Both report 1",
+        "The count reports 3; per-copy state correctly reports 1",
+        "Both report 3",
+        "The count reports 2",
+      ],
+      answer: 1,
+      explain:
+        "Verified. A count knows how many copies exist, not how many are borrowable — and it can never recover the difference. This is the concrete reason Copy is an object with a state rather than an integer on the Item.",
+    },
+    {
+      q: "Why a CopyState enum rather than `available`, `damaged`, `lost` booleans?",
+      options: [
+        "Enums use less memory",
+        "`state is SHELF` needs no change when a fourth state appears, whereas `available and not damaged and not lost` must be edited everywhere",
+        "Booleans cannot be stored in a dataclass",
+        "Enums are required for the mermaid diagram",
+      ],
+      answer: 1,
+      explain:
+        "Same argument as the elevator page's state table, applied to a simpler object: a single state variable makes illegal combinations unrepresentable and makes new states cheap. Verified in the trace — the damaged copy is excluded by construction, and adding WITHDRAWN would require no change to checkout at all.",
+    },
+    {
+      q: "A member returns a book exactly on the due day. What is the fine?",
+      options: [
+        "One day's fine, since the day has started",
+        "0.00 — max(0, returned - due) is 0, and this exact boundary is the likeliest bug in the design",
+        "It depends on the time of day",
+        "The full cap",
+      ],
+      answer: 1,
+      explain:
+        "Verified: fine(14, 14) is 0.0. This off-by-one is invisible unless you test the boundary precisely — returning a day early and a day late both behave sensibly while the on-time case is wrong. It is the single row of the fines table most worth writing a test for.",
+    },
+    {
+      q: "86 days overdue at 0.25/day, capped at 10.00. What does the member owe, and what is the business consequence?",
+      options: [
+        "21.50, and none",
+        "10.00 — and past the cap there is no marginal incentive to return the book, which is why real libraries switch to replacement cost",
+        "0.25, since the cap resets daily",
+        "10.00, and the book is automatically written off",
+      ],
+      answer: 1,
+      explain:
+        "Verified. The cap is correct as a consumer protection and creates a perverse incentive at the far end — noticing that second-order effect is the kind of observation that distinguishes a design discussion from a coding exercise. Note also that this cap is applied to the final amount, unlike the parking lot's, which sits before a multiplier and therefore does not cap the bill.",
+    },
+    {
+      q: "Should the hold queue support priority tiers?",
+      options: [
+        "Yes — premium members should be served first",
+        "No for a public service: any priority rule can starve someone indefinitely, and starvation-freedom beats average wait when a human is queuing",
+        "Yes, ordered by shortest expected loan",
+        "It makes no difference to fairness",
+      ],
+      answer: 1,
+      explain:
+        "This is the same judgement as choosing SCAN over SSTF on the elevator page. A steady stream of higher-priority requests keeps a low-priority member at the back forever, and \"better average wait\" is no defence for one person never being served. FIFO, and say why.",
+    },
+    {
+      q: "A copy is returned and someone holds the title. Is that copy available?",
+      options: [
+        "Yes — it is back on the shelf",
+        "No, it is reserved for the head of the queue; available() must exclude it or a walk-in borrower takes the copy the queue was waiting for",
+        "Yes, but only for the holder",
+        "Only after the hold expires",
+      ],
+      answer: 1,
+      explain:
+        "This is the subtlety the hold queue introduces, and it is easy to miss because both states look like \"on the shelf\" physically. Two implementations: a RESERVED copy state (simpler) or a reservation record with a collect-by date (handles \"amy has 3 days to fetch it\" properly). Say which you would pick and why.",
+    },
+    {
+      q: "Can a member renew a loan?",
+      options: [
+        "Always — it just extends the due date",
+        "Only if no hold exists, otherwise the borrower could starve the queue — which makes renew a Library operation rather than a Loan method",
+        "Never; they must return and re-borrow",
+        "Only if the fine is paid",
+      ],
+      answer: 1,
+      explain:
+        "The rule people forget, and it is really a boundary question in disguise. A Loan knows about a copy and a member; it does not and should not know about the hold queue. So renewal cannot be `loan.renew()` — it has to be `library.renew(loan)`, which is exactly the kind of placement decision this round is testing.",
+    },
+    {
+      q: "`loans` is keyed by copy_id. What does that cost?",
+      options: [
+        "Nothing — it is O(1) for everything",
+        "Return is O(1), but \"what does this member have out?\" becomes an O(L) scan; add a member index if that query matters and keep both in step",
+        "Return becomes O(L)",
+        "It prevents holds from working",
+      ],
+      answer: 1,
+      explain:
+        "One index serves one access pattern. Keying by copy_id makes the return path trivial, which is the hot operation, and makes the member query a scan — which matters for overdue notices and borrowing limits. Naming the trade and the second structure, rather than silently picking one, is the answer.",
+    },
+    {
+      q: "The interviewer asks for search by author. What do you say?",
+      options: [
+        "Add a find_by_author loop to Library",
+        "That is an inverted index over the catalogue — a different problem from the loan lifecycle, and worth scoping out unless they want to go there",
+        "Sort the catalogue by author on every insert",
+        "Store authors as a subclass of Item",
+      ],
+      answer: 1,
+      explain:
+        "A linear loop answers the question and quietly commits you to O(n) search on a catalogue that could be millions of titles. Naming it as a separate concern — full-text indexing — shows you know where the design boundary is, and it is the same instinct as declining to shard the parking lot.",
+    },
+  ]}
+/>
+
+## Recall card
+
+- **The whole design is `Item` versus `Copy`.** A title is not borrowable; its copies are. Two
+  titles with 3 and 1 copies is **2 items, 4 copies**.
+- **`Loan` points at a `Copy`**, never at an `Item`. That single arrow makes "who has it" and
+  "copy 3 is damaged" answerable.
+- **A count cannot replace per-copy state.** Three copies, one out and one damaged: per-copy
+  state says **1** available, a count says 3.
+- **`CopyState` enum, not booleans** — `state is SHELF` excludes damaged and lost by
+  construction, and a fourth state costs no edits.
+- **Returning on the due day is not overdue.** `max(0, returned - due)`. The likeliest bug in
+  the design; test that exact boundary.
+- **Cap the fine on the final amount** — 86 days at 0.25 is 21.50 uncapped, **10.00** capped.
+  And past the cap the incentive to return disappears, hence replacement cost in real libraries.
+- **Holds are FIFO** because any priority rule can starve someone. Same argument as SCAN over
+  SSTF.
+- **A returned copy under hold is *reserved*, not available** — or a walk-in takes it.
+- **Renewal must check the holds**, which makes it a `Library` operation rather than a `Loan`
+  method.
+- **`loans` keyed by `copy_id` makes return $O(1)$ and the member query $O(L)$.** Add
+  `member_id -> set[copy_id]` if you need it, and say both must stay in step.
+- **`checkout` returns `None` when nothing is free** (expected); `return_copy` raises on an
+  unknown copy (caller bug).
+- **Catalogue search is a separate problem** — an inverted index, not a loop on `Library`.

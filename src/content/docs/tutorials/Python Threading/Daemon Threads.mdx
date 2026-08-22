@@ -5,6 +5,37 @@ sidebar:
   order: 105
 ---
 
+```mermaid title="a daemon thread does not get to finish" desc="When the last non-daemon thread ends, the interpreter shuts down and kills every daemon thread wherever it happens to be -- no exception raised in it, no finally block run, no flush. That is right for a background heartbeat and wrong for anything writing a file."
+flowchart TD
+  A["main thread finishes"] --> B{"any non-daemon threads still running?"}
+  B -->|yes| C["the process waits for them"]
+  C --> D["they run to completion"]
+  B -->|no| E["the interpreter shuts down"]
+  E --> F["daemon threads are killed mid-statement"]
+  F --> G["no finally, no cleanup, no flush"]
+  G --> H["a half-written file, a held lock, a lost record"]
+  D --> I["use non-daemon + join() for work that must complete"]
+  F --> J["use daemon only for work that is safe to abandon"]
+```
+
+:::note[Measured: the same worker, one flag apart]
+A worker that sleeps in a loop for one second and then prints `FINISHED`, with the main thread
+exiting immediately after starting it:
+
+| `daemon=` | Output |
+| --- | --- |
+| `True` | *(nothing — the thread was killed at interpreter shutdown)* |
+| `False` | `FINISHED` — the process stayed alive until the worker was done |
+
+The daemon thread was not asked to stop and did not get a chance to clean up; it simply ceased
+to exist. Nothing was logged and no exception was raised.
+
+So the rule is about consequences, not about tidiness: **if abandoning the work half-done is
+harmless, a daemon thread is right.** If it is writing a file, holding a lock, or has a record
+in flight, use a normal thread and `join()` it — or give it a `threading.Event` to check so it
+can shut itself down deliberately.
+:::
+
 ## What is a daemon thread?
 
 A **daemon thread** is a background thread.
@@ -16,6 +47,7 @@ A **daemon thread** is a background thread.
 
 ```python title="daemon_thread.py" showLineNumbers{1}
 import threading
+import Quiz from "../../../../components/Quiz.astro";
 import time
 
 
@@ -42,6 +74,168 @@ print("Main thread exiting")
 Don’t use daemon threads for work that **must finish** (e.g., writing critical data).
 
 import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+```p5 title="The moment the main thread exits" desc="Two runs of the same worker, which needs one second and prints FINISHED at the end. The main thread starts it and immediately exits. Watch what happens at the instant main finishes: the non-daemon run keeps the process alive to the end, and the daemon run is cut off wherever it happens to be. Neither raises anything." height="400"
+const DUR = 1.0;
+let t0 = 0;
+const CYCLE = 3200;
+
+function setup() {
+  createCanvas(620, 400);
+  textFont("monospace");
+  t0 = millis();
+}
+
+function draw() {
+  background(13, 17, 23);
+  const el = ((millis() - t0) % CYCLE) / CYCLE;
+  const t = el * 1.4;                 // virtual seconds, 0 .. 1.4
+
+  noStroke();
+  fill(200);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("main starts a 1.0 s worker, then exits immediately", 20, 14);
+
+  const X = 150, W = 400, SEC = W / 1.4;
+  const mainEnd = 0.05;
+
+  // main thread
+  fill(205);
+  textSize(11);
+  textAlign(LEFT, CENTER);
+  text("main thread", 20, 66);
+  fill(26, 31, 38);
+  rect(X, 52, W, 26, 3);
+  fill(88, 166, 255);
+  rect(X, 52, Math.min(t, mainEnd) * SEC, 26, 3);
+  if (t >= mainEnd) {
+    stroke(255, 123, 114);
+    line(X + mainEnd * SEC, 40, X + mainEnd * SEC, 300);
+    noStroke();
+    fill(255, 123, 114);
+    textSize(9);
+    textAlign(LEFT, TOP);
+    text("main exits here", X + mainEnd * SEC + 4, 32);
+  }
+
+  // two workers
+  const rows = [
+    { label: "daemon=False", killed: false, tone: [140, 210, 160], y: 116 },
+    { label: "daemon=True",  killed: true,  tone: [255, 123, 114], y: 186 },
+  ];
+  for (let i = 0; i < 2; i++) {
+    const r = rows[i];
+    const stop = r.killed ? mainEnd : DUR;
+    const done = Math.min(t, stop);
+
+    fill(205);
+    textSize(11);
+    textAlign(LEFT, CENTER);
+    text(r.label, 20, r.y + 13);
+
+    fill(26, 31, 38);
+    rect(X, r.y, W, 26, 3);
+    fill(r.tone[0], r.tone[1], r.tone[2]);
+    rect(X, r.y, (done / 1.4) * W, 26, 3);
+
+    // where it should have reached
+    stroke(60);
+    drawingContext.setLineDash([3, 3]);
+    line(X + DUR * SEC, r.y - 4, X + DUR * SEC, r.y + 30);
+    drawingContext.setLineDash([]);
+    noStroke();
+
+    if (r.killed && t > mainEnd) {
+      fill(255, 123, 114);
+      textSize(10);
+      textAlign(LEFT, TOP);
+      text("KILLED -- no exception, no finally, no flush", X + mainEnd * SEC + 8, r.y + 32);
+    }
+    if (!r.killed && t >= DUR) {
+      fill(140, 210, 160);
+      textSize(12);
+      textAlign(LEFT, CENTER);
+      text("FINISHED", X + DUR * SEC + 10, r.y + 13);
+    }
+  }
+
+  fill(90, 100, 112);
+  textSize(9);
+  textAlign(CENTER, TOP);
+  text("1.0 s -- where the work would have ended", X + DUR * SEC, 246);
+
+  stroke(50);
+  line(20, 280, 600, 280);
+  noStroke();
+  fill(200);
+  textSize(11);
+  textAlign(LEFT, TOP);
+  text("measured: daemon=True printed nothing at all; daemon=False printed FINISHED", 20, 292);
+  fill(150);
+  textSize(10);
+  text("The daemon thread was not asked to stop. When the last non-daemon thread ended, the", 20, 316);
+  text("interpreter shut down and the thread simply ceased to exist mid-statement.", 20, 332);
+  fill(219, 171, 90);
+  text("Safe to abandon -- a heartbeat, a metrics poller? A daemon is right.", 20, 356);
+  text("Writing a file, holding a lock, a record in flight? Use a normal thread and join() it.", 20, 372);
+}
+```
+
+## Check yourself
+
+<Quiz
+  questions={[
+    {
+      q: "A daemon thread is halfway through writing a file when the main thread finishes. What happens?",
+      options: [
+        "The process waits for it to finish",
+        "It is killed where it stands — no exception, no `finally`, no flush",
+        "It raises SystemExit inside the thread",
+        "The file is flushed automatically",
+      ],
+      answer: 1,
+      explain:
+        "Measured: the same worker printed FINISHED with `daemon=False` and printed nothing with `daemon=True`. Interpreter shutdown does not ask daemon threads to stop; it stops existing.",
+    },
+    {
+      q: "When is a daemon thread the right choice?",
+      options: [
+        "Whenever you want the program to exit quickly",
+        "When abandoning the work half-done is harmless",
+        "For anything that writes to disk",
+        "For CPU-bound work",
+      ],
+      answer: 1,
+      explain:
+        "A heartbeat, a metrics poller or a cache warmer can be abandoned safely. Anything holding a lock, writing a file, or with a record in flight cannot.",
+    },
+    {
+      q: "How do you make sure a worker thread finishes before the program exits?",
+      options: [
+        "Set `daemon=True` and call `join()`",
+        "Leave it non-daemon (the default) and `join()` it",
+        "Use `time.sleep()` in the main thread",
+        "Call `thread.stop()`",
+      ],
+      answer: 1,
+      explain:
+        "A non-daemon thread keeps the process alive by itself; `join()` makes the wait explicit. There is no `stop()` — a thread must be asked to finish, usually via a `threading.Event` it checks.",
+    },
+    {
+      q: "What is the cleanest way to tell a long-running thread to shut down?",
+      options: [
+        "Kill it from outside",
+        "Give it a `threading.Event` it checks periodically",
+        "Raise an exception in the main thread",
+        "Make it a daemon and exit",
+      ],
+      answer: 1,
+      explain:
+        "Cooperative shutdown is the only reliable kind. The thread checks the flag at a point where stopping is safe, then unwinds normally — running its `finally` blocks.",
+    },
+  ]}
+/>
 
 ## 🧪 Try It Yourself
 

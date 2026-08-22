@@ -180,7 +180,7 @@ function enhanceViz(panel) {
 function enhanceCode(frag) {
   if (frag.querySelector(".pch-fs-btn")) return;
   const pre = frag.querySelector("pre");
-  const title = frag.querySelector(":scope > div[data-rehype-pretty-code-title]");
+  const title = frag.querySelector(":scope > [data-rehype-pretty-code-title]");
   if (!pre || !title) return;
 
   const lang = (pre.getAttribute("data-language") || "").toLowerCase();
@@ -206,7 +206,7 @@ function enhanceCode(frag) {
 
 function init() {
   const panels = document.querySelectorAll(".pch-viz");
-  const frags = document.querySelectorAll("div[data-rehype-pretty-code-fragment]");
+  const frags = document.querySelectorAll("[data-rehype-pretty-code-fragment], [data-rehype-pretty-code-figure]");
   if (!panels.length && !frags.length) return;
   panels.forEach(enhanceViz);
   // Defer code blocks a tick so the Python playground can mount its own toolbar

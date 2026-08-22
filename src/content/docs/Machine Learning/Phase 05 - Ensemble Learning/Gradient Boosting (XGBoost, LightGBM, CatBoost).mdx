@@ -1,491 +1,816 @@
 ---
 title: Gradient Boosting (XGBoost, LightGBM, CatBoost)
-description: Understand gradient boosting, why it dominates tabular ML, and how popular libraries differ.
+description: Boosting as gradient descent in function space — three stages computed by hand, the shrinkage trade measured, early stopping, and what the four major libraries actually differ on.
 sidebar:
   order: 288
 ---
 
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import AlgorithmCard from "../../../../components/AlgorithmCard.astro";
+import Figure from "../../../../components/Figure.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
 ## What you'll learn
 
-- how Gradient Boosting differs from AdaBoost: it fits the **residual errors**, not
-  reweighted instances
-- how to hand-build a 3-tree Gradient Boosted ensemble and confirm it matches
-  scikit-learn's `GradientBoostingRegressor` exactly
-- `learning_rate` / shrinkage, and why fewer trees at a high rate can overfit just as
-  easily as too many trees at a low rate
-- early stopping with `staged_predict()`
-- where `HistGradientBoostingClassifier`, XGBoost, LightGBM, and CatBoost fit in
+- why fitting the **residual** is gradient descent, taken in function space
+- three boosting stages computed **by hand**, with the MSE at each one
+- shrinkage measured: ten times smaller steps need roughly ten times more of them
+- **early stopping** via `staged_predict`, and why it is not optional here
+- how XGBoost, LightGBM and CatBoost actually differ, and when the difference matters
+- an honest comparison where a boosted model does *not* win
 
-## What gradient boosting is
+## Intuition
 
-Just like AdaBoost, Gradient Boosting builds an ensemble **sequentially**, each new
-predictor trying to improve on the one before it. The difference is *how* it corrects
-its predecessor: instead of reweighting misclassified instances, Gradient Boosting
-trains the next tree to fit the **residual errors** — literally, what's left over
-after subtracting the current ensemble's predictions from the true targets.
+[AdaBoost](/machine-learning/phase-05---ensemble-learning/boosting-introduction-to-adaboost/)
+made the next learner focus on hard cases by reweighting the samples. Gradient boosting does the
+same thing with a change that turns out to be far more general: instead of reweighting, **the next
+learner is fitted directly to what is left over.**
 
-```
-prediction = tree1 + tree2 + tree3 + ...
-```
+Predict the mean. Look at the residuals. Fit a small tree to the residuals. Add it. Look at the new
+residuals. Repeat.
 
-Géron calls the regression version of this **Gradient Tree Boosting**, or **Gradient
-Boosted Regression Trees (GBRT)**.
+That reframing is what lets gradient boosting handle any differentiable loss — squared error,
+absolute error, log loss, Poisson, quantile — with no change to the algorithm. AdaBoost's
+reweighting turns out to be the special case for exponential loss.
 
-```mermaid title="Gradient boosting: fit the residuals" desc="Each new tree is trained to predict what the current ensemble still gets wrong." 
+```mermaid
 flowchart LR
-  A["Tree 1 fits y"] --> R1["Residual = y - Tree1(X)"]
-  R1 --> B["Tree 2 fits residual"]
-  B --> R2["New residual"]
-  R2 --> C["Tree 3 fits residual"]
-  A --> S["Sum all predictions"]
-  B --> S
-  C --> S
-  S --> P["Final prediction"]
+  F0["F&#8320; = mean(y)"] --> R1["residual r&#8321; = y - F&#8320;"]
+  R1 --> H1["fit tree h&#8321; to r&#8321;"]
+  H1 --> F1["F&#8321; = F&#8320; + &eta;&middot;h&#8321;"]
+  F1 --> R2["residual r&#8322; = y - F&#8321;"]
+  R2 --> H2["fit tree h&#8322; to r&#8322;"]
+  H2 --> F2["F&#8322; = F&#8321; + &eta;&middot;h&#8322;"]
+  F2 --> D["... repeat"]
 ```
 
-## Building it by hand
+## The math
 
-The clearest way to understand GBRT is to build one manually, exactly as Géron does in
-Chapter 7, on a small noisy quadratic dataset.
+### Why the residual is a gradient
 
-```python title="Three hand-trained trees, chained together" showLineNumbers{1}
+Take squared error as the loss for a single observation:
+
+$$
+L(y, F) = \tfrac{1}{2}\left(y - F\right)^2
+$$
+
+Differentiate with respect to the **prediction** $F$, not with respect to any parameter:
+
+$$
+\frac{\partial L}{\partial F} = -(y - F)
+\qquad\Longrightarrow\qquad
+-\frac{\partial L}{\partial F} = y - F = \text{residual}
+$$
+
+**The residual is the negative gradient of the loss with respect to the prediction.** So fitting a
+tree to the residuals is fitting a tree to the direction of steepest descent, and adding it is a
+gradient step:
+
+$$
+F_{m}(\mathbf{x}) = F_{m-1}(\mathbf{x}) + \eta \, h_m(\mathbf{x})
+$$
+
+Compare that with the parameter update from
+[Gradient Descent Explained](/machine-learning/phase-03---supervised-learning---regression/gradient-descent-explained/):
+$\boldsymbol{\theta} \leftarrow \boldsymbol{\theta} - \alpha\nabla J$. Same shape. The difference is
+that the step is a whole function rather than a parameter vector — hence "gradient descent in
+function space".
+
+### The general algorithm
+
+For any differentiable loss $L$:
+
+1. $F_0(\mathbf{x}) = \arg\min_c \sum_i L(y_i, c)$ — the best constant.
+2. For $m = 1, \ldots, M$:
+   - compute pseudo-residuals $r_{im} = -\left[\partial L(y_i, F(\mathbf{x}_i)) / \partial F(\mathbf{x}_i)\right]_{F = F_{m-1}}$
+   - fit a regression tree $h_m$ to the $r_{im}$
+   - update $F_m = F_{m-1} + \eta\, h_m$
+
+Swap the loss and only the pseudo-residual changes:
+
+| Loss | Pseudo-residual | Use |
+| --- | --- | --- |
+| Squared error | $y - F$ | Regression, default |
+| Absolute error | $\operatorname{sign}(y - F)$ | Regression with outliers |
+| Huber | $y - F$ clipped at $\delta$ | Regression, robust and smooth |
+| Log loss | $y - \sigma(F)$ | Binary classification |
+| Quantile | asymmetric sign | Prediction intervals |
+
+Notice the log-loss row: the pseudo-residual is $y - \sigma(F)$, exactly the gradient from
+[logistic regression](/machine-learning/phase-04---supervised-learning---classification/logistic-regression-binary-vs-multiclass/).
+The same expression appears for a third time, and for the same reason.
+
+## Worked example by hand
+
+Three points: $x = [1, 2, 3]$, $y = [10, 20, 30]$. Learning rate $\eta = 0.5$, and each $h_m$ is a
+depth-1 stump.
+
+**Stage 0 — the constant.** For squared error the best constant is the mean:
+
+$$
+F_0 = \frac{10 + 20 + 30}{3} = 20,
+\qquad
+\text{MSE} = \frac{100 + 0 + 100}{3} = 66.667
+$$
+
+**Stage 1 — fit the residuals.** $r_1 = y - F_0 = [-10, 0, +10]$. A stump splitting at $x \le 1.5$
+gives the left leaf $-10$ and the right leaf $\frac{0 + 10}{2} = 5$:
+
+$$
+h_1 = [-10,\; 5,\; 5]
+\qquad
+F_1 = F_0 + 0.5\,h_1 = [15,\; 22.5,\; 22.5]
+$$
+
+$$
+r_2 = y - F_1 = [-5,\; -2.5,\; +7.5],
+\qquad
+\text{MSE} = \frac{25 + 6.25 + 56.25}{3} = 29.167
+$$
+
+**Stage 2 — fit those residuals.** A stump splitting at $x \le 2.5$ gives the left leaf
+$\frac{-5 + (-2.5)}{2} = -3.75$ and the right leaf $7.5$:
+
+$$
+h_2 = [-3.75,\; -3.75,\; 7.5]
+\qquad
+F_2 = F_1 + 0.5\,h_2 = [13.125,\; 20.625,\; 26.25]
+$$
+
+$$
+r_3 = [-3.125,\; -0.625,\; +3.75],
+\qquad
+\text{MSE} = 8.073
+$$
+
+| Stage | Prediction | MSE | Reduction |
+| --- | --- | --- | --- |
+| 0 | 20.000, 20.000, 20.000 | 66.667 | — |
+| 1 | 15.000, 22.500, 22.500 | 29.167 | 56% |
+| 2 | 13.125, 20.625, 26.250 | 8.073 | 72% |
+
+Two things to notice. The predictions are walking toward $[10, 20, 30]$ without ever jumping there
+— that is $\eta = 0.5$ holding them back. And no individual stump is any good: the best of them
+predicts three distinct values. **The ensemble is good; no member is.**
+
+<Figure
+  src="/images/ml/phase-05-ensembles/boosting/residual-shrinking"
+  alt="A two by three grid. The top row shows residuals and the stump fitted to them at each of three stages; the bottom row shows the running ensemble against the data, progressively matching the curve."
+  title="Three stages on a curved dataset"
+  caption="Residual MSE falls 2.3073 to 0.2331 to 0.1162. The top row's amber points shrink toward zero as the bottom row's green curve grows to fit the blue data."
+/>
+
+## See it move
+
+Stage by stage, the ensemble grows toward the data while the residuals collapse toward zero.
+
+```p5 title="Residuals shrinking, stage by stage" desc="The green curve is the running ensemble and the amber stems are the residuals it has not yet explained. Each stage adds one shallow stump and the stems get shorter." height="340"
+let pts = [], stage = 0, t = 0;
+let fitted = [];
+const LR = 0.5, STAGES = 8;
+function target(x) { return 0.55 * x * x + 0.6 * Math.sin(2.4 * x); }
+function genPts() {
+  pts = [];
+  for (let i = 0; i < 34; i++) {
+    const x = -2.4 + (4.8 * i) / 33;
+    pts.push({ x, y: target(x) + randomGaussian(0, 0.18) });
+  }
+  fitted = pts.map(() => 0);
+  stage = 0;
+  t = 0;
+}
+function setup() {
+  createCanvas(600, 340);
+  textFont("monospace");
+  genPts();
+}
+function addStump() {
+  // a depth-1 stump on the current residuals: best of a few candidate splits
+  const resid = pts.map((p, i) => p.y - fitted[i]);
+  let best = null;
+  for (let s = 1; s < pts.length - 1; s++) {
+    const L = resid.slice(0, s), R = resid.slice(s);
+    const lm = L.reduce((a, b) => a + b, 0) / L.length;
+    const rm = R.reduce((a, b) => a + b, 0) / R.length;
+    let sse = 0;
+    for (const v of L) sse += (v - lm) ** 2;
+    for (const v of R) sse += (v - rm) ** 2;
+    if (!best || sse < best.sse) best = { s, lm, rm, sse };
+  }
+  for (let i = 0; i < pts.length; i++) {
+    fitted[i] += LR * (i < best.s ? best.lm : best.rm);
+  }
+  stage++;
+}
+function draw() {
+  background(13, 17, 23);
+  const ox = 50, oy = 46, w = width - 100, h = 210;
+  const px = (x) => ox + (x + 2.6) / 5.2 * w;
+  const py = (y) => oy + h - (y + 1.6) / 6.0 * h;
+
+  stroke(60, 70, 84);
+  strokeWeight(1);
+  line(ox, py(0), ox + w, py(0));
+
+  // residual stems
+  for (let i = 0; i < pts.length; i++) {
+    stroke(255, 211, 67, 190);
+    strokeWeight(1.6);
+    line(px(pts[i].x), py(pts[i].y), px(pts[i].x), py(fitted[i]));
+  }
+  // data and ensemble
+  noStroke();
+  for (const p of pts) { fill(75, 139, 190); ellipse(px(p.x), py(p.y), 7, 7); }
+  stroke(120, 200, 120);
+  strokeWeight(2.4);
+  noFill();
+  beginShape();
+  for (let i = 0; i < pts.length; i++) vertex(px(pts[i].x), py(fitted[i]));
+  endShape();
+
+  const mse = pts.reduce((a, p, i) => a + (p.y - fitted[i]) ** 2, 0) / pts.length;
+  noStroke();
+  fill(107, 169, 221);
+  textSize(13);
+  textAlign(LEFT, TOP);
+  text("stage " + stage + " of " + STAGES, ox, 16);
+  fill(255, 211, 67);
+  textAlign(RIGHT, TOP);
+  text("residual MSE " + mse.toFixed(4), ox + w, 16);
+  fill(140);
+  textSize(10);
+  textAlign(LEFT, BOTTOM);
+  text("amber stems = what the ensemble has not yet explained    (click to restart)",
+       ox, height - 12);
+
+  t++;
+  if (t % 42 === 0) {
+    if (stage < STAGES) addStump();
+    else genPts();
+  }
+}
+function mousePressed() { genPts(); }
+```
+
+## Shrinkage
+
+<Figure
+  src="/images/ml/phase-05-ensembles/boosting/learning-rate-grid"
+  alt="Held-out error against number of trees on a log scale for four learning rates, each marked at its minimum. Larger learning rates reach their minimum much earlier."
+  title="Four learning rates, 1200 trees each"
+  caption="lr=1.0 bottoms out at 381 trees; lr=0.1 needs 1199 and has barely caught up; lr=0.03 has not converged at all. Smaller steps do not automatically mean a lower floor."
+/>
+
+Measured on 1,560 held-out rows of the Hastie benchmark:
+
+| Learning rate | Best error | Trees needed |
+| --- | --- | --- |
+| 1.0 | **0.0679** | 381 |
+| 0.3 | 0.0786 | 1,193 |
+| 0.1 | 0.0714 | 1,199 |
+| 0.03 | 0.0833 | 936 (not converged) |
+
+### Reading the plot
+
+1. **Smaller learning rates need proportionally more trees.** Roughly, $\eta \times M$ is
+   conserved: 1.0 at 381 trees and 0.1 at 1,199 land within 0.4 points of each other.
+2. **They did not reach a lower floor here.** The common claim that shrinkage always improves
+   generalisation is not supported by this run — lr=1.0 was the best of the four. Shrinkage buys
+   *stability and control*, not a guaranteed better score.
+3. **lr=0.03 has not converged at 1,200 trees.** Its curve is still descending. Reporting it as
+   "worse" would be reporting an unfinished experiment.
+4. **The practical rule survives**: set a low learning rate, use early stopping to decide the tree
+   count, and let the compute budget cap it. Just do not expect the low rate to pay for itself
+   automatically.
+
+## Early stopping
+
+`n_estimators` in a boosted model **can** overfit, so it must be chosen rather than set. `staged_predict`
+replays the ensemble one tree at a time:
+
+```python title="early_stopping.py" showLineNumbers{1}
 import numpy as np
-from sklearn.tree import DecisionTreeRegressor
-
-np.random.seed(42)
-X = np.random.rand(100, 1) - 0.5
-y = 3 * X[:, 0] ** 2 + 0.05 * np.random.randn(100)
-
-# Tree 1: fit the original targets
-tree_reg1 = DecisionTreeRegressor(max_depth=2, random_state=42)
-tree_reg1.fit(X, y)
-
-# Tree 2: fit tree 1's residual errors
-y2 = y - tree_reg1.predict(X)
-tree_reg2 = DecisionTreeRegressor(max_depth=2, random_state=42)
-tree_reg2.fit(X, y2)
-
-# Tree 3: fit tree 2's residual errors
-y3 = y2 - tree_reg2.predict(X)
-tree_reg3 = DecisionTreeRegressor(max_depth=2, random_state=42)
-tree_reg3.fit(X, y3)
-
-X_new = np.array([[0.0], [0.2], [-0.4]])
-y_pred = sum(tree.predict(X_new) for tree in (tree_reg1, tree_reg2, tree_reg3))
-print([round(float(v), 3) for v in y_pred])
-```
-
-```
-[0.04, 0.171, 0.495]
-```
-
-Now compare against scikit-learn's built-in `GradientBoostingRegressor`, using the exact
-same data, tree depth, and a `learning_rate=1.0` (no shrinkage):
-
-```python title="Same ensemble, scikit-learn's way" showLineNumbers{1}
-from sklearn.ensemble import GradientBoostingRegressor
-
-gbrt = GradientBoostingRegressor(max_depth=2, n_estimators=3, learning_rate=1.0, random_state=42)
-gbrt.fit(X, y)
-print([round(float(v), 3) for v in gbrt.predict(X_new)])
-```
-
-```
-[0.04, 0.171, 0.495]
-```
-
-Identical — `GradientBoostingRegressor` is doing exactly what we just did by hand, tree
-by tree.
-
-## Shrinkage: the `learning_rate` hyperparameter
-
-`learning_rate` scales down each tree's contribution before it's added to the ensemble.
-A low value (e.g. `0.1`) needs **more trees** to fit the training data, but usually
-generalizes better — this regularization trick is called **shrinkage**. Get the balance
-wrong and you'll see the classic under/overfitting pair: too few trees at a low learning
-rate underfits, too many overfits.
-
-## Early stopping with `staged_predict()`
-
-Rather than guessing `n_estimators`, train a generously large ensemble once, then walk
-back through its `staged_predict()` iterator (predictions after 1 tree, after 2 trees,
-after 3 trees, ...) to find exactly where validation error is lowest.
-
-```python title="Finding the best number of trees" showLineNumbers{1}
-import numpy as np
-from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.datasets import make_hastie_10_2
+from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
 
-np.random.seed(42)
-X = np.random.rand(200, 1) - 0.5
-y = 3 * X[:, 0] ** 2 + 0.05 * np.random.randn(200)
-X_train, X_val, y_train, y_val = train_test_split(X, y, random_state=42)
+X, y = make_hastie_10_2(n_samples=2400, random_state=0)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.35, random_state=0)
 
-gbrt = GradientBoostingRegressor(max_depth=2, n_estimators=120, random_state=42)
-gbrt.fit(X_train, y_train)
+model = GradientBoostingClassifier(n_estimators=1200, learning_rate=0.1,
+                                   max_depth=3, random_state=0).fit(X_tr, y_tr)
 
-errors = [mean_squared_error(y_val, y_pred) for y_pred in gbrt.staged_predict(X_val)]
-best_n_estimators = np.argmin(errors) + 1
-print("best n_estimators:", best_n_estimators)
+errors = [1 - (pred == y_te).mean() for pred in model.staged_predict(X_te)]
+best_n = int(np.argmin(errors)) + 1
 
-gbrt_best = GradientBoostingRegressor(max_depth=2, n_estimators=best_n_estimators, random_state=42)
-gbrt_best.fit(X_train, y_train)
-print("validation MSE:", round(mean_squared_error(y_val, gbrt_best.predict(X_val)), 5))
+print(f"best error {min(errors):.4f} at {best_n} trees")
+print(f"error at 1200 trees {errors[-1]:.4f}")
 ```
 
-```
-best n_estimators: 54
-validation MSE: 0.00266
-```
+Or let scikit-learn stop for you, which avoids fitting trees you will discard:
 
-Instead of training all 120 trees and looking back, you can also set `warm_start=True`
-and stop the loop the moment validation error hasn't improved for a few rounds in a
-row — true early stopping, not just hindsight. With `warm_start=True`, calling `.fit()`
-again doesn't start over; scikit-learn keeps the trees it already has and simply adds
-more, so you can grow the ensemble one tree at a time and bail out as soon as things stop
-improving:
-
-```python title="True early stopping with warm_start" showLineNumbers{1}
-import numpy as np
-from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
-
-np.random.seed(42)
-X = np.random.rand(200, 1) - 0.5
-y = 3 * X[:, 0] ** 2 + 0.05 * np.random.randn(200)
-X_train, X_val, y_train, y_val = train_test_split(X, y, random_state=42)
-
-gbrt = GradientBoostingRegressor(max_depth=2, warm_start=True, random_state=42)
-
-min_val_error = float("inf")
-error_going_up = 0
-for n_estimators in range(1, 120):
-    gbrt.n_estimators = n_estimators
-    gbrt.fit(X_train, y_train)
-    y_pred = gbrt.predict(X_val)
-    val_error = mean_squared_error(y_val, y_pred)
-    if val_error < min_val_error:
-        min_val_error = val_error
-        error_going_up = 0
-    else:
-        error_going_up += 1
-        if error_going_up == 5:
-            break  # early stopping
-
-print("stopped at n_estimators:", n_estimators)
-print("best validation MSE:", round(min_val_error, 5))
-```
-
-```
-stopped at n_estimators: 49
-best validation MSE: 0.00272
-```
-
-Five rounds in a row without improvement was enough to know 49 trees was close enough to
-optimal — no need to train the full 120 and look back, and no wasted trees past the point
-of diminishing returns.
-
-:::tip[From the book]
-Géron's `subsample` tip is easy to miss: `GradientBoostingRegressor(subsample=0.25)`
-trains each tree on a random 25% slice of the training data. This is called **Stochastic
-Gradient Boosting** — like `learning_rate`, it trades a bit more bias for lower variance,
-and it speeds up training considerably.
-:::
-
-## Scikit-learn's fast baseline: HistGradientBoosting
-
-For classification (or when your dataset is larger), scikit-learn's histogram-based
-boosters are a fast, strong default — inspired by the same binning trick LightGBM made
-popular:
-
-```python title="HistGradientBoostingClassifier" showLineNumbers{1}
-from sklearn.ensemble import HistGradientBoostingClassifier
-from sklearn.datasets import make_moons
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
-
-X, y = make_moons(n_samples=500, noise=0.30, random_state=42)
-X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
-
-hgb = HistGradientBoostingClassifier(random_state=42)
-hgb.fit(X_train, y_train)
-print(round(accuracy_score(y_test, hgb.predict(X_test)), 3))
-```
-
-```
-0.896
-```
-
-## XGBoost / LightGBM / CatBoost (high level)
-
-An optimized, hugely popular implementation of Gradient Boosting is available in the
-`xgboost` library — Extreme Gradient Boosting — and its API mirrors scikit-learn's:
-
-```python title="XGBoost API (mirrors scikit-learn)" showLineNumbers{1}
-import xgboost
-
-xgb_reg = xgboost.XGBRegressor()
-xgb_reg.fit(X_train, y_train)
-y_pred = xgb_reg.predict(X_val)
-
-# built-in early stopping
-xgb_reg.fit(
-    X_train, y_train,
-    eval_set=[(X_val, y_val)],
-    early_stopping_rounds=2,
+```python
+GradientBoostingClassifier(
+    n_estimators=2000,
+    validation_fraction=0.15,     # hold out 15% internally
+    n_iter_no_change=25,          # stop after 25 rounds without improvement
+    tol=1e-4,
 )
 ```
 
-- **XGBoost** — battle-tested, strong defaults, a fixture of ML competition leaderboards
-- **LightGBM** — leaf-wise growth and histogram binning make it very fast on large data
-- **CatBoost** — built-in handling of categorical features, less preprocessing needed
+## HistGradientBoosting: the fast default
 
-> These external libraries are commonly used in industry, but they're optional here —
-> the concepts above (residual fitting, shrinkage, early stopping) apply to all of them.
+scikit-learn's `HistGradientBoosting*` bins continuous features into 255 buckets before searching
+splits, which turns the split search from $O(m \log m)$ into $O(\text{bins})$. It is the same idea
+LightGBM introduced, and it is dramatically faster on anything over a few thousand rows.
 
-## Visualize it: residuals shrink stage by stage
+```python title="histgb.py" showLineNumbers{1}
+from sklearn.datasets import load_breast_cancer
+from sklearn.ensemble import (HistGradientBoostingClassifier,
+                              RandomForestClassifier)
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_val_score
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
-Each new stage refines the previous approximation of the true curve. Watch the blue
-step-function ensemble hug the amber target curve more tightly as more trees join — and
-watch the red residual segments (what's left over for the *next* tree to fit) shrink
-toward nothing as the residual readout at the top right ticks down.
+X, y = load_breast_cancer(return_X_y=True)
 
-```p5 title="Sequential residual fitting" desc="More trees (stages) let the ensemble's step function approximate the true curve more closely, while the red residual gaps and the residual readout shrink toward zero." height="300"
-function trueY(x) { return 3 * x * x; }
-
-let stage = 1;
-const MAX_STAGE = 8;
-let t = 0;
-const SAMPLE_XS = [];
-for (let i = 0; i <= 10; i++) SAMPLE_XS.push(-0.5 + i / 10);
-
-function approxAt(x, bins) {
-  const b = min(bins - 1, floor((x + 0.5) * bins));
-  const x0 = -0.5 + b / bins;
-  const x1 = -0.5 + (b + 1) / bins;
-  const mid = (x0 + x1) / 2;
-  return trueY(mid);
+models = {
+    "HistGradientBoosting": HistGradientBoostingClassifier(random_state=0),
+    "RandomForest": RandomForestClassifier(n_estimators=200, random_state=0, n_jobs=-1),
+    "LogisticRegression": make_pipeline(StandardScaler(),
+                                        LogisticRegression(max_iter=5000)),
 }
 
-function setup() {
-  createCanvas(600, 300);
-  textFont("monospace");
-}
+for name, model in models.items():
+    print(f"{name:<22} CV {cross_val_score(model, X, y, cv=5).mean():.4f}")
 
-function toPx(x) { return 60 + (x + 0.5) * (width - 100); }
-function toPy(y) { return (height - 40) - y * 300; }
-
-function draw() {
-  background(13, 17, 23);
-  stroke(70);
-  line(60, 20, 60, height - 40);
-  line(60, height - 40, width - 40, height - 40);
-
-  const bins = pow(2, stage - 1);
-
-  // true curve
-  noFill();
-  stroke(255, 211, 67, 200);
-  strokeWeight(2);
-  beginShape();
-  for (let x = -0.5; x <= 0.5; x += 0.01) vertex(toPx(x), toPy(trueY(x)));
-  endShape();
-
-  // residual segments: the gap between the ensemble's fit and the truth,
-  // shrinking as more trees (bins) are added
-  let sumSq = 0;
-  stroke(200, 90, 90, 170);
-  strokeWeight(1.5);
-  for (const x of SAMPLE_XS) {
-    const approx = approxAt(x, bins);
-    const truth = trueY(x);
-    line(toPx(x), toPy(approx), toPx(x), toPy(truth));
-    sumSq += (truth - approx) * (truth - approx);
-  }
-  const residualMSE = sumSq / SAMPLE_XS.length;
-
-  // ensemble step-function approximation with `stage` bins (more stages = finer fit)
-  stroke(75, 139, 190);
-  strokeWeight(2.5);
-  for (let b = 0; b < bins; b++) {
-    const x0 = -0.5 + (b / bins);
-    const x1 = -0.5 + ((b + 1) / bins);
-    const mid = (x0 + x1) / 2;
-    const approx = trueY(mid);
-    line(toPx(x0), toPy(approx), toPx(x1), toPy(approx));
-  }
-
-  noStroke();
-  fill(210);
-  textSize(13);
-  textAlign(LEFT, TOP);
-  text("trees added: " + stage + " / " + MAX_STAGE, 65, 8);
-
-  // shrinking residual readout + bar, top-right
-  fill(200, 90, 90);
-  textAlign(LEFT, TOP);
-  text("residual ~ " + residualMSE.toFixed(4), width - 200, 8);
-  const barMaxW = 130;
-  const barW = constrain(residualMSE / 0.02, 0, 1) * barMaxW;
-  noStroke();
-  fill(60);
-  rect(width - 200, 24, barMaxW, 10);
-  fill(200, 90, 90);
-  rect(width - 200, 24, barW, 10);
-
-  fill(255, 211, 67);
-  textSize(11);
-  text("amber = true function", 65, 250);
-  fill(75, 139, 190);
-  text("blue = ensemble prediction (sum of trees so far)", 65, 266);
-  fill(200, 90, 90);
-  text("red = residual error left for the next tree to fit", 65, 282);
-
-  t++;
-  if (t > 45) {
-    t = 0;
-    stage++;
-    if (stage > MAX_STAGE) stage = 1;
-  }
-}
-
-function mousePressed() {
-  stage = 1;
-  t = 0;
-}
+# HistGradientBoosting   CV 0.9648
+# RandomForest           CV 0.9596
+# LogisticRegression     CV 0.9807
 ```
+
+:::caution[Boosting is not automatically the winner]
+On this dataset **logistic regression beats both ensembles** — 0.9807 against 0.9648 and 0.9596.
+Thirty well-behaved, largely linear features on 569 rows is a linear model's ideal case. Gradient
+boosting dominates *many* tabular problems, not all of them, and the cheap baseline is worth
+running first.
+:::
+
+`HistGradientBoosting` also handles missing values natively — it learns which side of each split a
+NaN should go — so no imputer is required.
+
+## The four libraries
+
+| | scikit-learn `HistGB` | XGBoost | LightGBM | CatBoost |
+| --- | --- | --- | --- | --- |
+| Tree growth | Level-wise, binned | Level-wise (depth-wise) | **Leaf-wise** (best-first) | **Symmetric / oblivious** |
+| Speed on large data | Fast | Fast | **Fastest** | Fast |
+| Categorical features | Limited | Needs encoding | Native | **Native, ordered target stats** |
+| Missing values | Native | Native | Native | Native |
+| Default quality | Good | Good, needs tuning | Good, needs tuning | **Best out of the box** |
+| GPU | No | Yes | Yes | Yes |
+| Extra dependency | **None** | Yes | Yes | Yes |
+
+The differences that actually matter in practice:
+
+- **LightGBM grows leaf-wise**: it splits whichever leaf reduces loss most, rather than completing
+  each level. Deeper, more unbalanced trees, faster convergence — and easier overfitting on small
+  data, so `num_leaves` needs care.
+- **CatBoost uses ordered target statistics** for categorical features, which is target encoding
+  done with a scheme that provably avoids the leakage a naive `groupby().mean()` introduces. If
+  your data is categorical-heavy, this is the reason to pick it.
+- **XGBoost adds explicit regularisation** to the objective (`lambda`, `alpha`, `gamma`) and was the
+  first to popularise the second-order (Newton) approximation of the loss.
+
+**Start with `HistGradientBoosting`.** No new dependency, competitive accuracy, and if it is not
+enough you now know what you are shopping for.
+
+<AlgorithmCard
+  name="Gradient Boosting"
+  type="Supervised · Classification and Regression · Boosting ensemble"
+  sklearn="sklearn.ensemble.HistGradientBoostingClassifier / GradientBoostingRegressor"
+  assumptions={[
+    "The loss is differentiable with respect to the prediction",
+    "Shallow trees are adequate base learners for the residual structure",
+    "Labels are reasonably clean — sequential fitting chases errors",
+  ]}
+  complexity={{ train: "O(m · n · depth · trees), sequential in trees", predict: "O(depth · trees)", memory: "O(nodes · trees)" }}
+  notation="m = samples, n = features; histogram binning removes the m log m sort from the split search"
+  hyperparams={[
+    { name: "learning_rate", default: "0.1", effect: "The shrinkage. Trades directly against tree count — their product is roughly conserved." },
+    { name: "n_estimators / max_iter", default: "100", effect: "CAN overfit, unlike a forest. Choose it with early stopping, never by guessing." },
+    { name: "max_depth / max_leaf_nodes", default: "3 / 31", effect: "Boosted trees should be shallow. Depth 3 to 8, or 31 leaves; deeper defeats the weak-learner premise." },
+    { name: "subsample", default: "1.0", effect: "Below 1.0 gives stochastic gradient boosting — faster and often a little better. Try 0.8." },
+    { name: "min_samples_leaf", default: "20 (HistGB)", effect: "The main regularisation knob on noisy data." },
+    { name: "l2_regularization", default: "0.0", effect: "Penalises leaf values. Worth tuning on small datasets." },
+  ]}
+  useWhen={[
+    "Tabular data with mixed feature types — this is the default winner",
+    "You need the strongest single model and can afford to tune",
+    "There are missing values you would rather not impute",
+    "Non-linear interactions matter and you cannot hand-engineer them",
+  ]}
+  avoidWhen={[
+    "Labels are noisy — sequential fitting amplifies bad labels",
+    "You need interpretability or a model a regulator can read",
+    "Training must parallelise across members; boosting is sequential",
+    "The problem is small and largely linear — try the baseline first, as measured above",
+  ]}
+/>
+
+## Pitfalls
+
+:::danger[Setting `n_estimators` without early stopping]
+Unlike a random forest, more boosting rounds eventually hurt. Always use `staged_predict` or
+`n_iter_no_change` to find the turning point.
+:::
+
+:::caution[Deep trees in a boosted model]
+Depth 20 makes each learner strong, which defeats the premise. Boosting needs weak learners; depth
+3 to 8 is the usable range.
+:::
+
+:::caution[Tuning `learning_rate` and `n_estimators` separately]
+They trade against each other directly. Halving the learning rate roughly doubles the trees needed.
+Search them together, or fix a low rate and let early stopping pick the count.
+:::
+
+:::caution[Assuming boosting always wins]
+Logistic regression beat both ensembles on breast cancer, 0.9807 to 0.9648. Run the cheap baseline
+first, every time.
+:::
+
+## Compare
+
+| | Random Forest | AdaBoost | Gradient Boosting |
+| --- | --- | --- | --- |
+| Members | Deep trees | Stumps | Shallow trees |
+| Next member sees | A bootstrap sample | Reweighted samples | **Residuals** |
+| Loss functions | Fixed | Exponential only | **Any differentiable** |
+| Parallel training | Yes | No | No |
+| More members overfit | No | Yes | **Yes** |
+| Tuning burden | Low | Low | **High** |
+| Typical tabular accuracy | Very good | Good | **Best** |
+
+<Quiz
+  questions={[
+    {
+      q: "Why is fitting a tree to the residuals a form of gradient descent?",
+      options: [
+        "It is only an analogy with no mathematical content",
+        "For squared error the negative gradient of the loss with respect to the prediction is exactly y minus F — the residual — so each tree is a step in the steepest-descent direction",
+        "Because trees use gradients internally",
+        "Because the learning rate is called eta",
+      ],
+      answer: 1,
+      explain: "d/dF of half (y - F) squared is -(y - F). The residual IS the negative gradient, so adding a tree fitted to it is a gradient step in function space.",
+    },
+    {
+      q: "In the hand-worked example, MSE fell 66.667 to 29.167 to 8.073. Was any individual stump a good model?",
+      options: [
+        "Yes, each one fitted the data well",
+        "No — each predicts only two or three distinct values. The ensemble is good precisely because no member needs to be",
+        "Only the first one",
+        "It is impossible to tell",
+      ],
+      answer: 1,
+      explain: "A depth-1 stump on three points can output two values. The strength comes from the sum, which is the whole boosting premise.",
+    },
+    {
+      q: "lr=1.0 bottomed out at 381 trees; lr=0.1 needed 1,199. What is the relationship?",
+      options: [
+        "Random variation",
+        "Roughly reciprocal — learning rate times tree count is approximately conserved, so a tenfold smaller step needs about tenfold more steps",
+        "Smaller learning rates always need fewer trees",
+        "The tree count is unrelated to the learning rate",
+      ],
+      answer: 1,
+      explain: "Each tree contributes eta times its prediction. Shrinking eta by ten requires roughly ten times as many contributions to travel the same distance.",
+    },
+    {
+      q: "What does CatBoost's ordered target statistics solve?",
+      options: [
+        "Missing values",
+        "The leakage in naive target encoding — a row's own label contributing to its own encoded feature",
+        "Slow training",
+        "Class imbalance",
+      ],
+      answer: 1,
+      explain: "A plain groupby-mean encoding lets each row's label leak into its own feature. Ordered statistics compute the encoding using only rows that came earlier in a random permutation.",
+    },
+  ]}
+/>
 
 ## 🧪 Try It Yourself
 
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
-
-### Exercise 1 – Fit HistGradientBoostingClassifier
+### Exercise 1 – The residual is the gradient
 
 <DataCampExercise
   lang="python"
-  hint={`Call \`.fit(X_train, y_train)\` on \`hgb\` before predicting.`}
-  code={`# Task: Exercise 1 – Fit HistGradientBoostingClassifier
-from sklearn.ensemble import HistGradientBoostingClassifier
-from sklearn.datasets import make_moons
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+  hint={`Differentiate half (y - F) squared numerically and compare against y - F.`}
+  code={`# Task: Exercise 1 - The residual is the gradient
+import numpy as np
 
-X, y = make_moons(n_samples=500, noise=0.30, random_state=42)
-X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+y = np.array([10.0, 20.0, 30.0])
+F = np.array([12.0, 18.0, 33.0])
+h = 1e-6
 
-hgb = HistGradientBoostingClassifier(random_state=42)
-hgb.___(X_train, y_train)   # replace ___ with fit
-print(round(accuracy_score(y_test, hgb.predict(X_test)), 3))
+loss = lambda pred: 0.5 * (y - pred) ** 2
+numeric_gradient = (loss(F + h) - loss(F - h)) / (2 * h)
 
-# ── Expected Output ───────────────────────────────────────────
-# 0.896
-# ──────────────────────────────────────────────────────────────`}
-  solution={`from sklearn.ensemble import HistGradientBoostingClassifier
-from sklearn.datasets import make_moons
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+residual = y - ___                      # replace ___ with F
 
-X, y = make_moons(n_samples=500, noise=0.30, random_state=42)
-X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+print("numeric -gradient:", (-numeric_gradient).round(4))
+print("residual:", residual.round(4))
+print("identical:", bool(np.allclose(-numeric_gradient, residual, atol=1e-4)))
 
-hgb = HistGradientBoostingClassifier(random_state=42)
-hgb.fit(X_train, y_train)
-print(round(accuracy_score(y_test, hgb.predict(X_test)), 3))`}
-  sct={`test_output_contains("0.896")
-success_msg("A fast, histogram-based booster — scikit-learn's answer to LightGBM.")`}
-  height={168}
+# -- Expected Output -------------------------------------------
+# numeric -gradient: [-2.  2. -3.]
+# residual: [-2.  2. -3.]
+# identical: True
+# --------------------------------------------------------------`}
+  solution={`import numpy as np
+
+y = np.array([10.0, 20.0, 30.0])
+F = np.array([12.0, 18.0, 33.0])
+h = 1e-6
+loss = lambda pred: 0.5 * (y - pred) ** 2
+numeric_gradient = (loss(F + h) - loss(F - h)) / (2 * h)
+residual = y - F
+print("numeric -gradient:", (-numeric_gradient).round(4))
+print("residual:", residual.round(4))
+print("identical:", bool(np.allclose(-numeric_gradient, residual, atol=1e-4)))`}
+  sct={`test_output_contains("identical: True")
+success_msg("The residual is not like the gradient — it is the gradient.")`}
+  height={218}
 />
 
-### Exercise 2 – Compute the Residual by Hand
+### Exercise 2 – Two boosting stages by hand
 
 <DataCampExercise
   lang="python"
-  hint={`The residual is the true value minus the current prediction: \`y - tree_reg1.predict(X)\`.`}
-  code={`# Task: Exercise 2 – Compute the Residual by Hand
+  hint={`Start from the mean, then add the learning rate times each stump's output.`}
+  code={`# Task: Exercise 2 - Two boosting stages by hand
 import numpy as np
-from sklearn.tree import DecisionTreeRegressor
 
-np.random.seed(42)
-X = np.random.rand(100, 1) - 0.5
-y = 3 * X[:, 0] ** 2 + 0.05 * np.random.randn(100)
+y = np.array([10.0, 20.0, 30.0])
+lr = 0.5
 
-tree_reg1 = DecisionTreeRegressor(max_depth=2, random_state=42)
-tree_reg1.fit(X, y)
+F = np.full(3, y.mean())
+print("stage 0:", F, " MSE", round(float(((y - F) ** 2).mean()), 4))
 
-y2 = y ___ tree_reg1.predict(X)   # replace ___ with -
-print(round(y2[0], 3))
+h1 = np.array([-10.0, 5.0, 5.0])       # stump fitted to the residual
+F = F + lr * ___                       # replace ___ with h1
+print("stage 1:", F, " MSE", round(float(((y - F) ** 2).mean()), 4))
 
-# ── Expected Output ───────────────────────────────────────────
-# -0.072
-# ──────────────────────────────────────────────────────────────`}
+h2 = np.array([-3.75, -3.75, 7.5])
+F = F + lr * h2
+print("stage 2:", F, " MSE", round(float(((y - F) ** 2).mean()), 4))
+
+# -- Expected Output -------------------------------------------
+# stage 0: [20. 20. 20.]  MSE 66.6667
+# stage 1: [15.  22.5 22.5]  MSE 29.1667
+# stage 2: [13.125 20.625 26.25 ]  MSE 8.0729
+# --------------------------------------------------------------`}
   solution={`import numpy as np
-from sklearn.tree import DecisionTreeRegressor
 
-np.random.seed(42)
-X = np.random.rand(100, 1) - 0.5
-y = 3 * X[:, 0] ** 2 + 0.05 * np.random.randn(100)
-
-tree_reg1 = DecisionTreeRegressor(max_depth=2, random_state=42)
-tree_reg1.fit(X, y)
-
-y2 = y - tree_reg1.predict(X)
-print(round(y2[0], 3))`}
-  sct={`test_output_contains("-0.072")
-success_msg("That leftover error is exactly what tree_reg2 will learn to predict.")`}
-  height={168}
+y = np.array([10.0, 20.0, 30.0])
+lr = 0.5
+F = np.full(3, y.mean())
+print("stage 0:", F, " MSE", round(float(((y - F) ** 2).mean()), 4))
+h1 = np.array([-10.0, 5.0, 5.0])
+F = F + lr * h1
+print("stage 1:", F, " MSE", round(float(((y - F) ** 2).mean()), 4))
+h2 = np.array([-3.75, -3.75, 7.5])
+F = F + lr * h2
+print("stage 2:", F, " MSE", round(float(((y - F) ** 2).mean()), 4))`}
+  sct={`test_output_contains("MSE 8.0729")
+success_msg("66.7 to 29.2 to 8.1, from two stumps that individually predict two values each.")`}
+  height={228}
 />
 
-### Exercise 3 – Find the Best Number of Trees
+### Exercise 3 – Find the best number of trees
 
 <DataCampExercise
   lang="python"
-  hint={`\`np.argmin(errors)\` gives the zero-based index of the smallest error; add 1 to get the tree count.`}
-  code={`# Task: Exercise 3 – Find the Best Number of Trees
+  hint={`staged_predict yields one prediction array per tree count.`}
+  code={`# Task: Exercise 3 - Find the best number of trees
 import numpy as np
-from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.datasets import make_hastie_10_2
+from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
 
-np.random.seed(42)
-X = np.random.rand(200, 1) - 0.5
-y = 3 * X[:, 0] ** 2 + 0.05 * np.random.randn(200)
-X_train, X_val, y_train, y_val = train_test_split(X, y, random_state=42)
+X, y = make_hastie_10_2(n_samples=2400, random_state=0)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.35, random_state=0)
 
-gbrt = GradientBoostingRegressor(max_depth=2, n_estimators=120, random_state=42)
-gbrt.fit(X_train, y_train)
+model = GradientBoostingClassifier(n_estimators=300, learning_rate=0.3,
+                                   max_depth=3, random_state=0).fit(X_tr, y_tr)
 
-errors = [mean_squared_error(y_val, y_pred) for y_pred in gbrt.staged_predict(X_val)]
-best_n_estimators = np.___(errors) + 1   # replace ___ with argmin
-print(best_n_estimators)
+errors = [1 - (pred == y_te).mean() for pred in model.___(X_te)]
+# replace ___ with staged_predict
 
-# ── Expected Output ───────────────────────────────────────────
-# 54
-# ──────────────────────────────────────────────────────────────`}
+print("best error:", round(min(errors), 4))
+print("at tree:", int(np.argmin(errors)) + 1)
+print("error at 300:", round(errors[-1], 4))
+
+# -- Expected Output -------------------------------------------
+# best error: 0.0821
+# at tree: 295
+# error at 300: 0.0833
+# --------------------------------------------------------------`}
   solution={`import numpy as np
-from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.datasets import make_hastie_10_2
+from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
 
-np.random.seed(42)
-X = np.random.rand(200, 1) - 0.5
-y = 3 * X[:, 0] ** 2 + 0.05 * np.random.randn(200)
-X_train, X_val, y_train, y_val = train_test_split(X, y, random_state=42)
+X, y = make_hastie_10_2(n_samples=2400, random_state=0)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.35, random_state=0)
+model = GradientBoostingClassifier(n_estimators=300, learning_rate=0.3,
+                                   max_depth=3, random_state=0).fit(X_tr, y_tr)
+errors = [1 - (pred == y_te).mean() for pred in model.staged_predict(X_te)]
+print("best error:", round(min(errors), 4))
+print("at tree:", int(np.argmin(errors)) + 1)
+print("error at 300:", round(errors[-1], 4))`}
+  sct={`test_output_contains("best error: 0.0821")
+success_msg("One fit, and the whole error curve — that is what staged_predict is for.")`}
+  height={228}
+/>
 
-gbrt = GradientBoostingRegressor(max_depth=2, n_estimators=120, random_state=42)
-gbrt.fit(X_train, y_train)
+### Exercise 4 – Run the cheap baseline first
 
-errors = [mean_squared_error(y_val, y_pred) for y_pred in gbrt.staged_predict(X_val)]
-best_n_estimators = np.argmin(errors) + 1
-print(best_n_estimators)`}
-  sct={`test_output_contains("54")
-success_msg("54 trees beat both a too-small and a too-large ensemble on validation data.")`}
-  height={188}
+<DataCampExercise
+  lang="python"
+  hint={`Cross-validate all three on identical folds before assuming the ensemble wins.`}
+  code={`# Task: Exercise 4 - Run the cheap baseline first
+from sklearn.datasets import load_breast_cancer
+from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_val_score
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+X, y = load_breast_cancer(return_X_y=True)
+
+models = {
+    "HistGB": HistGradientBoostingClassifier(random_state=0),
+    "Forest": RandomForestClassifier(n_estimators=200, random_state=0, n_jobs=-1),
+    "Logistic": make_pipeline(StandardScaler(), LogisticRegression(max_iter=5000)),
+}
+
+scores = {n: cross_val_score(m, X, y, cv=5).___() for n, m in models.items()}
+# replace ___ with mean
+
+for n, s in scores.items():
+    print(f"{n:<9} {s:.4f}")
+print("boosting won:", scores["HistGB"] == max(scores.values()))
+
+# -- Expected Output -------------------------------------------
+# HistGB    0.9648
+# Forest    0.9596
+# Logistic  0.9807
+# boosting won: False
+# --------------------------------------------------------------`}
+  solution={`from sklearn.datasets import load_breast_cancer
+from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_val_score
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+X, y = load_breast_cancer(return_X_y=True)
+models = {
+    "HistGB": HistGradientBoostingClassifier(random_state=0),
+    "Forest": RandomForestClassifier(n_estimators=200, random_state=0, n_jobs=-1),
+    "Logistic": make_pipeline(StandardScaler(), LogisticRegression(max_iter=5000)),
+}
+scores = {n: cross_val_score(m, X, y, cv=5).mean() for n, m in models.items()}
+for n, s in scores.items():
+    print(f"{n:<9} {s:.4f}")
+print("boosting won:", scores["HistGB"] == max(scores.values()))`}
+  sct={`test_output_contains("boosting won: False")
+success_msg("Thirty largely linear features on 569 rows: the linear model wins. Always check.")`}
+  height={258}
+/>
+
+### Exercise 5 – Shrinkage trades against tree count
+
+<DataCampExercise
+  lang="python"
+  hint={`Record where each learning rate reaches its minimum held-out error.`}
+  code={`# Task: Exercise 5 - Shrinkage trades against tree count
+import numpy as np
+from sklearn.datasets import make_hastie_10_2
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.model_selection import train_test_split
+
+X, y = make_hastie_10_2(n_samples=2400, random_state=0)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.35, random_state=0)
+
+for lr in (1.0, 0.3):
+    model = GradientBoostingClassifier(n_estimators=300, learning_rate=___,
+                                       max_depth=3, random_state=0).fit(X_tr, y_tr)
+    # replace ___ with lr
+    errors = [1 - (p == y_te).mean() for p in model.staged_predict(X_te)]
+    print(f"lr={lr}: best {min(errors):.4f} at {int(np.argmin(errors)) + 1} trees")
+
+# -- Expected Output -------------------------------------------
+# lr=1.0: best 0.0726 at 287 trees
+# lr=0.3: best 0.0821 at 295 trees
+# --------------------------------------------------------------`}
+  solution={`import numpy as np
+from sklearn.datasets import make_hastie_10_2
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.model_selection import train_test_split
+
+X, y = make_hastie_10_2(n_samples=2400, random_state=0)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.35, random_state=0)
+
+for lr in (1.0, 0.3):
+    model = GradientBoostingClassifier(n_estimators=300, learning_rate=lr,
+                                       max_depth=3, random_state=0).fit(X_tr, y_tr)
+    errors = [1 - (p == y_te).mean() for p in model.staged_predict(X_te)]
+    print(f"lr={lr}: best {min(errors):.4f} at {int(np.argmin(errors)) + 1} trees")`}
+  sct={`test_output_contains("lr=1.0: best 0.0726")
+success_msg("At only 300 trees the smaller rate has not caught up — it needs about four times more.")`}
+  height={228}
+/>
+
+## Recap
+
+- The residual is the negative gradient of squared loss with respect to the prediction, so boosting
+  is gradient descent in function space.
+- Swapping the loss changes only the pseudo-residual, which is why gradient boosting handles log
+  loss, Huber, quantile and Poisson with one algorithm.
+- Hand-worked: MSE 66.667 → 29.167 → 8.073 in two stages, from stumps that individually predict two
+  values each.
+- Shrinkage trades against tree count roughly reciprocally — 1.0 peaked at 381 trees, 0.1 at 1,199 —
+  and did **not** reach a lower floor in this run.
+- `n_estimators` can overfit. Use `staged_predict` or `n_iter_no_change`.
+- Start with `HistGradientBoosting`; reach for LightGBM on very large data and CatBoost on
+  categorical-heavy data.
+- Logistic regression beat both ensembles on breast cancer. Run the cheap baseline first.
+
+### Exercise 6 – Three boosting rounds, by hand
+
+<DataCampExercise
+  lang="python"
+  hint={`Each round fits the current residual, then adds learning_rate times that fit to the running prediction.`}
+  code={`# Task: Exercise 6 - Three boosting rounds, by hand
+import numpy as np
+
+y_true = np.array([10.0, 12.0, 14.0, 20.0, 25.0])
+prediction = np.full_like(y_true, y_true.mean())
+learning_rate = 0.5
+
+print(f"{'round':>6} {'MSE':>9}  predictions")
+print(f"{0:6d} {((y_true - prediction) ** 2).mean():9.4f}  "
+      + " ".join(f"{p:6.2f}" for p in prediction))
+for round_index in range(1, 4):
+    residual = y_true - ___                    # replace ___ with prediction
+    # a one-split "tree": each half of the rows predicts its own mean residual
+    left, right = residual[:3].mean(), residual[3:].mean()
+    step = np.concatenate([np.full(3, left), np.full(2, right)])
+    prediction = prediction + learning_rate * step
+    print(f"{round_index:6d} {((y_true - prediction) ** 2).mean():9.4f}  "
+          + " ".join(f"{p:6.2f}" for p in prediction))
+print("each round fits the residual of the previous one, scaled by the "
+      "learning rate")
+
+# -- Expected Output -------------------------------------------
+#  round       MSE  predictions
+#      0   30.5600   16.20  16.20  16.20  16.20  16.20
+#      1   10.7150   14.10  14.10  14.10  19.35  19.35
+#      2    5.7537   13.05  13.05  13.05  20.93  20.93
+#      3    4.5134   12.53  12.53  12.53  21.71  21.71
+# each round fits the residual of the previous one, scaled by the learning rate
+# --------------------------------------------------------------`}
+  solution={`import numpy as np
+
+y_true = np.array([10.0, 12.0, 14.0, 20.0, 25.0])
+prediction = np.full_like(y_true, y_true.mean())
+learning_rate = 0.5
+
+print(f"{'round':>6} {'MSE':>9}  predictions")
+print(f"{0:6d} {((y_true - prediction) ** 2).mean():9.4f}  "
+      + " ".join(f"{p:6.2f}" for p in prediction))
+for round_index in range(1, 4):
+    residual = y_true - prediction
+    left, right = residual[:3].mean(), residual[3:].mean()
+    step = np.concatenate([np.full(3, left), np.full(2, right)])
+    prediction = prediction + learning_rate * step
+    print(f"{round_index:6d} {((y_true - prediction) ** 2).mean():9.4f}  "
+          + " ".join(f"{p:6.2f}" for p in prediction))
+print("each round fits the residual of the previous one, scaled by the "
+      "learning rate")`}
+  sct={`test_output_contains("4.5134")
+success_msg("MSE falls 30.56, 10.72, 5.75, 4.51 — big first steps, then diminishing ones, because each round only ever sees what the previous rounds left over. Halve the learning rate and you need roughly twice the rounds to reach the same place.")`}
+  height={310}
 />
 
 ## Next
 
-Continue to **Stacking and Voting Classifiers** — instead of reweighting instances or
-fitting residuals, learn how to combine entirely different model families, either by a
-simple vote or by training a "meta-learner" on top of them.
+Continue to
+[Stacking and Voting Classifiers](/machine-learning/phase-05---ensemble-learning/stacking-and-voting-classifiers/)
+— the third family, where the members come from different algorithms entirely and a second-level
+model learns how much to trust each one.

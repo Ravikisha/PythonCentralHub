@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import subprocess
 import sys
 import time
 
@@ -72,6 +73,24 @@ def load(path: str, name: str):
 LOCK = os.path.join(REPO, ".figure-build.lock")
 
 
+def _alive(pid: int) -> bool:
+    """True if a process with this pid exists. Signal 0 is the portable probe."""
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        out = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+            capture_output=True, text=True, check=False)
+        return str(pid) in out.stdout
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 class BuildLock:
     """Serialise figure builds across processes.
 
@@ -94,6 +113,8 @@ class BuildLock:
                 os.write(self.handle, str(os.getpid()).encode())
                 return self
             except FileExistsError:
+                if self._steal_if_stale():
+                    continue
                 if not announced:
                     holder = ""
                     try:
@@ -105,6 +126,27 @@ class BuildLock:
                           f"waiting")
                     announced = True
                 time.sleep(self.poll)
+
+    def _steal_if_stale(self) -> bool:
+        """Remove the lock if the process that wrote it is gone.
+
+        A killed build leaves the file behind and every later build then waits
+        on it forever. Nothing else writes this file, so a holder pid that no
+        longer exists means the lock is abandoned.
+        """
+        try:
+            with open(self.path) as handle:
+                pid = int(handle.read().strip())
+        except (OSError, ValueError):
+            return False
+        if pid == os.getpid() or _alive(pid):
+            return False
+        print(f"  . removing a stale lock left by pid {pid}")
+        try:
+            os.unlink(self.path)
+        except OSError:
+            return False
+        return True
 
     def __exit__(self, *_):
         if self.handle is not None:

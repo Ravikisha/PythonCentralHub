@@ -1,0 +1,694 @@
+---
+title: Design a Parking Lot
+description: The resource-allocation archetype — spot selection that does not waste large bays, free lists for O(1) allocation, and a pricing policy with a cap that hides a bug.
+sidebar:
+  order: 3
+difficulty: medium
+---
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+The parking lot is the most-asked OOD question there is, and it is the **resource allocation**
+archetype: a pool of interchangeable-ish things handed out and taken back. Meeting rooms, seat
+booking, GPU scheduling and connection pools are all the same problem with different nouns.
+
+[The OOD Round](../the-ood-round/) uses a cut-down parking lot to introduce the four moves.
+This page is the full treatment: the allocation strategy that skeleton got *wrong*, the data
+structure that makes allocation constant-time, and a pricing policy whose cap contains a bug
+worth finding.
+
+## The cue
+
+:::tip[You are looking at resource allocation when...]
+- There is a **pool of resources** and requests that claim one, hold it, and give it back.
+- Resources are **not fully interchangeable** — sizes, tiers, features — so "which one do I
+  give out?" is a real decision rather than "take any".
+- The prompt has a **charge or a duration**: hourly parking, per-minute billing, overdue fines.
+  That is a policy object, not an `if` chain.
+- Follow-ups are about **new resource kinds** ("now add EV charging bays") or **new pricing**
+  ("now add monthly passes").
+- Something must happen when the pool is **empty**, and it is an expected outcome rather than
+  an error.
+:::
+
+**When it is not this.** If the resource has *modes* — moving, doors open — the interesting part
+is a [state machine](../design-an-elevator-system/), not the allocation. If everything in the
+pool is genuinely identical, the "which one" question disappears and you have a counter, not a
+design problem.
+
+## The entities
+
+```mermaid title="Parking lot: the responsibilities, and where the two policies plug in"
+classDiagram
+    class Vehicle {
+        +plate: str
+        +size: Size
+    }
+    class ParkingSpot {
+        +spot_id: str
+        +size: Size
+        +vehicle: Vehicle
+        +fits(vehicle) bool
+        +park(vehicle)
+        +vacate() Vehicle
+    }
+    class Level {
+        +number: int
+        +spots: list
+        +free_by_size: dict
+    }
+    class ParkingLot {
+        +levels: list
+        +park(vehicle) Ticket
+        +leave(ticket, hours) float
+    }
+    class Ticket {
+        +plate: str
+        +spot_id: str
+        +issued_at
+    }
+    class SpotSelection {
+        <<abstract>>
+        +choose(candidates, vehicle)
+    }
+    class PricingPolicy {
+        <<abstract>>
+        +fee(hours, size) float
+    }
+    ParkingLot o-- Level
+    Level o-- ParkingSpot
+    ParkingSpot --> Vehicle
+    ParkingLot --> Ticket
+    ParkingLot --> SpotSelection
+    ParkingLot --> PricingPolicy
+```
+
+Two abstractions, and both exist because the follow-ups push exactly there: **`SpotSelection`**
+(which free spot to hand out) and **`PricingPolicy`** (what to charge). Everything else is
+concrete.
+
+## The allocation bug, and the fix
+
+The OOD page's skeleton picked the **first fitting** spot. Here is what that costs.
+
+Three spots — one large, one compact, one motorbike — and three vehicles arriving in the order
+bike, truck, car:
+
+| Strategy | Assignment | Served |
+| --- | --- | --- |
+| First fitting | bike → **L1**, truck → **`None`**, car → C1 | **2 of 3** |
+| Smallest fitting | bike → M1, truck → L1, car → C1 | **3 of 3** |
+
+Verified. The bike takes the *large* bay because it is first in the list and technically fits;
+the truck then has nowhere to go, even though a motorbike bay was free the whole time.
+**First-fit does not merely waste space, it refuses vehicles it could have served.**
+
+The fix is one line — pick the smallest candidate that fits — and it is the single most useful
+thing to volunteer on this question:
+
+```python title="spot_selection.py" showLineNumbers{1}
+from abc import ABC, abstractmethod
+
+
+class SpotSelection(ABC):
+    @abstractmethod
+    def choose(self, candidates, vehicle): ...
+
+
+class FirstFit(SpotSelection):
+    """What the naive version does. Kept to show why it is wrong."""
+
+    def choose(self, candidates, vehicle):
+        return candidates[0] if candidates else None
+
+
+class SmallestFit(SpotSelection):
+    """Never spend a large bay on a small vehicle while a smaller bay is free."""
+
+    def choose(self, candidates, vehicle):
+        return min(candidates, key=lambda s: s.size.value, default=None)
+```
+
+:::caution[Smallest-fit is better, not optimal]
+Smallest-fit is a **greedy** rule and it can still be beaten. Suppose one compact bay is free
+and two vehicles are queued — a compact car and a motorbike. Smallest-fit serves whoever asks
+first, so if the car arrives first the bike gets nothing, and if the bike arrives first the car
+gets nothing *and* a compact bay is now occupied by a motorbike.
+
+Optimal allocation over a known future queue is a bipartite matching problem. In a real lot you
+do not know the future, so greedy is the right call — but say that it is greedy and say what
+would beat it. "This is optimal" is the claim that gets picked apart.
+:::
+
+## Free lists: allocation without the scan
+
+Finding a candidate by scanning every spot is $O(n)$. Measured on a lot of 501 spots — 500
+compact followed by 1 large — a **large** vehicle costs:
+
+| Approach | Probes |
+| --- | --- |
+| Linear scan over all spots | **501** |
+| Pop from a per-size free list | **1** |
+
+Keep one list of free spots per size, per level:
+
+```python title="level.py" showLineNumbers{1}
+from collections import defaultdict
+
+
+class Level:
+    """Owns its spots and, crucially, its own free lists."""
+
+    def __init__(self, number, spots):
+        self.number = number
+        self.spots = spots
+        self.free_by_size = defaultdict(list)
+        for spot in spots:
+            self.free_by_size[spot.size].append(spot)
+
+    def candidates(self, vehicle):
+        """Free spots that fit, cheapest size first — no scan of occupied spots."""
+        return [
+            spot
+            for size, bucket in sorted(self.free_by_size.items(), key=lambda kv: kv[0].value)
+            if size.value >= vehicle.size.value
+            for spot in bucket[:1]                    # one candidate per size is enough
+        ]
+
+    def take(self, spot):
+        self.free_by_size[spot.size].remove(spot)     # O(1) if you pop instead
+
+    def give_back(self, spot):
+        self.free_by_size[spot.size].append(spot)
+```
+
+**Note what made this cheap**: `fits` already lived on `ParkingSpot`, so the level could bucket
+by size without knowing anything about vehicles. A boundary drawn well in the first five
+minutes is what makes the optimisation a small change rather than a rewrite — which is exactly
+the argument to make when the interviewer asks for it.
+
+The honest caveat: `list.remove` is $O(k)$ in the bucket length. Use a `set` per size, or pop
+from the end, if you want the bound to actually be $O(1)$. Saying "I have written `remove` for
+readability; a set makes it constant" is better than quietly claiming $O(1)$.
+
+## Pricing, and a cap that is wrong
+
+```python title="pricing.py" showLineNumbers{1}
+import math
+from abc import ABC, abstractmethod
+
+
+class PricingPolicy(ABC):
+    @abstractmethod
+    def fee(self, hours: float, size) -> float: ...
+
+
+class TieredPricing(PricingPolicy):
+    """Flat first hour, then per-hour, with a daily cap. Size scales the whole thing."""
+
+    MULTIPLIER = {"motorbike": 0.5, "compact": 1.0, "large": 1.75}
+
+    def __init__(self, first_hour=3.0, per_hour=2.0, daily_cap=20.0):
+        self.first_hour = first_hour
+        self.per_hour = per_hour
+        self.daily_cap = daily_cap
+
+    def fee(self, hours: float, size: str) -> float:
+        extra = max(0, math.ceil(hours) - 1)
+        raw = self.first_hour + self.per_hour * extra
+        return round(min(raw, self.daily_cap) * self.MULTIPLIER[size], 2)
+
+
+p = TieredPricing()
+print([p.fee(0.5, "compact"), p.fee(1.0, "compact"), p.fee(2.5, "compact")])
+print([p.fee(24, "compact"), p.fee(2.5, "large"), p.fee(24, "large")])
+# expect [3.0, 3.0, 7.0]
+# expect [20.0, 12.25, 35.0]
+```
+
+Read the last number. **A 24-hour large vehicle is charged 35.00 against a stated daily cap of
+20.00.** The cap is applied *before* the size multiplier, so it caps the base rate rather than
+the amount billed.
+
+That is a real bug and it is the sort of thing this round is for. Two defensible fixes, and
+they are different products:
+
+- **Cap the final amount** — move `min` outside the multiplication. A large vehicle then pays
+  at most 20 per day, same as everything else.
+- **Cap per size** — give each size its own cap (`20 * multiplier`). Large vehicles cost more,
+  which is probably what the business meant.
+
+Either is fine; **not noticing is not**. Volunteering "my cap is applied before the multiplier,
+so it does not do what its name says" is a strong move, and it is exactly the class of error
+that only shows up when you put numbers through your own design.
+
+## Dry run
+
+### The full allocation path
+
+Lot with two levels. Level 1: `M1` motorbike, `C1` compact. Level 2: `L1` large.
+Selection strategy: smallest-fit.
+
+| Request | Candidates offered | Chosen | Free lists after |
+| --- | --- | --- | --- |
+| bike (motorbike) | `M1` (m), `C1` (c), `L1` (l) | **M1** | m: `[]`, c: `[C1]`, l: `[L1]` |
+| car (compact) | `C1` (c), `L1` (l) | **C1** | m: `[]`, c: `[]`, l: `[L1]` |
+| truck (large) | `L1` (l) | **L1** | all empty |
+| van (large) | none | **`None`** | unchanged |
+
+All three vehicles served, where first-fit served two. The fourth request returns `None` — the
+lot is genuinely full for that size, which is an **expected outcome** and therefore a return
+value, not an exception.
+
+Note the candidate list shrinks as sizes fill: a motorbike is offered three sizes, a compact
+two, a large one. That asymmetry is inherent — bigger vehicles have fewer options — and it is
+the reason smallest-fit matters: every large bay spent on a small vehicle removes the *only*
+option some future vehicle had.
+
+### Pricing, hour by hour
+
+| Duration | Size | Fee | Why |
+| --- | --- | --- | --- |
+| 0.5 h | compact | **3.00** | first hour is flat, and a part-hour is a full hour |
+| 1.0 h | compact | **3.00** | `ceil(1) - 1 = 0` extra hours |
+| 2.5 h | compact | **7.00** | `3 + 2 × (3 − 1)` = 3 + 4 |
+| 2.5 h | motorbike | **3.50** | same 7.00 base × 0.5 |
+| 2.5 h | large | **12.25** | same 7.00 base × 1.75 |
+| 24 h | compact | **20.00** | base 49 → capped at 20 |
+| 24 h | large | **35.00** | base capped at 20, **then** × 1.75 — the bug |
+
+Verified. Rows 1 and 2 are worth pausing on: a 30-minute stay and a 60-minute stay cost the
+same, because `ceil` rounds a part-hour up and the first hour is flat. That is deliberate and
+matches how real car parks bill, but it is the kind of thing to state rather than leave the
+interviewer to infer.
+
+### Where the concurrency race is
+
+The sequence `candidates() → choose() → take()` is three separate steps, and two threads can
+both receive the same spot from `candidates()` before either calls `take()`. Both then park,
+and one vehicle is silently overwritten.
+
+| Fix | Cost |
+| --- | --- |
+| Lock around the whole allocate-and-take | Simple, correct, serialises all entries |
+| Per-level lock | Better throughput, still simple |
+| Compare-and-set on the spot (`park` fails if occupied) | Lock-free, needs `park` to return success rather than raise |
+
+Naming the race unprompted is the signal here. A full solution is not expected in an OOD round,
+and saying "I would start with a per-level lock and measure" is a better answer than an
+elaborate lock-free scheme.
+
+## Complexity
+
+| Operation | Naive | With free lists |
+| --- | --- | --- |
+| Find a candidate spot | $O(n)$ over all spots — measured **501 probes** | $O(\text{sizes})$ ≈ $O(1)$ — **1 probe** |
+| Take a spot | $O(1)$ | $O(k)$ with `list.remove`, $O(1)$ with a set |
+| Return a spot | $O(1)$ | $O(1)$ append |
+| "Is the lot full for size X?" | $O(n)$ | $O(1)$ — bucket empty? |
+| "How many free large bays?" | $O(n)$ | $O(1)$ — bucket length |
+| `leave` (redeem a ticket) | $O(1)$ dict lookup | $O(1)$ |
+| Fee calculation | $O(1)$ | $O(1)$ |
+
+Two things worth saying:
+
+- **The $O(n)$ scan is acceptable and you should say why** before improving it: a lot has
+  hundreds of spots and human-scale arrival rates. What is graded is knowing the bound and
+  where the fix goes, not pre-emptively optimising.
+- **The free-list version's real bound depends on the container.** `list.remove` is linear in
+  the bucket. Claim $O(1)$ only if you use a set or pop from the end — otherwise say $O(k)$ and
+  name the fix.
+
+## The variant map
+
+| Variant | The change | Also known as |
+| --- | --- | --- |
+| **Single level, one size** | Drop `Level` and the size logic — a counter and a free list | The warm-up |
+| **Multiple sizes** | `fits` on the spot, plus a `SpotSelection` policy | The standard prompt |
+| **Multiple levels** | `Level` owns its spots and free lists; the lot picks a level | -- |
+| **Smallest-fit allocation** | `min(candidates, key=size)` — serves 3 of 3 where first-fit serves 2 | The fix to volunteer |
+| **Nearest-to-entrance** | Selection policy ordered by walking distance, not size | A different `SpotSelection` |
+| **EV charging bays** | A feature flag on the spot, and `fits` checks it | "Now add EV" |
+| **Monthly passes** | A `PricingPolicy` subclass returning 0 for pass holders | "Now add passes" |
+| **Reservations** | Spots held for a window — the free list becomes time-aware | The hard follow-up |
+| **Meeting rooms** | Identical design, plus time slots | Same archetype |
+| **Connection pool** | Identical design, resources fully interchangeable | Same archetype |
+
+:::note[Reservations are the follow-up that breaks the design, and that is fine]
+A free list answers "is this free *now*". A reservation asks "is this free **between 2 and 4
+tomorrow**", which a list of free spots cannot represent — you need an interval structure per
+spot.
+
+If asked, say that plainly: the free list is the right structure for the stated problem and the
+wrong one for reservations, and the change is per-spot interval bookkeeping (which is
+[Phase 07's merge-intervals](../../phase-07-patterns-intervals-and-greedy/merge-intervals/)
+territory). Recognising when a follow-up invalidates your data structure — rather than bolting
+a flag onto it — is the senior signal in this round.
+:::
+
+## Pitfalls
+
+- **First-fit allocation.** Verified to serve **2 of 3** vehicles where smallest-fit serves 3:
+  the motorbike takes the large bay and the truck is refused. It does not merely waste space,
+  it rejects vehicles it could have served.
+- **Claiming smallest-fit is optimal.** It is greedy. With one compact bay and both a car and a
+  bike queued, whoever asks first wins. Optimal over a known queue is bipartite matching, and
+  you do not know the future — so greedy is correct *and* worth labelling as greedy.
+- **A cap applied before a multiplier.** Measured: a 24-hour large vehicle bills **35.00**
+  against a "daily cap" of 20.00. Cap the final amount, or give each size its own cap — but
+  notice it.
+- **`list.remove` in a free list, called $O(1)$.** It is $O(k)$ in the bucket. Use a set, or pop
+  from the end.
+- **Exceptions for a full lot.** "Full" is expected. Return `None` or a result object; raising
+  forces every caller into a `try` for the normal case. (`ParkingSpot.park` *should* raise on a
+  bad fit — that is a genuine invariant violation.)
+- **A `ParkingManager` that does everything.** Finding, pricing, ticketing and logging in one
+  class. If the responsibility needs an "and", split it.
+- **Subclassing per vehicle size.** `LargeVehicle(Vehicle)` adds no behaviour. Size is a field —
+  and with three independent dimensions, subclassing needs 24 classes where composition needs 3.
+- **The find-then-take race.** Two threads can be handed the same spot. Name it; a per-level
+  lock is a fine first answer.
+- **Storing free spots globally rather than per level.** A single free list forces a scan to
+  find which level a spot is on. Let each `Level` own its own.
+- **Forgetting the ticket is the identity of a *parking event*.** Keying by licence plate breaks
+  the moment a vehicle can be in the lot twice in one day, or when plates repeat across sites.
+- **Designing for multiple sites.** That is system design. Stay at the class level unless moved.
+
+## Try it yourself
+
+### Drill 1 — smallest-fit serves more vehicles
+
+<DataCampExercise
+  lang="python"
+  hint={`Filter the free spots to those big enough, then pick the one with the SMALLEST size rather than the first in the list. Return None when nothing fits.`}
+  code={`SIZES = {"motorbike": 1, "compact": 2, "large": 3}
+
+
+def allocate(spots, vehicles, strategy):
+    """spots: list of (id, size). Returns [(vehicle_name, spot_id or None), ...]."""
+    free = list(spots)
+    out = []
+    for name, vsize in vehicles:
+        cands = [s for s in free if SIZES[s[1]] >= SIZES[vsize]]
+        if not cands:
+            out.append((name, None))
+            continue
+        # TODO: pick candidates[0] when strategy == "first",
+        # otherwise the candidate with the smallest size.
+        pick = None
+        free.remove(pick)
+        out.append((name, pick[0]))
+    return out
+
+
+spots = [("L1", "large"), ("C1", "compact"), ("M1", "motorbike")]
+vehicles = [("bike", "motorbike"), ("truck", "large"), ("car", "compact")]
+for strat in ("first", "smallest"):
+    res = allocate(spots, vehicles, strat)
+    print([strat, sum(1 for _, s in res if s), res])
+# expect ['first', 2,
+# expect ['smallest', 3,`}
+  solution={`SIZES = {"motorbike": 1, "compact": 2, "large": 3}
+
+
+def allocate(spots, vehicles, strategy):
+    free = list(spots)
+    out = []
+    for name, vsize in vehicles:
+        cands = [s for s in free if SIZES[s[1]] >= SIZES[vsize]]
+        if not cands:
+            out.append((name, None))
+            continue
+        pick = cands[0] if strategy == "first" else min(cands, key=lambda s: SIZES[s[1]])
+        free.remove(pick)
+        out.append((name, pick[0]))
+    return out
+
+
+spots = [("L1", "large"), ("C1", "compact"), ("M1", "motorbike")]
+vehicles = [("bike", "motorbike"), ("truck", "large"), ("car", "compact")]
+for strat in ("first", "smallest"):
+    res = allocate(spots, vehicles, strat)
+    print([strat, sum(1 for _, s in res if s), res])`}
+  sct={`test_output_contains("'smallest', 3")
+success_msg("First-fit serves 2 of 3 and smallest-fit serves 3 of 3, on identical input. The motorbike takes the LARGE bay because it is first in the list and technically fits, and the truck is then refused while a motorbike bay sits empty. That is not wasted space, it is a rejected customer.")`}
+  height={640}
+/>
+
+### Drill 2 — the free list removes the scan
+
+<DataCampExercise
+  lang="python"
+  hint={`Bucket the free spots by size once. To serve a vehicle, look only at buckets whose size is big enough, smallest first — you never inspect an occupied spot or a bucket that is too small.`}
+  code={`from collections import defaultdict
+
+SIZES = {"motorbike": 1, "compact": 2, "large": 3}
+
+
+def scan_probes(spots, vsize):
+    """Linear scan: how many spots are inspected before one fits?"""
+    for i, (sid, ssize) in enumerate(spots, 1):
+        if SIZES[ssize] >= SIZES[vsize]:
+            return i
+    return len(spots)
+
+
+def bucket_probes(spots, vsize):
+    # TODO: bucket the spots by size, then count how many BUCKETS you must
+    # look at (smallest big-enough first) to find a fitting spot.
+    pass
+
+
+lot = [("C%d" % i, "compact") for i in range(500)] + [("L1", "large")]
+print([scan_probes(lot, "large"), bucket_probes(lot, "large")])
+print([scan_probes(lot, "compact"), bucket_probes(lot, "compact")])
+# expect [501, 1]
+# expect [1, 1]`}
+  solution={`from collections import defaultdict
+
+SIZES = {"motorbike": 1, "compact": 2, "large": 3}
+
+
+def scan_probes(spots, vsize):
+    for i, (sid, ssize) in enumerate(spots, 1):
+        if SIZES[ssize] >= SIZES[vsize]:
+            return i
+    return len(spots)
+
+
+def bucket_probes(spots, vsize):
+    free = defaultdict(list)
+    for sid, ssize in spots:
+        free[ssize].append((sid, ssize))
+    probes = 0
+    for size in sorted(free, key=lambda s: SIZES[s]):
+        if SIZES[size] < SIZES[vsize]:
+            continue                      # bucket too small -- not a probe
+        probes += 1
+        if free[size]:
+            return probes
+    return probes
+
+
+lot = [("C%d" % i, "compact") for i in range(500)] + [("L1", "large")]
+print([scan_probes(lot, "large"), bucket_probes(lot, "large")])
+print([scan_probes(lot, "compact"), bucket_probes(lot, "compact")])`}
+  sct={`test_output_contains("[501, 1]")
+success_msg("501 probes against 1, for the same lot and the same vehicle. Note the second line: for a COMPACT vehicle both are 1, because the first spot happens to fit. The free list wins on the case that actually hurts -- a large vehicle in a lot that is mostly small bays.")`}
+  height={680}
+/>
+
+### Drill 3 — the cap that does not cap
+
+<DataCampExercise
+  lang="python"
+  hint={`Flat charge for the first hour, then per_hour for each additional started hour (use math.ceil), capped at daily_cap, then multiplied by the size factor. Compute it exactly as described -- the point of the drill is to see what that ordering produces.`}
+  code={`import math
+
+MULTIPLIER = {"motorbike": 0.5, "compact": 1.0, "large": 1.75}
+
+
+def fee(hours, size, first_hour=3.0, per_hour=2.0, daily_cap=20.0):
+    # TODO: base = first_hour + per_hour * (ceil(hours) - 1), floored at 0 extra hours.
+    # Then cap the BASE at daily_cap, then multiply by the size factor. Round to 2dp.
+    pass
+
+
+print([fee(0.5, "compact"), fee(1.0, "compact"), fee(2.5, "compact")])
+print([fee(24, "compact"), fee(2.5, "large"), fee(24, "large")])
+# expect [3.0, 3.0, 7.0]
+# expect [20.0, 12.25, 35.0]`}
+  solution={`import math
+
+MULTIPLIER = {"motorbike": 0.5, "compact": 1.0, "large": 1.75}
+
+
+def fee(hours, size, first_hour=3.0, per_hour=2.0, daily_cap=20.0):
+    extra = max(0, math.ceil(hours) - 1)
+    base = first_hour + per_hour * extra
+    return round(min(base, daily_cap) * MULTIPLIER[size], 2)
+
+
+print([fee(0.5, "compact"), fee(1.0, "compact"), fee(2.5, "compact")])
+print([fee(24, "compact"), fee(2.5, "large"), fee(24, "large")])`}
+  sct={`test_output_contains("35.0")
+success_msg("Look at the last number: a 24-hour large vehicle bills 35.00 against a stated daily cap of 20.00, because the cap is applied to the BASE and the multiplier comes afterwards. That is a real bug, and it only appears when you put numbers through your own design. Fix it by capping the final amount, or by giving each size its own cap -- but the graded part is noticing.")`}
+  height={520}
+/>
+
+## Interview follow-ups
+
+| They ask | What they're checking | The answer |
+| --- | --- | --- |
+| "Which spot do you hand out?" | Whether you spot the first-fit trap | The **smallest** that fits. First-fit serves 2 of 3 vehicles on a three-spot lot because a motorbike takes the large bay and the truck is then refused |
+| "Is smallest-fit optimal?" | Honesty about greedy | No — it is greedy. With one compact bay and both a car and a bike waiting, whoever asks first wins. Optimal over a known queue is bipartite matching; you do not know the future |
+| "How do you find a free spot, and what does it cost?" | Bound, then fix | $O(n)$ scan naively — 501 probes on a 501-spot lot for a large vehicle. Per-size free lists make it 1. And it is a *cheap* change precisely because `fits` already lives on the spot |
+| "Is your free list really $O(1)$?" | Precision about containers | `list.remove` is $O(k)$ in the bucket. Use a set, or pop from the end. I would not claim $O(1)$ for the `remove` version |
+| "Now add EV charging bays." | The extension axis | A feature on the spot that `fits` checks, not a subclass. Same shape as size |
+| "Now add monthly passes." | The pricing seam | A `PricingPolicy` subclass returning 0 for pass holders. This is why pricing was separated up front |
+| "Walk me through a 24-hour stay for a large vehicle." | Whether you test your own numbers | 35.00 — and that is a bug: the cap applies to the base and the multiplier comes after, so a "20 per day cap" does not cap what is billed. Fix by capping the final amount or per size |
+| "What happens when the lot is full?" | Error modelling | Return `None` or a result object — "full" is an expected outcome. `ParkingSpot.park` *does* raise on a bad fit, because that is a real invariant violation |
+| "Two cars arrive at the same instant." | Concurrency awareness | `candidates → choose → take` is three steps and both threads can be handed the same spot. A per-level lock is my first answer; compare-and-set on the spot is the lock-free version |
+| "Now support reservations." | Whether you notice the structure breaks | A free list answers "free *now*" and cannot answer "free between 2 and 4 tomorrow". That needs per-spot intervals — a different data structure, not a flag on this one |
+| "Why a ticket rather than keying by plate?" | Modelling the event | The ticket identifies a *parking event*. Plates repeat across days and sites, and a vehicle can visit twice in one day |
+| "Would this work for meeting rooms?" | Recognising the archetype | Almost unchanged — same pool, same selection policy, plus time slots. Connection pools too, with fully interchangeable resources so the selection policy collapses |
+
+## Self-check
+
+<Quiz
+  questions={[
+    {
+      q: "A lot has one large, one compact and one motorbike bay. A bike, a truck and a car arrive in that order. What does first-fit allocation do?",
+      options: [
+        "Serves all three",
+        "Serves only 2 of 3 — the bike takes the large bay, so the truck is refused while a motorbike bay sits empty",
+        "Refuses the bike because the large bay is wrong for it",
+        "Serves all three but in the wrong order",
+      ],
+      answer: 1,
+      explain:
+        "Verified. Smallest-fit serves 3 of 3 on identical input. The important framing is that this is not merely inefficient use of space — it is a customer turned away for no reason, which is a functional bug rather than a performance one. One line fixes it: min(candidates, key=size).",
+    },
+    {
+      q: "Is smallest-fit allocation optimal?",
+      options: [
+        "Yes — it always serves the maximum number of vehicles",
+        "No, it is greedy: with one compact bay and both a car and a bike waiting, whoever asks first wins. Optimal over a known queue is bipartite matching",
+        "Yes, provided all sizes are present",
+        "No, and first-fit is better",
+      ],
+      answer: 1,
+      explain:
+        "Greedy is the right choice here because you cannot see the future — but labelling it greedy and naming what would beat it is the difference between a defensible answer and one that gets picked apart. Claiming optimality on a greedy rule invites exactly the counterexample above.",
+    },
+    {
+      q: "Finding a fitting spot for a large vehicle in a lot of 500 compact bays plus 1 large. Linear scan versus per-size free lists?",
+      options: [
+        "Both are about the same",
+        "501 probes versus 1",
+        "500 versus 250",
+        "The scan is faster because it avoids bucket overhead",
+      ],
+      answer: 1,
+      explain:
+        "Measured. The scan inspects every compact bay before reaching the only large one; the free list goes straight to the large bucket. Note that for a *compact* vehicle both cost 1 probe, because the first spot fits — the free list wins specifically on the case that hurts, which is a large vehicle in a lot of mostly small bays.",
+    },
+    {
+      q: "Your free list uses `list.remove(spot)` when a spot is taken. Can you call allocation O(1)?",
+      options: [
+        "Yes — removing from a list is constant",
+        "No — list.remove is O(k) in the bucket length. Use a set, or pop from the end, if you want a genuine O(1)",
+        "Yes, because the bucket is small",
+        "No, it is O(log k)",
+      ],
+      answer: 1,
+      explain:
+        "remove() scans for the element. It is a small honesty point but a real one: saying \"I wrote remove for readability; a set makes it constant\" is better than asserting O(1) for code that is not. Buckets can be large — 500 compact bays in the traced lot.",
+    },
+    {
+      q: "TieredPricing charges a 24-hour large vehicle 35.00 with a daily_cap of 20.0. Why?",
+      options: [
+        "The multiplier is wrong",
+        "The cap is applied to the BASE rate and the size multiplier comes afterwards, so it caps the wrong quantity",
+        "24 hours exceeds the maximum stay",
+        "Rounding error",
+      ],
+      answer: 1,
+      explain:
+        "min(base, cap) * multiplier means a \"20 per day cap\" does not cap what is billed. Two defensible fixes and they are different products: cap the final amount (everyone pays at most 20/day) or give each size its own cap (20 * multiplier, so large vehicles legitimately cost more). The graded part is noticing when you put numbers through your own design.",
+    },
+    {
+      q: "A 30-minute stay and a 60-minute stay both cost 3.00. Bug or design?",
+      options: [
+        "Bug — a half hour should cost half",
+        "Design: the first hour is flat and a part-hour rounds up via ceil, which matches how real car parks bill. Worth stating rather than leaving the interviewer to infer",
+        "Bug — ceil should be floor",
+        "Design, but only for motorbikes",
+      ],
+      answer: 1,
+      explain:
+        "Both properties are intentional and both should be said out loud: a flat first hour, and part-hours billed as whole hours. The failure mode is not the rule, it is leaving it implicit — the interviewer then cannot tell whether you chose it or your arithmetic happened to do it.",
+    },
+    {
+      q: "Where is the concurrency race in the allocation path?",
+      options: [
+        "In the fee calculation",
+        "candidates → choose → take is three steps, so two threads can be handed the same spot before either takes it",
+        "In the free-list append on return",
+        "There is none, since each spot is a separate object",
+      ],
+      answer: 1,
+      explain:
+        "The gap between being offered a spot and claiming it is where both callers can succeed on one bay, silently overwriting a parked vehicle. Naming it unprompted is the signal; a per-level lock is a perfectly good first answer, and compare-and-set on the spot is the lock-free version. A full concurrency design is not expected in an OOD round.",
+    },
+    {
+      q: "The interviewer adds reservations: \"is this spot free between 2 and 4 tomorrow?\" What happens to your design?",
+      options: [
+        "Add a boolean `reserved` flag to the spot",
+        "The free list cannot answer it — it models \"free now\". Reservations need per-spot interval bookkeeping, which is a different data structure",
+        "Nothing — the free list already handles it",
+        "Move the free list into the ticket",
+      ],
+      answer: 1,
+      explain:
+        "A flag records that a spot is reserved but not *when*, so it cannot answer overlapping-window queries. Recognising that a follow-up invalidates your structure — rather than bolting a field onto it and hoping — is the senior signal in this round. The replacement is interval logic, which is the merge-intervals pattern.",
+    },
+    {
+      q: "Why issue a Ticket rather than keying the parked-vehicle map by licence plate?",
+      options: [
+        "Tickets are easier to print",
+        "The ticket identifies a parking EVENT: plates repeat across days and sites, and a vehicle can visit twice in one day",
+        "Plates are not unique enough to hash",
+        "It avoids storing personal data",
+      ],
+      answer: 1,
+      explain:
+        "The entity you are tracking is a visit, not a car. Keying by plate works for a single-site, one-visit-per-day toy and breaks as soon as either assumption goes — which is exactly the kind of assumption a follow-up removes. It also gives you somewhere to hang the entry timestamp, which the fee needs.",
+    },
+  ]}
+/>
+
+## Recall card
+
+- **Parking lot is the resource-allocation archetype** — same design as meeting rooms, seat
+  booking and connection pools.
+- **Two policy seams, because that is where follow-ups push**: `SpotSelection` (which spot) and
+  `PricingPolicy` (what to charge).
+- **Smallest-fit, not first-fit.** Verified: first-fit serves **2 of 3** vehicles because a
+  motorbike takes the large bay. It rejects customers, not just space.
+- **Say that smallest-fit is *greedy*.** One compact bay with a car and a bike waiting is
+  unwinnable; optimal over a known queue is bipartite matching.
+- **Per-size free lists per level**: 1 probe against a measured **501** for a linear scan. Cheap
+  to add *because* `fits` already lived on the spot.
+- **`list.remove` is $O(k)$** — use a set or pop from the end before claiming $O(1)$.
+- **Check your own arithmetic.** The traced cap bills a 24-hour large vehicle **35.00** against
+  a "20 daily cap", because the cap precedes the multiplier. Notice it, then pick a fix.
+- **A part-hour bills as a whole hour and the first hour is flat** — 0.5 h and 1.0 h both cost
+  3.00. Deliberate, so say it.
+- **Full lot returns `None`; a bad fit raises.** Expected outcome versus invariant violation.
+- **`candidates → choose → take` is a race.** Per-level lock first; compare-and-set is the
+  lock-free option.
+- **Reservations break the free list** — "free now" cannot answer "free 2–4 tomorrow". That is
+  per-spot intervals, a different structure.
+- **The ticket is the parking *event*.** Plates repeat; visits do not.

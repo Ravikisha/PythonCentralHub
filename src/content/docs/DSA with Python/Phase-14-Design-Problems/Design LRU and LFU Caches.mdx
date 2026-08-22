@@ -1,0 +1,914 @@
+---
+title: Design LRU and LFU Caches
+description: The hash-map-plus-linked-list pattern behind O(1) caches -- separate chaining, LRU eviction, and LFU frequency buckets -- with real LeetCode problems 706, 146 and 460.
+sidebar:
+  order: 1
+patterns:
+  - design-lru-and-lfu-caches
+difficulty: medium
+prereqs:
+  - hash-tables
+  - linked-lists
+companies:
+  - amazon
+  - bloomberg
+  - google
+  - microsoft
+---
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+import ArrayStepper from "../../../../components/viz/ArrayStepper.tsx";
+
+
+import ProblemLadder from "../../../../components/dsa/ProblemLadder.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+Design problems are a distinct interview category. They rarely need a clever
+algorithm; they need you to **compose two ordinary data structures** so that
+every required operation is $O(1)$.
+
+The recurring move is always the same:
+
+> A hash map gives $O(1)$ **lookup** but no order. A linked list gives $O(1)$
+> **insert and remove at a known position** but no lookup. Put them together --
+> the map storing *pointers into the list* -- and you get both.
+
+That single combination is the answer to LRU, LFU, and a surprising number of
+"design X with $O(1)$ everything" questions.
+
+## What you'll learn
+
+- Why a hash map alone, or a list alone, cannot meet the requirements.
+- The map-to-node pattern, and Python's `OrderedDict` shortcut.
+- **LFU**: frequency buckets, and the `min_freq` trick that keeps eviction
+  $O(1)$.
+- How to talk about design problems -- clarify, state the invariant, then code.
+- **Three real LeetCode problems** solved in the browser: 706, 146, 460.
+
+## The cue
+
+:::tip[You are looking at this pattern when…]
+- The problem says **"design"** and specifies **$O(1)$ average** for every
+  operation -- 146, 460, 380, 432.
+- You need **lookup by key** *and* **ordering** at the same time -- caches,
+  LRU/LFU, most-recent lists.
+- Something must be **evicted** by a policy: least recently used, least
+  frequently used, oldest.
+- Two structures each solve half the problem. That is the signal to use both.
+:::
+
+:::note[How to approach any design problem]
+The coding is usually the easy part. What separates a strong answer:
+
+1. **Clarify the interface.** Which operations, and what complexity does each
+   need? Does `get` count as a use? What happens at capacity zero?
+2. **State the data structures and why.** "A dict for $O(1)$ lookup, a doubly
+   linked list for $O(1)$ eviction, and the dict stores nodes so I can unlink in
+   constant time."
+3. **State the invariant.** "The list is ordered most-recently-used to
+   least-recently-used." Every method then has an obvious job: preserve it.
+4. **Then** write the code.
+
+Interviewers score steps 1–3 heavily on design questions, because that is what
+the job actually looks like.
+:::
+
+## Visual intuition
+
+The row below is the **recency order**, most-recently-used first. Watch two things: a `get` moves a
+key without disturbing anything else, and eviction always takes the same end.
+
+<ArrayStepper
+  client:visible
+  algo="lru-cache"
+  values={[1, 2, 3, -1, 4, -2]}
+  k={3}
+  title="A cache hit mutates the order — that is the part people forget"
+  lib="LC 146 · O(1) per operation"
+  desc="Positive values are put(k), negative are get(k), capacity 3. Note that get(1) is not read-only: it promotes the key to the front, which is what makes the back reliably the least recently used. In a real implementation these apparent shifts are four pointer writes on a doubly-linked list."
+/>
+
+## Why one structure is not enough
+
+| Structure | Lookup by key | Ordering | Remove a known element |
+| --- | --- | --- | --- |
+| Hash map | $O(1)$ ✅ | ❌ none | $O(1)$ ✅ |
+| Array / list | $O(n)$ ❌ | ✅ | $O(n)$ ❌ (shifts) |
+| Singly linked list | $O(n)$ ❌ | ✅ | $O(n)$ ❌ (need the predecessor) |
+| **Doubly linked list** | $O(n)$ ❌ | ✅ | **$O(1)$** ✅ given the node |
+| **Map + doubly linked list** | $O(1)$ ✅ | ✅ | $O(1)$ ✅ |
+
+The doubly linked list is essential rather than incidental: to unlink a node in
+$O(1)$ you need its **predecessor**, and only a `prev` pointer gives you that
+without searching.
+
+## The LRU template
+
+```python title="lru_manual.py" showLineNumbers{1}
+class Node:
+    def __init__(self, key=0, val=0):
+        self.key, self.val = key, val
+        self.prev = self.next = None
+
+
+class LRUCache:
+    def __init__(self, capacity):
+        self.cap = capacity
+        self.map = {}                      # key -> Node
+        # sentinel head/tail remove every empty-list special case
+        self.head, self.tail = Node(), Node()
+        self.head.next, self.tail.prev = self.tail, self.head
+
+    def _remove(self, node):
+        node.prev.next = node.next
+        node.next.prev = node.prev
+
+    def _add_front(self, node):            # front == most recently used
+        node.next = self.head.next
+        node.prev = self.head
+        self.head.next.prev = node
+        self.head.next = node
+
+    def get(self, key):
+        if key not in self.map:
+            return -1
+        node = self.map[key]
+        self._remove(node)                 # a read counts as a use
+        self._add_front(node)
+        return node.val
+
+    def put(self, key, value):
+        if key in self.map:
+            self._remove(self.map[key])
+        node = Node(key, value)
+        self.map[key] = node
+        self._add_front(node)
+        if len(self.map) > self.cap:
+            lru = self.tail.prev           # back == least recently used
+            self._remove(lru)
+            del self.map[lru.key]          # the node stores its key FOR THIS
+```
+
+:::caution[Two details that make this work]
+**Sentinel head and tail.** Dummy nodes at both ends mean `_remove` and
+`_add_front` never need to check for `None` -- exactly the
+[dummy-head trick](../../phase-08-patterns-linked-lists/dummy-head-rewiring-and-merging/)
+from the linked-list phase. Without them, every method needs empty-list and
+single-element special cases.
+
+**The node stores its own `key`.** When evicting, you have the *node* (from
+`tail.prev`) but you must delete the *map entry* -- which needs the key. A node
+holding only a value leaves you unable to clean up the map, causing a slow leak
+that passes small tests and fails large ones.
+:::
+
+## The `OrderedDict` shortcut
+
+Python's `collections.OrderedDict` **is** a hash map plus a doubly linked list,
+with the two operations you need exposed directly:
+
+```python title="lru_ordereddict.py" showLineNumbers{1}
+from collections import OrderedDict
+
+
+class LRUCache:
+    def __init__(self, capacity):
+        self.cap = capacity
+        self.data = OrderedDict()
+
+    def get(self, key):
+        if key not in self.data:
+            return -1
+        self.data.move_to_end(key)          # O(1): mark most-recently used
+        return self.data[key]
+
+    def put(self, key, value):
+        if key in self.data:
+            self.data.move_to_end(key)
+        self.data[key] = value
+        if len(self.data) > self.cap:
+            self.data.popitem(last=False)   # O(1): evict the oldest
+```
+
+:::note[Which version should you write in an interview?]
+Say both. `OrderedDict` is the right production answer and shows language
+fluency -- `move_to_end` and `popitem(last=False)` are both $O(1)$.
+
+But interviewers often ask for the manual version, because the point of the
+question is whether you can *build* the structure. A good answer is: "I'd use
+`OrderedDict` in real code -- it is exactly a hash map over a doubly linked
+list. Shall I implement it from scratch to show the mechanics?" That
+demonstrates you know it is a shortcut rather than magic.
+
+A plain `dict` is also insertion-ordered from Python 3.7, but it has **no
+`move_to_end`**, so re-inserting means `del` then assign. That works and is
+$O(1)$, but `OrderedDict` states the intent better.
+:::
+
+## LFU — frequency buckets
+
+LFU evicts the **least frequently used** item, breaking ties by least recently
+used. The naive approach scans for the minimum frequency: $O(n)$ per eviction.
+
+The $O(1)$ design keeps three structures:
+
+- `key_to_val` -- the values.
+- `key_to_freq` -- each key's use count.
+- `freq_to_keys` -- for each frequency, an **`OrderedDict` of keys** in LRU
+  order. That inner ordering is what breaks ties.
+
+Plus one integer: `min_freq`.
+
+:::tip[Why `min_freq` can be maintained in O(1)]
+This is the insight the problem is really testing. `min_freq` only ever changes
+in two ways:
+
+- **On insert**, the new key has frequency 1, so `min_freq = 1`. It cannot be
+  lower.
+- **On a use**, a key moves from `f` to `f + 1`. If bucket `f` is now empty
+  **and** `f` was the minimum, then the new minimum is exactly `f + 1` -- because
+  the key that just left is still in the cache at `f + 1`, and nothing else can
+  sit between.
+
+So you never search for the minimum. Both cases are $O(1)$, which is what makes
+the whole design $O(1)$.
+:::
+
+| | LRU | LFU |
+| --- | --- | --- |
+| Structures | map + doubly linked list | map + freq map + bucket of `OrderedDict`s |
+| Eviction key | back of the list | `min_freq` bucket, oldest entry |
+| `get` / `put` | $O(1)$ | $O(1)$ |
+| Space | $O(\text{capacity})$ | $O(\text{capacity})$ |
+
+## Dry run
+
+### LRU, capacity 2
+
+The list is written most-recently-used first, which is the order the doubly linked list holds it
+in: `head` side on the left, `tail` side on the right. Eviction always takes the rightmost.
+
+| # | Call | MRU -> LRU | Returns | Evicted |
+| --- | --- | --- | --- | --- |
+| 1 | `put(1, 1)` | `1:1` | -- | -- |
+| 2 | `put(2, 2)` | `2:2 -> 1:1` | -- | -- |
+| 3 | `get(1)` | `1:1 -> 2:2` | `1` | -- |
+| 4 | `put(3, 3)` | `3:3 -> 1:1` | -- | **`2`** |
+| 5 | `get(2)` | `3:3 -> 1:1` | `-1` | -- |
+| 6 | `put(4, 4)` | `4:4 -> 3:3` | -- | **`1`** |
+| 7 | `get(1)` | `4:4 -> 3:3` | `-1` | -- |
+| 8 | `get(3)` | `3:3 -> 4:4` | `3` | -- |
+| 9 | `get(4)` | `4:4 -> 3:3` | `4` | -- |
+
+**Step 3 is the whole problem.** A *read* reorders the list. Key `1` was about to be evicted --
+it was at the tail after step 2 -- and the `get` promotes it to the front, so step 4 evicts `2`
+instead. Forget to reorder on `get` and every trace stays plausible while the eviction choices
+are silently wrong; the tests fail on ordering, not on values, which makes it hard to spot.
+
+**Step 8 is the same lesson mirrored.** `get(3)` returns 3 *and* moves it in front of 4. The
+return value is correct either way; only the next eviction reveals whether you did it.
+
+Note also that no step ever exceeds two entries. The manual implementation lets the map reach
+`cap + 1` for one instant inside `put` and then trims -- checking `len(self.map) > self.cap`
+after inserting is simpler than deciding whether to evict before.
+
+### LFU, capacity 2 -- watching `min_freq`
+
+Buckets are written `f<freq>:[keys oldest-first]`. The key claim to check is that `min_freq` is
+only ever *incremented by one* or *reset to one* -- it is never searched for.
+
+| # | Call | Buckets | `min_freq` | Returns | Evicted |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `put(1, 1)` | `f1:[1]` | 1 | -- | -- |
+| 2 | `put(2, 2)` | `f1:[1,2]` | 1 | -- | -- |
+| 3 | `get(1)` | `f1:[2] f2:[1]` | 1 | `1` | -- |
+| 4 | `put(3, 3)` | `f1:[3] f2:[1]` | 1 | -- | **`2`** |
+| 5 | `get(2)` | `f1:[3] f2:[1]` | 1 | `-1` | -- |
+| 6 | `get(3)` | `f2:[1,3]` | **2** | `3` | -- |
+| 7 | `put(4, 4)` | `f1:[4] f2:[3]` | **1** | -- | **`1`** |
+| 8 | `get(1)` | `f1:[4] f2:[3]` | 1 | `-1` | -- |
+| 9 | `get(3)` | `f1:[4] f3:[3]` | 1 | `3` | -- |
+| 10 | `get(4)` | `f2:[4] f3:[3]` | **2** | `4` | -- |
+
+Four rows carry the argument:
+
+- **Step 4 -- frequency beats recency.** Key `2` is evicted even though key `1` was inserted
+  first, because `1` has been used twice. An LRU cache would have evicted `1` here. This single
+  row is the difference between the two policies.
+- **Step 6 -- the increment case.** Key `3` moves from `f1` to `f2`, emptying `f1`. `f1` *was*
+  `min_freq`, so the new minimum is exactly 2. No scan: the key that just left is sitting in
+  `f2`, and no bucket between 1 and 2 exists.
+- **Step 7 -- the reset case.** A brand-new key enters at frequency 1, so `min_freq = 1`
+  unconditionally. Note it evicts `1` first, from the `min_freq = 2` bucket, then sets the
+  minimum for the newcomer. Order matters: evict using the *old* `min_freq`, then reset.
+- **Step 9 -- the case that catches people.** Key `3` moves from `f2` to `f3` and empties `f2`,
+  but `min_freq` is 1, not 2 -- `f1:[4]` is still occupied. So `min_freq` stays at 1. The rule is
+  "bump only if the bucket you emptied *was* the minimum", not "bump whenever a bucket empties".
+
+Ties inside a bucket are broken by the inner `OrderedDict`'s insertion order -- that is why the
+bucket is an ordered map and not a set. Step 7 evicts `1` from `f2:[1,3]` because `1` is the
+older of the two at that frequency: least frequently used, then least recently used.
+
+## Complexity
+
+Every operation on both caches is $O(1)$ -- but the two designs pay for it very differently, and
+"why is this constant" is the question being asked.
+
+| Design | `get` | `put` | Eviction | Space | Where the constant hides |
+| --- | --- | --- | --- | --- | --- |
+| Scan a list for the LRU | $O(n)$ | $O(n)$ | $O(n)$ | $O(n)$ | -- (this is the answer to beat) |
+| Map alone | $O(1)$ | $O(1)$ | ❌ impossible | $O(n)$ | No ordering to evict by |
+| **Map + doubly linked list** | $O(1)$ | $O(1)$ | $O(1)$ | $O(n)$ | Four pointer writes per unlink/relink |
+| **`OrderedDict`** | $O(1)$ | $O(1)$ | $O(1)$ | $O(n)$ | Same structure, in C -- faster in practice |
+| **LFU with buckets** | $O(1)$ | $O(1)$ | $O(1)$ | $O(n)$ | Two ordered-map operations plus a `min_freq` update |
+| LFU with a heap of frequencies | $O(\log n)$ | $O(\log n)$ | $O(\log n)$ | $O(n)$ | Decrease-key needs a sift |
+
+Three things worth being precise about:
+
+- **The linked list is what makes eviction $O(1)$, and the map is what makes lookup $O(1)$.**
+  Neither structure alone can do both. That sentence *is* the answer to "why two structures".
+- **Space is $O(\text{capacity})$, not $O(\text{keys ever seen})$** -- provided you delete the map
+  entry on eviction. Forgetting that one `del` turns a bounded cache into an unbounded one; it
+  passes every small test and leaks in production.
+- **The heap-based LFU is the tempting wrong answer.** A min-heap over frequencies looks natural,
+  but a *use* has to decrease-key an arbitrary element, which a binary heap cannot do in $O(1)$
+  -- and LC 460 asks for $O(1)$ explicitly. Bucketing by frequency sidesteps the heap entirely
+  because frequencies only ever move by exactly one step.
+
+## The variant map
+
+| Variant | The composition | Canonical problem |
+| --- | --- | --- |
+| **Hash map from scratch** | Array of buckets + chaining | 706 · 705 |
+| **LRU eviction** | Map + doubly linked list (or `OrderedDict`) | 146 |
+| **LFU eviction** | Map + frequency buckets + `min_freq` | 460 |
+| **Min/max count queries** | Count buckets as a doubly linked list | 432 All O`one |
+| **$O(1)$ random member** | Map + **dense array** (swap-with-last) | [380](../design-with-randomization/) |
+| **Time-bounded eviction** | Map + [queue](../design-trackers-and-feeds/) | 933 · 362 |
+
+## Practice -- real LeetCode problems
+
+### LC 706 -- Design HashMap · Easy
+
+**Problem.** Design a `MyHashMap` without using any built-in hash table
+library. Support `put(key, value)`, `get(key)` (returning `-1` if absent), and
+`remove(key)`.
+
+**Constraints.** `0 <= key, value <= 10^6`, up to `10^4` calls.
+
+**Examples.** `put(1,1)`, `put(2,2)`, `get(1)` gives `1`, `get(3)` gives `-1`,
+`put(2,1)`, `get(2)` gives `1`, `remove(2)`, `get(2)` gives `-1`
+
+<DataCampExercise
+  lang="python"
+  hint={`Use separate chaining: an array of buckets, where the bucket for a key is key % size. Each bucket is a list of (key, value) pairs, so put must scan the bucket and REPLACE an existing key rather than appending a duplicate. Pick a size like 1000 so collisions are rare but real -- key 1 and key 1000001 land in the same bucket.`}
+  code={`class MyHashMap:
+    def __init__(self):
+        # TODO: separate chaining -- an array of buckets, each a list of pairs.
+        pass
+
+    def put(self, key, value):
+        # TODO: replace the value if the key is already in its bucket,
+        # otherwise append. Do NOT allow duplicate keys.
+        pass
+
+    def get(self, key):
+        # TODO: scan the bucket; return -1 if not found.
+        pass
+
+    def remove(self, key):
+        # TODO: remove the pair from its bucket if present.
+        pass
+
+
+m = MyHashMap()
+out = []
+m.put(1, 1); m.put(2, 2)
+out.append(m.get(1))          # 1
+out.append(m.get(3))          # -1
+m.put(2, 1)                   # overwrite, not duplicate
+out.append(m.get(2))          # 1
+m.remove(2)
+out.append(m.get(2))          # -1
+out.append(m.get(1000001))    # -1  (collides with key 1)
+print(out)   # expect [1, -1, 1, -1, -1]`}
+  solution={`class MyHashMap:
+    def __init__(self):
+        self.size = 1000
+        self.buckets = [[] for _ in range(self.size)]
+
+    def _bucket(self, key):
+        return self.buckets[key % self.size]
+
+    def put(self, key, value):
+        b = self._bucket(key)
+        for i, (k, _) in enumerate(b):
+            if k == key:
+                b[i] = (key, value)       # overwrite in place
+                return
+        b.append((key, value))
+
+    def get(self, key):
+        for k, v in self._bucket(key):
+            if k == key:
+                return v
+        return -1
+
+    def remove(self, key):
+        b = self._bucket(key)
+        for i, (k, _) in enumerate(b):
+            if k == key:
+                b.pop(i)
+                return
+
+
+m = MyHashMap()
+out = []
+m.put(1, 1); m.put(2, 2)
+out.append(m.get(1))
+out.append(m.get(3))
+m.put(2, 1)
+out.append(m.get(2))
+m.remove(2)
+out.append(m.get(2))
+out.append(m.get(1000001))
+print(out)`}
+  sct={`test_output_contains("[1, -1, 1, -1, -1]")
+success_msg("Separate chaining: an array for O(1) bucket lookup, a list per bucket for collisions.")
+`}
+  height={420}
+/>
+
+<details>
+<summary>Editorial — approach, complexity, follow-ups</summary>
+
+**Separate chaining.** Hash the key to a bucket index, and store colliding
+entries in a list within that bucket.
+
+**Time** $O(1)$ average, $O(n / \text{buckets})$ worst case per operation.
+**Space** $O(\text{buckets} + n)$.
+
+The detail that catches people is that `put` must **overwrite**, not append.
+Appending creates two entries for the same key; `get` happens to return the
+first, so the bug is invisible until a `remove` deletes one copy and the stale
+one resurfaces. The `put(2,1)` step in the tests is there to catch it.
+
+`get(1000001)` returning `-1` exercises a genuine collision: `1000001 % 1000 ==
+1`, the same bucket as key `1`. Without the `k == key` check inside the bucket
+scan you would wrongly return `1`.
+
+Choosing the bucket count matters: a **prime** modulus distributes keys with
+regular patterns better than a round number like 1000. Mentioning that shows you
+understand hashing rather than just chaining.
+
+**Follow-ups you should expect:** "What if the load factor grows?" -- resize:
+double the bucket count and rehash everything, amortised $O(1)$ per insert, the
+same amortisation as
+[dynamic arrays](../../phase-03-core-data-structures/arrays-and-dynamic-arrays/).
+"Open addressing instead?" -- linear or quadratic probing; no per-bucket lists,
+but deletion needs tombstones. "How does Python's own `dict` work?" -- open
+addressing with a compact, insertion-ordered layout since 3.6.
+
+</details>
+
+### LC 146 -- LRU Cache · Medium
+
+**Problem.** Design a cache with a fixed positive `capacity` supporting
+`get(key)` (returning `-1` if absent) and `put(key, value)`, evicting the
+**least recently used** key when capacity is exceeded. Both operations must run
+in $O(1)$ average time.
+
+**Constraints.** `1 <= capacity <= 3000`, `0 <= key <= 10^4`,
+`0 <= value <= 10^5`, up to `2 * 10^5` calls.
+
+**Examples.** With capacity 2: `put(1,1)`, `put(2,2)`, `get(1)` gives `1`,
+`put(3,3)` evicts key 2, `get(2)` gives `-1`, `put(4,4)` evicts key 1,
+`get(1)` gives `-1`, `get(3)` gives `3`, `get(4)` gives `4`
+
+<DataCampExercise
+  lang="python"
+  hint={`collections.OrderedDict is a hash map over a doubly linked list, which is exactly what this needs. Treat the END as most-recently-used: call move_to_end(key) on every successful get AND on a put of an existing key, then evict with popitem(last=False). Remember that a READ counts as a use.`}
+  code={`from collections import OrderedDict
+
+
+class LRUCache:
+    def __init__(self, capacity):
+        # TODO: an OrderedDict is a hash map + doubly linked list.
+        pass
+
+    def get(self, key):
+        # TODO: -1 if absent. A read COUNTS AS A USE, so refresh the order.
+        pass
+
+    def put(self, key, value):
+        # TODO: insert or update, mark as most-recently-used, then evict
+        # the least-recently-used entry if over capacity.
+        pass
+
+
+c = LRUCache(2)
+out = []
+c.put(1, 1); c.put(2, 2)
+out.append(c.get(1))     # 1
+c.put(3, 3)              # evicts key 2
+out.append(c.get(2))     # -1
+c.put(4, 4)              # evicts key 1
+out.append(c.get(1))     # -1
+out.append(c.get(3))     # 3
+out.append(c.get(4))     # 4
+print(out)   # expect [1, -1, -1, 3, 4]`}
+  solution={`from collections import OrderedDict
+
+
+class LRUCache:
+    def __init__(self, capacity):
+        self.cap = capacity
+        self.data = OrderedDict()          # end == most recently used
+
+    def get(self, key):
+        if key not in self.data:
+            return -1
+        self.data.move_to_end(key)         # a read counts as a use
+        return self.data[key]
+
+    def put(self, key, value):
+        if key in self.data:
+            self.data.move_to_end(key)
+        self.data[key] = value
+        if len(self.data) > self.cap:
+            self.data.popitem(last=False)  # evict the oldest
+
+
+c = LRUCache(2)
+out = []
+c.put(1, 1); c.put(2, 2)
+out.append(c.get(1))
+c.put(3, 3)
+out.append(c.get(2))
+c.put(4, 4)
+out.append(c.get(1))
+out.append(c.get(3))
+out.append(c.get(4))
+print(out)`}
+  sct={`test_output_contains("[1, -1, -1, 3, 4]")
+success_msg("move_to_end and popitem(last=False) are both O(1) -- OrderedDict IS the map-plus-list composition.")
+`}
+  height={400}
+/>
+
+<details>
+<summary>Editorial — approach, complexity, follow-ups</summary>
+
+Maintain a most-recent-to-least-recent ordering alongside $O(1)$ lookup. An
+`OrderedDict` provides both.
+
+**Time** $O(1)$ for both operations. **Space** $O(\text{capacity})$.
+
+The behaviour that the test sequence pins down is that **`get` is a use**. After
+`put(1,1)`, `put(2,2)`, `get(1)`, the order is `2` then `1` -- so `put(3,3)`
+evicts `2`, not `1`. A solution that only refreshes on `put` evicts `1` and
+fails here. Always clarify this: "does a read count as a use?" It does for LRU
+by definition, but asking shows you are thinking about the spec.
+
+Be ready for the manual doubly-linked-list implementation -- interviewers often
+require it, and the two details are sentinel nodes and storing the key inside
+each node (so eviction can clean up the map). Both are covered in the template
+above.
+
+**Follow-ups you should expect:**
+
+- **"Implement it without `OrderedDict`."** The manual version; the likeliest
+  follow-up.
+- **"Make it thread-safe."** A lock around each operation, or finer-grained
+  striping. Worth naming; real caches need it.
+- **"Add a TTL."** Store an expiry timestamp per entry and treat expired
+  entries as absent on read; a background sweep or lazy purge handles removal.
+- **"LFU instead?"** LC 460, next.
+- **"Capacity zero?"** LC 146 guarantees `capacity >= 1`, but a robust
+  implementation should discard immediately rather than divide by zero or
+  evict endlessly.
+
+</details>
+
+### LC 460 -- LFU Cache · Hard
+
+**Problem.** Design a cache with `capacity` supporting `get` and `put` in
+$O(1)$ average time, evicting the **least frequently used** key. When several
+keys tie on frequency, evict the **least recently used** among them. A `get`
+or a `put` of an existing key both count as a use.
+
+**Constraints.** `0 <= capacity <= 10^4`, `0 <= key, value <= 10^5`, up to
+`2 * 10^5` calls.
+
+**Examples.** With capacity 2: `put(1,1)`, `put(2,2)`, `get(1)` gives `1`,
+`put(3,3)` evicts key **2** (frequency 1 versus key 1's 2), `get(2)` gives
+`-1`, `get(3)` gives `3`, `put(4,4)` evicts key **1**, `get(1)` gives `-1`,
+`get(3)` gives `3`, `get(4)` gives `4`
+
+<DataCampExercise
+  lang="python"
+  hint={`Keep three maps plus one integer: key to value, key to frequency, and frequency to an OrderedDict of keys (whose insertion order breaks ties by least-recently-used). Track min_freq: set it to 1 on every insert, and when a bump empties the bucket that WAS the minimum, the new minimum is that frequency plus one. Also guard capacity 0.`}
+  code={`from collections import defaultdict, OrderedDict
+
+
+class LFUCache:
+    def __init__(self, capacity):
+        # TODO: key->val, key->freq, freq->OrderedDict of keys, plus min_freq.
+        pass
+
+    def get(self, key):
+        # TODO: -1 if absent, otherwise bump the frequency and return the value.
+        pass
+
+    def put(self, key, value):
+        # TODO: update-and-bump if present. Otherwise evict from the
+        # min_freq bucket (oldest first) when full, then insert at freq 1.
+        # Handle capacity 0.
+        pass
+
+
+c = LFUCache(2)
+out = []
+c.put(1, 1); c.put(2, 2)
+out.append(c.get(1))     # 1   -> freq(1)=2, freq(2)=1
+c.put(3, 3)              # evicts key 2 (lowest frequency)
+out.append(c.get(2))     # -1
+out.append(c.get(3))     # 3
+c.put(4, 4)              # evicts key 1
+out.append(c.get(1))     # -1
+out.append(c.get(3))     # 3
+out.append(c.get(4))     # 4
+print(out)   # expect [1, -1, 3, -1, 3, 4]`}
+  solution={`from collections import defaultdict, OrderedDict
+
+
+class LFUCache:
+    def __init__(self, capacity):
+        self.cap = capacity
+        self.key_to_val = {}
+        self.key_to_freq = {}
+        self.freq_to_keys = defaultdict(OrderedDict)   # freq -> keys, LRU order
+        self.min_freq = 0
+
+    def _bump(self, key):
+        f = self.key_to_freq[key]
+        del self.freq_to_keys[f][key]
+        if not self.freq_to_keys[f]:
+            del self.freq_to_keys[f]
+            if self.min_freq == f:
+                self.min_freq = f + 1       # the bumped key now sits at f + 1
+        self.key_to_freq[key] = f + 1
+        self.freq_to_keys[f + 1][key] = None
+
+    def get(self, key):
+        if key not in self.key_to_val:
+            return -1
+        self._bump(key)
+        return self.key_to_val[key]
+
+    def put(self, key, value):
+        if self.cap <= 0:
+            return
+        if key in self.key_to_val:
+            self.key_to_val[key] = value
+            self._bump(key)
+            return
+        if len(self.key_to_val) >= self.cap:
+            evict, _ = self.freq_to_keys[self.min_freq].popitem(last=False)
+            if not self.freq_to_keys[self.min_freq]:
+                del self.freq_to_keys[self.min_freq]
+            del self.key_to_val[evict]
+            del self.key_to_freq[evict]
+        self.key_to_val[key] = value
+        self.key_to_freq[key] = 1
+        self.freq_to_keys[1][key] = None
+        self.min_freq = 1                   # a brand-new key is always freq 1
+
+
+c = LFUCache(2)
+out = []
+c.put(1, 1); c.put(2, 2)
+out.append(c.get(1))
+c.put(3, 3)
+out.append(c.get(2))
+out.append(c.get(3))
+c.put(4, 4)
+out.append(c.get(1))
+out.append(c.get(3))
+out.append(c.get(4))
+print(out)`}
+  sct={`test_output_contains("[1, -1, 3, -1, 3, 4]")
+success_msg("min_freq never needs searching -- it is either 1 after an insert, or f+1 after a bump empties bucket f.")
+`}
+  height={500}
+/>
+
+<details>
+<summary>Editorial — approach, complexity, follow-ups</summary>
+
+Three maps plus one integer:
+
+- `key_to_val` and `key_to_freq` -- the obvious bookkeeping.
+- `freq_to_keys[f]` -- an `OrderedDict` of the keys at frequency `f`, whose
+  insertion order is oldest-first. That inner ordering is what resolves ties by
+  least-recently-used, and it is why an `OrderedDict` rather than a `set` is
+  required here.
+- `min_freq` -- the current lowest frequency present.
+
+**Time** $O(1)$ for both operations. **Space** $O(\text{capacity})$.
+
+The whole difficulty is keeping `min_freq` correct without searching. It is
+maintainable because of the argument in the note above: inserts force it to
+`1`, and a bump can only ever raise it to `f + 1`.
+
+Two details worth calling out:
+
+- **Set `min_freq = 1` at the end of an insert**, after any eviction. Setting it
+  before evicting would make the eviction look in the wrong bucket.
+- **Guard `capacity <= 0`.** LC 460 explicitly allows `capacity = 0`, in which
+  case `put` must do nothing. Without the guard, the eviction branch tries to
+  pop from an empty bucket and raises. This is the most common failure on the
+  problem.
+
+The `_bump` helper is worth extracting, because `get` and `put`-on-existing-key
+need identical behaviour -- both count as a use. Duplicating that logic is where
+subtle divergences creep in.
+
+**Follow-ups you should expect:** "Why an `OrderedDict` per frequency and not a
+set?" -- ties must break by recency, which a set cannot express. "Implement it
+with manual linked lists?" -- a doubly linked list of frequency buckets, each
+holding its own doubly linked list of nodes; this is also the structure behind
+LC 432. "What about LFU with ageing, so old popularity decays?" -- a real-world
+concern; typically periodic halving of all counts, or a windowed variant.
+
+</details>
+
+## LeetCode problem set
+
+
+Generated from the problem database, so each entry carries its sheet
+membership and reported companies. Tick them off as you go — progress is
+saved in this browser, and the Export button writes it to a file you can keep.
+
+:::tip[LC 432 is LFU's structure taken one step further]
+All O`one needs `inc`, `dec`, `getMaxKey` and `getMinKey`, all $O(1)$. LFU's
+`min_freq` integer is not enough, because `dec` can lower a count arbitrarily
+and you need the maximum too.
+
+The fix: keep the count buckets in a **doubly linked list ordered by count**,
+with a map from key to its bucket. `inc` moves a key to the next bucket
+(creating it if the adjacent count is missing), `dec` moves it back, and the
+list's head and tail give the minimum and maximum in $O(1)$.
+
+It is the natural generalisation -- replace the single `min_freq` integer with an
+ordered structure over the buckets themselves.
+:::
+
+<ProblemLadder pattern="design-lru-and-lfu-caches"
+  notes={{"146":"`OrderedDict`, or map + doubly linked list with sentinels","432":"Same bucket idea, but a doubly linked list of counts so min *and* max are $O(1)$","460":"Frequency buckets + `min_freq`; guard capacity 0","705":"Chaining without values","706":"Chaining; `put` must overwrite, not append"}} />
+
+## Interview follow-ups
+
+| They ask | What they're checking | The answer |
+| --- | --- | --- |
+| "Why both a map and a list?" | The core composition | The map gives $O(1)$ lookup, the list gives ordering and $O(1)$ unlinking; neither alone does both |
+| "Why *doubly* linked?" | Precision | Unlinking in $O(1)$ needs the predecessor, which only a `prev` pointer supplies |
+| "Why store the key in the node?" | Whether you have built it | Eviction gives you the node but must delete the map entry, which needs the key |
+| "Does `get` count as a use?" | Clarifying the spec | For LRU and LFU, yes -- and the eviction order changes if you get it wrong |
+| "How is `min_freq` $O(1)$?" | The LFU insight | It is `1` after an insert, and `f + 1` when a bump empties the old minimum bucket |
+| "Is `OrderedDict` acceptable?" | Honesty about shortcuts | Yes, and it *is* this composition -- but be ready to implement it manually |
+| "Make it thread-safe / add TTL" | Production thinking | A lock per operation; expiry timestamps with lazy purge on read |
+
+## Edge-case checklist
+
+- **Capacity 0** -- legal in LC 460; `put` must be a no-op. The most-failed
+  detail.
+- **Capacity 1** -- every insert evicts; exercises the eviction path
+  immediately.
+- **`put` on an existing key** -- must update the value **and** count as a use,
+  not insert a duplicate.
+- **`get` on a missing key** -- return `-1`, and do **not** create an entry or
+  disturb frequencies.
+- **Eviction ties in LFU** -- equal frequencies break by least-recently-used;
+  requires ordered buckets.
+- **`put` overwriting in a hash bucket** (LC 706) -- replace, never append.
+- **Hash collisions** (LC 706) -- `1` and `1000001` share a bucket; the
+  in-bucket key check matters.
+- **Evicting then inserting** -- set `min_freq = 1` *after* the eviction.
+
+## Self-check
+
+<Quiz
+  questions={[
+    {
+      q: "Why does an LRU cache need both a hash map and a doubly linked list?",
+      options: [
+        "The map stores keys and the list stores values",
+        "The map gives O(1) lookup, the list gives ordering with O(1) removal of a known node -- neither structure provides both",
+        "The list is only for iteration in tests",
+        "It does not; a single hash map is enough in Python 3.7+",
+      ],
+      answer: 1,
+      explain:
+        "This is the whole design. A map has no order, so it cannot tell you what to evict. A list has order but O(n) lookup. Combining them means the map hands you a node in O(1) and the node's prev/next pointers let you unlink it in O(1). Singly linked will not do -- unlinking needs the predecessor, and only a `prev` pointer gives it to you without searching.",
+    },
+    {
+      q: "Your LRU passes every small test but fails a large one. `get` returns correct values throughout. What is the most likely bug?",
+      options: [
+        "The capacity check uses `>` instead of `>=`",
+        "`get` does not move the node to the front, so eviction picks the wrong victim",
+        "The sentinel nodes are missing",
+        "Integer overflow in the key hash",
+      ],
+      answer: 1,
+      explain:
+        "A read counts as a use. If `get` returns the value without reordering, every returned value is still correct -- the cache only diverges in *which* entry it throws away, and only once evictions start. In the capacity-2 trace, `get(1)` is what saves key 1 and dooms key 2; skip the reorder and the eviction flips. Missing sentinels crash instead of misbehaving, which is easier to find.",
+    },
+    {
+      q: "Why does the `Node` class store its own `key` when the map already maps key to node?",
+      options: [
+        "For debugging output only",
+        "Eviction starts from `tail.prev`, which gives you the node -- you need its key to delete the matching map entry",
+        "To let the list be traversed by key",
+        "So that nodes can be compared for equality",
+      ],
+      answer: 1,
+      explain:
+        "The lookup runs key-to-node, but eviction runs the other way: the list tells you which node dies, and the map entry pointing at it must go too. A node holding only a value leaves the map growing forever -- an unbounded cache that passes small tests and quietly leaks. One field, one `del`.",
+    },
+    {
+      q: "In the O(1) LFU, a key moves from frequency f to f + 1 and bucket f becomes empty. When does `min_freq` change?",
+      options: [
+        "Always -- an empty bucket means the minimum moved up",
+        "Only if f was equal to `min_freq`; then the new minimum is exactly f + 1",
+        "Never -- `min_freq` only changes on insert",
+        "You must rescan the buckets to find the new minimum",
+      ],
+      answer: 1,
+      explain:
+        "Emptying a bucket above the minimum changes nothing -- in the trace, key 3 moves from f2 to f3 and empties f2, but f1 still holds key 4 so `min_freq` stays at 1. When the emptied bucket *is* the minimum, the new minimum is f + 1 and nothing lower can exist, because the key that just left is now sitting at f + 1. Both cases are O(1); neither is a search. That is what makes the whole design O(1).",
+    },
+    {
+      q: "Why is each LFU frequency bucket an `OrderedDict` rather than a set?",
+      options: [
+        "Sets cannot store integers",
+        "Ties within a frequency are broken by least-recently-used, which needs insertion order",
+        "`OrderedDict` has faster membership tests",
+        "To allow duplicate keys at the same frequency",
+      ],
+      answer: 1,
+      explain:
+        "LFU's full rule is least-frequently-used, then least-recently-used. The outer map picks the frequency; the inner ordering picks which of the tied keys dies. In the trace, bucket f2 holds [1, 3] and eviction takes 1 -- the older. A set would make that choice arbitrary and the answers non-deterministic.",
+    },
+    {
+      q: "An interviewer asks for LRU and you reach for `OrderedDict`. What is the best way to play it?",
+      options: [
+        "Use it silently -- it is the correct production answer",
+        "Say it is a hash map over a doubly linked list, use it, and offer to implement the mechanics from scratch",
+        "Avoid it entirely; hand-rolling is always expected",
+        "Use a plain dict instead, since it is insertion-ordered from 3.7",
+      ],
+      answer: 1,
+      explain:
+        "Naming what `OrderedDict` is proves you know it is a shortcut rather than magic, and `move_to_end` / `popitem(last=False)` are genuinely both O(1). But the question usually exists to see whether you can *build* the structure, so offer the manual version. A plain dict is insertion-ordered but has no `move_to_end` -- you would `del` and reassign, which works and is O(1) but states the intent less clearly.",
+    },
+  ]}
+/>
+
+## Recall card
+
+- **A cache is a composition** -- a hash map for $O(1)$ lookup plus an ordering structure for
+  $O(1)$ eviction. Neither alone can do both; that sentence is the answer to "why two structures".
+- **LRU = map + doubly linked list.** Front is most-recently used, back is the victim. `prev`
+  pointers are what make unlinking $O(1)$ -- singly linked cannot.
+- **A `get` is a use.** Reorder on reads too, or eviction picks the wrong victim while every
+  returned value still looks right.
+- **The node stores its own key**, because eviction goes node-to-map and needs it for the `del`.
+  Skip it and the map grows without bound.
+- **Sentinel head and tail** delete every empty-list and single-element special case.
+- **`OrderedDict` is that exact structure in C** -- `move_to_end` and `popitem(last=False)`, both
+  $O(1)$. Name what it is, then offer the manual build.
+- **LFU = values + frequencies + buckets of `OrderedDict`s + `min_freq`.** Buckets are ordered so
+  ties break by least-recently-used.
+- **`min_freq` is never searched for** -- reset to 1 on insert, and bump to `f + 1` only when the
+  bucket you just emptied *was* the minimum. A heap would make every operation $O(\log n)$.
+
+## Recap
+
+- Design problems are about **composing structures**, not clever algorithms.
+  A hash map gives lookup; a doubly linked list gives order and $O(1)$
+  unlinking. Together they give $O(1)$ everything.
+- **Sentinel head/tail nodes** remove every empty-list special case; **store
+  the key in each node** so eviction can clean the map.
+- Python's **`OrderedDict` is exactly this composition** -- `move_to_end` and
+  `popitem(last=False)` are both $O(1)$. Know it, and be ready to build it by
+  hand.
+- **LFU** adds frequency buckets of `OrderedDict`s (so ties break by recency)
+  plus a `min_freq` integer that never needs searching.
+- **Guard `capacity == 0`** and remember a **read counts as a use**.
+- Talk through the interface, the structures, and the invariant *before*
+  coding -- that is most of the score on a design question.
+
+Next: **Design with Stacks and Queues** -- building one primitive out of
+another, and the amortised argument that makes it efficient.

@@ -60,20 +60,35 @@ export default async function renderDiagram({ config, code }: any) {
   return false;
   */
 
+  // This string is spliced into the mdast as a raw `html` node, and MDX compiles
+  // raw HTML straight into JSX. A bare `{` there therefore opens a JSX expression
+  // and the build dies with "Unexpected end of file in expression, expected a
+  // corresponding closing brace for `{`". Mermaid uses braces for decision nodes
+  // (`Q{"..."}`) and for class/state bodies, so this hits real diagrams — 249 of
+  // the 932 blocks in this repo contain one.
+  //
+  // Numeric character references keep MDX out of it while surviving to the
+  // client: mermaid runs with startOnLoad and reads `.mermaid` via textContent,
+  // which decodes `&#123;` back to `{` before parsing the diagram.
+  const escapeBraces = (s: string) =>
+    s.replace(/{/g, "&#123;").replace(/}/g, "&#125;");
+
   // Provide a text alternative for screen readers. The mermaid client script
   // renders an <svg> into this <pre>; the role/aria-label survive on the element
   // so assistive tech can still describe the diagram from its source.
-  const ariaLabel = code
-    .trim()
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\s+/g, " ");
+  const ariaLabel = escapeBraces(
+    code
+      .trim()
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\s+/g, " "),
+  );
 
   const htmlCode = `
 <pre class="mermaid" role="img" aria-label="Diagram: ${ariaLabel}" style="all: initial; width: 100%;display: flex; flex-direction: column; justify-content: center;align-items: center;">
-  ${code.trimStart()}
+  ${escapeBraces(code.trimStart())}
 </pre>
   `;
   return htmlCode;

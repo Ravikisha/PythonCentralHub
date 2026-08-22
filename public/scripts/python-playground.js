@@ -52,7 +52,7 @@
     //   <div data-rehype-pretty-code-title data-language="python">...
     //   <pre ...><code>...</code></pre>
     // </div>
-    const title = block.querySelector('div[data-rehype-pretty-code-title]');
+    const title = block.querySelector('[data-rehype-pretty-code-title]');
     const lang = (title?.getAttribute('data-language') || '').toLowerCase();
     if (lang) return lang === 'python';
 
@@ -71,7 +71,7 @@
     const fragAttr = (block.getAttribute('data-runnable') || '').toLowerCase();
     if (fragAttr === 'false' || fragAttr === '0' || fragAttr === 'no') return false;
 
-    const title = block.querySelector('div[data-rehype-pretty-code-title]');
+    const title = block.querySelector('[data-rehype-pretty-code-title]');
     const titleAttr = (title?.getAttribute('data-runnable') || '').toLowerCase();
     if (titleAttr === 'false' || titleAttr === '0' || titleAttr === 'no') return false;
 
@@ -150,6 +150,14 @@
 
     return pyodidePromise;
   }
+
+  // Share one runtime with any other component on the page that needs Python.
+  // Pyodide is a ~10 MB download and a second `loadPyodide()` would build a
+  // whole second interpreter, so MockInterview reuses this promise rather than
+  // loading its own. Callers must capture stdout Python-side (redirect
+  // `sys.stdout` to a StringIO) rather than touching the hooks set above,
+  // which belong to the playground.
+  window.__pchPyodide = ensurePyodide;
 
   async function ensurePackages(pyodide, packages, statusEl) {
     const pkgs = (packages || []).map((p) => String(p).trim()).filter(Boolean);
@@ -260,10 +268,24 @@
       setStatus(statusEl, 'Loading Python…', 'info');
       const pyodide = await ensurePyodide();
 
-  // Optional package loading.
+  // Optional explicit package loading (via ```python packages="..." meta).
   const pkgList = outputEl.closest('.py-playground')?.dataset?.pyodidePackages;
   const packages = pkgList ? pkgList.split(',') : [];
   await ensurePackages(pyodide, packages, statusEl);
+
+  // Auto-load any Pyodide-provided packages the code imports (numpy,
+  // matplotlib, pandas, scipy, scikit-learn as `sklearn`, …). This scans the
+  // import statements and fetches matching wheels, so authors don't have to
+  // declare them per block. Non-fatal: pure-stdlib code loads nothing.
+  try {
+    setStatus(statusEl, 'Loading libraries…', 'info');
+    await pyodide.loadPackagesFromImports(code);
+  } catch (e) {
+    // A missing/unknown import here isn't necessarily fatal — let the actual
+    // run surface a precise error. Just note it.
+    const msg = (e && e.message) ? e.message : String(e);
+    setStatus(statusEl, `Some imports could not be preloaded: ${msg}`, 'info');
+  }
 
       setStatus(statusEl, 'Running…', 'info');
       // Use runPythonAsync to allow top-level await in the future if needed.
@@ -345,7 +367,7 @@
     // Determine packages to load from an optional attribute on the title.
     // Example (in HTML output):
     // <div data-rehype-pretty-code-title data-language="python" data-pyodide-packages="numpy,pandas">...
-    const title = block.querySelector('div[data-rehype-pretty-code-title]');
+    const title = block.querySelector('[data-rehype-pretty-code-title]');
     const packagesAttr = title?.getAttribute('data-pyodide-packages') || '';
     const packages = packagesAttr
       .split(',')
@@ -627,14 +649,35 @@
   }
 
   function init() {
-  const blocks = Array.from(document.querySelectorAll('div[data-rehype-pretty-code-fragment]'));
+  const blocks = Array.from(document.querySelectorAll('[data-rehype-pretty-code-fragment], [data-rehype-pretty-code-figure]'));
   const pythonBlocks = blocks.filter((b) => isPythonBlock(b) && isRunnableBlock(b));
 
   if (!pythonBlocks.length) return;
 
-    // Lazy-load engine only if we need it.
-    // (We load on first run too, but preloading reduces perceived latency.)
-    ensurePyodide().catch(() => {/* ignore until run */});
+    // Pre-warm the engine AND the packages this page needs, during browser
+    // idle time, so the first "Run" click is near-instant instead of waiting
+    // ~10-20s for Pyodide + numpy/matplotlib/… to download.
+    const prewarm = () => {
+      ensurePyodide()
+        .then(async (pyodide) => {
+          // Collect every runnable block's code and preload the union of the
+          // Pyodide-provided packages they import (numpy, pandas, sklearn, …).
+          const allCode = pythonBlocks
+            .map((b) => {
+              try { return getCodeFromBlock(b); } catch { return ''; }
+            })
+            .join('\n');
+          if (allCode.trim()) {
+            try { await pyodide.loadPackagesFromImports(allCode); } catch {/* surfaced on run */}
+          }
+        })
+        .catch(() => {/* ignore until run */});
+    };
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(prewarm, { timeout: 4000 });
+    } else {
+      setTimeout(prewarm, 1200);
+    }
 
   pythonBlocks.forEach(upgradeBlock);
   }

@@ -5,6 +5,8 @@ sidebar:
   order: 373
 ---
 
+import Quiz from "../../../../components/Quiz.astro";
+
 Your database connection is configured via:
 
 - `SQLALCHEMY_DATABASE_URI`
@@ -51,3 +53,181 @@ Some platforms provide `DATABASE_URL` like:
 SQLAlchemy expects `postgresql://...`.
 
 You may need to normalize it depending on your deployment platform.
+
+## A relative SQLite path is not relative to your working directory
+
+This surprises people the first time they go looking for the file:
+
+```python title="config.py" showLineNumbers{1}
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///demo.db"
+```
+
+```text title="measured — where the file actually lands"
+uri            sqlite:///demo.db
+engine.url     sqlite:///<root_path>/instance/demo.db
+```
+
+Flask-SQLAlchemy resolves a relative SQLite path against **`app.instance_path`**, not the
+current directory. That is deliberate: `instance/` is the folder meant for data that must
+not be committed, and it keeps the database out of your package.
+
+```mermaid
+flowchart TD
+  U["SQLALCHEMY_DATABASE_URI"] --> S{"scheme"}
+  S -->|"sqlite:/// + relative"| I["resolved inside instance/"]
+  S -->|"sqlite://// + absolute"| A["exactly that path — note FOUR slashes"]
+  S -->|"postgresql+psycopg://"| P["host, port, credentials"]
+  S -->|"mysql+pymysql://"| M["host, port, credentials"]
+```
+
+| form | meaning |
+|:--|:--|
+| `sqlite:///demo.db` | relative, lands in `instance/demo.db` |
+| `sqlite:////tmp/demo.db` | **four** slashes: an absolute path |
+| `sqlite://` | in-memory, discarded when the process ends |
+| `postgresql+psycopg://user:pw@host:5432/dbname` | driver, credentials, host, database |
+
+## Keep credentials out of the source
+
+```python title="env.py" showLineNumbers{1}
+import os
+
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ["DATABASE_URL"]
+```
+
+Using `os.environ[...]` rather than `.get(...)` is deliberate: a missing variable should
+stop the app at startup, not produce a confusing failure later against the wrong
+database.
+
+:::danger[A URI in a repository is a leaked password]
+`postgresql+psycopg://user:hunter2@db.example.com/prod` in a committed config file is a
+credential in your git history, where it stays after you delete the line. Read it from
+the environment, and rotate anything that has ever been committed.
+:::
+
+## Settings worth knowing
+
+```python title="options.py" showLineNumbers{1}
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "pool_pre_ping": True,      # test a pooled connection before using it
+    "pool_recycle": 280,        # drop connections older than this many seconds
+}
+```
+
+`pool_pre_ping` is the fix for the classic "MySQL server has gone away" after an idle
+period: the pool hands out a connection the server closed hours ago. Pre-ping checks it
+first and quietly replaces it.
+
+## See it move
+
+```p5 title="Where each URI form points" desc="A relative SQLite path resolves inside instance/. Four slashes make it absolute. An in-memory database vanishes with the process." height="330"
+let sel = 0;
+const URIS = [
+  { u: 'sqlite:///demo.db', where: '<root_path>/instance/demo.db', note: 'relative - resolved against instance_path', c: [120, 190, 130] },
+  { u: 'sqlite:////tmp/demo.db', where: '/tmp/demo.db', note: 'FOUR slashes - an absolute filesystem path', c: [75, 139, 190] },
+  { u: 'sqlite://', where: 'memory only', note: 'discarded when the process exits - useful in tests', c: [255, 211, 67] },
+  { u: 'postgresql+psycopg://u:pw@h/db', where: 'a server, over the network', note: 'credentials belong in the environment', c: [232, 110, 110] },
+];
+
+function setup() {
+  createCanvas(600, 330);
+  textFont('monospace');
+}
+
+function draw() {
+  background(13, 17, 23);
+  const s = URIS[sel];
+
+  noStroke();
+  fill(230);
+  textSize(13);
+  textAlign(LEFT, TOP);
+  text('SQLALCHEMY_DATABASE_URI', 24, 16);
+
+  for (let i = 0; i < URIS.length; i++) {
+    const y = 46 + i * 30;
+    const on = i === sel;
+    const c = URIS[i].c;
+    stroke(on ? color(c[0], c[1], c[2]) : color(40, 48, 58));
+    strokeWeight(on ? 2 : 1);
+    fill(on ? color(26, 32, 42) : color(17, 22, 29));
+    rect(24, y, 320, 26, 3);
+    noStroke();
+    fill(on ? color(c[0], c[1], c[2]) : 120);
+    textSize(11);
+    textAlign(LEFT, CENTER);
+    text(URIS[i].u, 34, y + 13);
+  }
+
+  stroke(s.c[0], s.c[1], s.c[2]);
+  strokeWeight(1);
+  fill(18, 23, 30);
+  rect(24, 180, 552, 84, 5);
+  noStroke();
+  fill(110);
+  textSize(10);
+  textAlign(LEFT, TOP);
+  text('the data ends up at', 38, 192);
+  fill(s.c[0], s.c[1], s.c[2]);
+  textSize(14);
+  text(s.where, 38, 212);
+  fill(150);
+  textSize(10);
+  text(s.note, 38, 240);
+
+  fill(90);
+  textSize(10);
+  textAlign(LEFT, TOP);
+  text('three slashes then a bare name = relative. four = absolute.', 24, 288);
+}
+
+function mousePressed() {
+  for (let i = 0; i < URIS.length; i++) {
+    const y = 46 + i * 30;
+    if (mouseX > 24 && mouseX < 344 && mouseY > y && mouseY < y + 26) sel = i;
+  }
+}
+```
+
+## Check yourself
+
+<Quiz
+  questions={[
+    {
+      q: "With SQLALCHEMY_DATABASE_URI set to sqlite:///demo.db, where is the file created?",
+      options: [
+        "in the current working directory",
+        "inside the application's instance/ folder",
+        "next to the module that created the Flask object",
+        "in a temporary directory",
+      ],
+      answer: 1,
+      explain:
+        "Measured: engine.url resolved to <root_path>/instance/demo.db. Flask-SQLAlchemy treats a relative SQLite path as relative to instance_path, which is the folder meant for uncommitted data.",
+    },
+    {
+      q: "What is the difference between sqlite:///demo.db and sqlite:////tmp/demo.db?",
+      options: [
+        "nothing, the extra slash is ignored",
+        "three slashes then a name is relative; four slashes introduces an absolute path",
+        "the second form is read-only",
+        "the second form is an in-memory database",
+      ],
+      answer: 1,
+      explain:
+        "The fourth slash is the leading slash of the absolute path. sqlite:// with nothing after it is an in-memory database that disappears with the process.",
+    },
+    {
+      q: "Why read the database URI with os.environ[...] rather than os.environ.get(...)?",
+      options: [
+        "get is deprecated",
+        "a missing variable should stop the app at startup rather than silently falling back to some other database",
+        "get cannot read database URLs",
+        "environ is faster",
+      ],
+      answer: 1,
+      explain:
+        "A silent default means the app can come up pointed at the wrong database. Failing loudly at startup is the safer behaviour, and credentials should never be committed as a fallback.",
+    },
+  ]}
+/>

@@ -1,0 +1,662 @@
+---
+title: Design an Elevator System
+description: The state-machine archetype of the OOD round — one state table per lift, a dispatcher that is direction-aware, and the SCAN scheduling that halves the travel.
+sidebar:
+  order: 2
+difficulty: medium
+---
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+The elevator is the **state machine** archetype of the OOD round, and it splits cleanly into
+two problems that candidates routinely merge into one: what a *single lift* does, and which
+lift *answers a call*. Keeping them apart is most of the design.
+
+If you have not read [The OOD Round](../the-ood-round/) yet, start there — the four moves and
+the composition-over-inheritance argument apply here unchanged.
+
+## The cue
+
+:::tip[You are looking at a state machine when...]
+- The entity has **modes** with legal and illegal transitions — moving, doors opening, doors
+  open, closing, idle. A vending machine, an ATM, an order lifecycle and a traffic light are
+  all the same shape.
+- The prompt implies **things that must never happen simultaneously**: a lift cannot move with
+  its doors open.
+- Behaviour depends on **what happened before**, not just on the current input. A `timeout`
+  means something different while the doors are open than while moving.
+- There is a **scheduling question sitting on top** of the state machine: which lift, which
+  order, which direction first.
+- The follow-up is **"what if a sensor misfires?"** — a state table answers that, a pile of
+  booleans does not.
+:::
+
+**When it is not this.** If there are no modes and the object just holds data with rules
+attached — a deck of cards, a catalogue — you want value objects and a policy, not a state
+machine. And if the interesting part is a cost bound rather than legality of transitions, it is
+a [Phase 14 data-structure design](../../phase-14-design-problems/).
+
+## Two problems, not one
+
+**1. The lift** is a state machine. Its job is to be in exactly one legal mode and to move
+between modes only on legal events.
+
+**2. The dispatcher** is a scheduling policy. Its job is to pick which lift answers a hall
+call, and it should be swappable — that is the extension point the follow-up will push on.
+
+Merging them gives a `Elevator.handle_request` that both changes its own state and decides
+whether it is the right lift to serve the call, which is the god-class smell from the previous
+page wearing a different hat.
+
+```mermaid title="One lift's states — every arrow is a legal transition, and there are no others"
+stateDiagram-v2
+    [*] --> idle
+    idle --> moving : call
+    moving --> doors_opening : arrive
+    doors_opening --> doors_open : opened
+    doors_open --> doors_closing : timeout
+    doors_open --> doors_open : obstruction
+    doors_closing --> doors_opening : obstruction
+    doors_closing --> idle : closed
+```
+
+Note `doors_closing --> doors_opening` on an obstruction: the doors reverse rather than
+jumping straight back to `doors_open`, because physically they have to travel. That distinction
+is the kind of thing the diagram forces you to decide, which is why drawing it first is worth
+the thirty seconds.
+
+## The skeleton
+
+```python title="elevator.py" showLineNumbers{1}
+from abc import ABC, abstractmethod
+from enum import Enum
+
+
+class Direction(Enum):
+    DOWN = -1
+    IDLE = 0
+    UP = 1
+
+
+TRANSITIONS = {
+    ("idle", "call"): "moving",
+    ("moving", "arrive"): "doors_opening",
+    ("doors_opening", "opened"): "doors_open",
+    ("doors_open", "timeout"): "doors_closing",
+    ("doors_open", "obstruction"): "doors_open",
+    ("doors_closing", "obstruction"): "doors_opening",   # reverse, do not snap open
+    ("doors_closing", "closed"): "idle",
+}
+
+
+class Lift:
+    """Knows its own mode and position. Does NOT decide whether it should answer a call."""
+
+    def __init__(self, lift_id: str, floor: int = 1):
+        self.lift_id = lift_id
+        self.floor = floor
+        self.state = "idle"
+        self.direction = Direction.IDLE
+        self.stops: set[int] = set()
+
+    def handle(self, event: str) -> str:
+        # An unknown (state, event) pair is a no-op to be logged, not an exception:
+        # a spurious sensor reading must not halt a lift full of people.
+        self.state = TRANSITIONS.get((self.state, event), self.state)
+        return self.state
+
+    def add_stop(self, floor: int) -> None:
+        self.stops.add(floor)
+
+    def next_stops(self) -> list[int]:
+        """SCAN: everything ahead in the current direction, then reverse."""
+        if self.direction is Direction.DOWN:
+            ahead = sorted((s for s in self.stops if s <= self.floor), reverse=True)
+            behind = sorted(s for s in self.stops if s > self.floor)
+        else:
+            ahead = sorted(s for s in self.stops if s >= self.floor)
+            behind = sorted((s for s in self.stops if s < self.floor), reverse=True)
+        return ahead + behind
+
+
+class Dispatcher(ABC):
+    """The extension point: swap the policy without touching Lift."""
+
+    @abstractmethod
+    def choose(self, lifts: list[Lift], floor: int, want: Direction) -> Lift: ...
+
+
+class NearestDispatcher(Dispatcher):
+    """Simplest thing that works, and it is wrong often enough to be worth showing."""
+
+    def choose(self, lifts: list[Lift], floor: int, want: Direction) -> Lift:
+        return min(lifts, key=lambda l: abs(l.floor - floor))
+
+
+class DirectionAwareDispatcher(Dispatcher):
+    """Prefer a lift already travelling toward the caller in the direction they want."""
+
+    def choose(self, lifts: list[Lift], floor: int, want: Direction) -> Lift:
+        def cost(lift: Lift) -> tuple[int, int]:
+            gap = abs(lift.floor - floor)
+            if lift.direction is Direction.IDLE:
+                return (1, gap)                       # available, but not en route
+            approaching = (
+                lift.direction is Direction.UP and lift.floor <= floor
+            ) or (lift.direction is Direction.DOWN and lift.floor >= floor)
+            if approaching and lift.direction is want:
+                return (0, gap)                       # best: already coming, same way
+            return (2, gap)                           # would have to turn around
+
+        return min(lifts, key=cost)
+
+
+a, b = Lift("A", floor=1), Lift("B", floor=5)
+a.direction = Direction.UP                            # A is heading up past floor 4
+print([NearestDispatcher().choose([a, b], 4, Direction.UP).lift_id,
+       DirectionAwareDispatcher().choose([a, b], 4, Direction.UP).lift_id])
+# expect ['B', 'A']
+
+c = Lift("C", floor=5)
+for f in (7, 2, 9, 3):
+    c.add_stop(f)
+c.direction = Direction.UP
+print(c.next_stops())
+# expect [7, 9, 3, 2]
+```
+
+Three boundaries to say out loud:
+
+- **`Lift.handle` never decides anything about other lifts.** It maps `(state, event)` to a
+  state. That is the whole of its scheduling responsibility: none.
+- **`Dispatcher` is abstract** so the policy is swappable — and the two implementations
+  disagree, which is the point of having the seam.
+- **`next_stops` belongs to the lift**, because only the lift knows its own direction and
+  pending stops. The dispatcher chooses *which* lift; the lift chooses *what order*.
+
+## Dry run
+
+### The dispatchers disagree, which is why the seam exists
+
+Lift **A** is at floor 1 heading **up**. Lift **B** is idle at floor 5. Someone on floor 4
+presses **up**.
+
+| Policy | Chooses | Why |
+| --- | --- | --- |
+| Nearest | **B** | distance 1 from floor 5 beats distance 3 from floor 1 |
+| Direction-aware | **A** | Already travelling up and below floor 4 — it passes the caller anyway |
+
+Verified: `['B', 'A']`. Nearest is not merely suboptimal here, it is **actively wasteful** — B
+must start, travel down one floor and stop, while A was going to pass floor 4 regardless. And
+B is then out of position for anything above 5.
+
+This is the single most useful thing to volunteer in this round: *"the obvious nearest-lift
+policy is wrong, and here is a two-lift case where it loses."* A design with a named
+alternative and a reason beats a design with one policy asserted as correct.
+
+The cost function is a **tuple**, and the ordering is deliberate: `(0, gap)` for a lift already
+coming your way, `(1, gap)` for an idle lift, `(2, gap)` for one that must reverse. Comparing
+tuples means the category dominates and distance only breaks ties — expressing "prefer en route
+over idle over reversing, then prefer closer" without a single `if` chain.
+
+### SCAN against first-come-first-served
+
+Lift at floor 5, heading up, with stops requested at **7, 2, 9, 3** in that order:
+
+| Policy | Order served | Floors travelled |
+| --- | --- | --- |
+| FCFS (request order) | `7, 2, 9, 3` | **20** |
+| SCAN (sweep, then reverse) | `7, 9, 3, 2` | **11** |
+
+Verified. SCAN is **nearly half** the travel, and the reason is visible in the orders: FCFS
+goes up to 7, all the way down to 2, back up to 9, then down again to 3 — crossing the building
+three times. SCAN sweeps up to the top request, then sweeps down.
+
+That is also why real lifts feel the way they do: you get on going up, and the lift continues
+up past your floor before coming back. It is not ignoring you, it is finishing the sweep. Being
+able to say *that* is the difference between reciting "use SCAN" and understanding it.
+
+**SCAN is not optimal**, and it is worth saying so. It is *starvation-free* and cheap to
+compute, which matters more in a physical system than optimality — the truly optimal order is a
+travelling-salesman variant, and recomputing it on every new request would be both slow and
+unpredictable for passengers.
+
+### The state table, including the case people miss
+
+| Events | States visited |
+| --- | --- |
+| `call, arrive, opened, timeout, closed` | `idle → moving → doors_opening → doors_open → doors_closing → idle` |
+| `call, arrive, opened, timeout, obstruction, opened, timeout, closed` | `… → doors_closing → doors_opening → doors_open → doors_closing → idle` |
+| `arrive` (while idle) | `idle → idle` |
+
+Row 2 is the case that gets missed: an obstruction **while the doors are closing** sends the
+lift to `doors_opening`, not straight to `doors_open`. The doors have to physically travel back.
+Modelling it as an instant jump means the `opened` sensor event then has nowhere to go, and the
+lift is stuck in a state the hardware will never confirm.
+
+Row 3 is the deliberate no-op. An `arrive` event while idle is impossible, and the table
+returns the current state rather than raising — verified `['idle', 'idle']`. A lift with a
+faulty sensor should log and continue, not halt with its doors shut.
+
+### Why booleans cannot express this
+
+Suppose you model the modes with three flags — `is_moving`, `doors_open`, `is_closing`:
+
+| Measure | Count |
+| --- | --- |
+| Combinations three booleans can represent | **8** |
+| Combinations that are legal | **4** |
+| Illegal but representable | **4** — `(0,1,1)`, `(1,0,1)`, `(1,1,0)`, `(1,1,1)` |
+| States a single state variable can hold | **5**, and **zero** illegal |
+
+Verified. `(1,1,0)` is *moving with the doors open* — the exact thing the design must forbid.
+With booleans, every method has to defend against it. With one state variable, it is not
+expressible, so there is nothing to defend against.
+
+That is the whole argument for the state table, and it generalises: **make the illegal state
+unrepresentable rather than merely checked.**
+
+## Complexity
+
+| Operation | Cost | Note |
+| --- | --- | --- |
+| `Lift.handle(event)` | $O(1)$ | one dict lookup |
+| `Dispatcher.choose` | $O(L)$ in the lift count | `L` is 2–8 in any real building; this is fine and you should say so |
+| `next_stops` | $O(S \log S)$ in pending stops | `S` is bounded by the floor count; a sorted structure makes it $O(S)$ |
+| Serving one request end to end | $O(\text{floors travelled})$ | the physical cost, which is what SCAN optimises |
+| `add_stop` | $O(1)$ | a set, so duplicate presses collapse for free |
+
+Three things worth stating:
+
+- **$O(L)$ dispatch is not a problem.** A building has a handful of lifts, and the request rate
+  is human. Optimising it is the wrong instinct — but knowing the bound and that it is
+  irrelevant is the right one.
+- **`stops` is a `set`, deliberately.** Pressing floor 7 three times must not queue three
+  stops, and a set gives that with no extra code. This is a small decision that a reader can
+  check, which makes it worth pointing at.
+- **The bound that actually matters is floors travelled**, not any of the above. That is why
+  the interesting design work is the scheduling policy rather than the data structures.
+
+## The variant map
+
+| Variant | The change | Where it appears |
+| --- | --- | --- |
+| **Single lift, one request at a time** | The state machine alone; no dispatcher | The warm-up version |
+| **Single lift, many pending stops** | Add SCAN in `next_stops` | -- |
+| **Multiple lifts** | A `Dispatcher`, and the lift stops deciding anything | The standard prompt |
+| **Direction-aware dispatch** | Tuple cost: en route < idle < must-reverse | The follow-up you should pre-empt |
+| **Express / zoned lifts** | A dispatcher that filters by served floors before costing | Tall buildings |
+| **Priority calls (fire, service key)** | A pre-empting event in the state table plus a `service` state | "What about emergencies?" |
+| **Capacity limits** | Weight sensor as an event; a full lift stops accepting hall calls | -- |
+| **Vending machine** | Same shape: state table plus a payment policy | Sibling prompt |
+| **ATM** | State table plus a transaction log | Sibling prompt |
+| **Traffic light** | State table with time-driven rather than sensor-driven events | Sibling prompt |
+| **Order lifecycle** | State table where transitions are business rules | Real systems |
+
+:::note[The scheduling policies, in the order to mention them]
+**FCFS** — serve in request order. Simple, starvation-free, and measurably bad: 20 floors
+against SCAN's 11 on the traced example.
+
+**SCAN (the lift algorithm)** — sweep to the furthest request in the current direction, then
+reverse. Starvation-free, cheap, and what real lifts do.
+
+**LOOK** — like SCAN but reverse as soon as there are no further requests ahead, rather than
+running to the end of the shaft. Strictly better than SCAN in travel, same properties.
+
+**Nearest-request-first (SSTF)** — greedy on distance. Lower average wait, but it **can starve**
+a floor at the far end indefinitely, which is why physical systems do not use it.
+
+Naming the starvation problem is the part that shows judgement. "Optimal average wait" is not
+the objective when one passenger waiting forever is unacceptable.
+:::
+
+## Pitfalls
+
+- **Merging the lift and the dispatcher.** `Lift.should_i_answer(call)` needs to know about
+  every other lift, which is the god-class smell. The lift owns its mode; the dispatcher owns
+  the choice.
+- **Booleans instead of one state.** Three flags give 8 combinations of which 4 are illegal,
+  including *moving with the doors open*. One state variable makes them unrepresentable.
+- **Snapping from `doors_closing` straight to `doors_open`** on an obstruction. The doors must
+  travel, so the transition is to `doors_opening`; otherwise the `opened` sensor event has
+  nowhere to arrive.
+- **Raising on an impossible event.** `arrive` while idle is a faulty sensor, not a program
+  error. Return the current state and log it — a lift must not halt with people inside.
+- **Nearest-lift dispatch, presented as correct.** Verified to pick the wrong lift when another
+  is already coming: nearest chooses B, direction-aware chooses A. Name the better policy
+  yourself.
+- **Greedy nearest-*request* scheduling (SSTF).** Lower average wait, but it can starve the top
+  floor indefinitely. Starvation-freedom beats optimality here.
+- **A list for pending stops.** Pressing 7 three times must not queue three stops. Use a set.
+- **Forgetting that a hall call and a car call differ.** A hall call has a *direction* (up/down
+  on floor 4); a car call is just a destination. Direction-aware dispatch is impossible if you
+  collapse them.
+- **No capacity concept at all.** "What if it is full?" is a standard follow-up. A weight sensor
+  event, and a full lift declining hall calls while still serving car calls.
+- **Designing the shaft, motor and cable.** That is mechanical engineering. Stay at the class
+  level.
+- **Optimising the $O(L)$ dispatch loop.** There are 2–8 lifts. Say the bound, say it does not
+  matter, move on.
+
+## Try it yourself
+
+### Drill 1 — direction-aware dispatch
+
+<DataCampExercise
+  lang="python"
+  hint={`Return a tuple so the category dominates and distance only breaks ties: 0 for a lift already approaching in the wanted direction, 1 for an idle lift, 2 for one that must reverse. A lift approaches if it is going up and at or below the caller, or going down and at or above.`}
+  code={`def nearest(lifts, floor):
+    """lifts: list of (current_floor, direction) with direction in -1, 0, +1."""
+    return min(range(len(lifts)), key=lambda i: abs(lifts[i][0] - floor))
+
+
+def direction_aware(lifts, floor, want):
+    # TODO: prefer a lift already travelling toward the caller in the wanted direction,
+    # then an idle lift, then one that must turn around. Break ties by distance.
+    pass
+
+
+lifts = [(1, 1), (5, 0)]          # A at 1 going up, B idle at 5
+print([nearest(lifts, 4), direction_aware(lifts, 4, 1)])
+# expect [1, 0]`}
+  solution={`def nearest(lifts, floor):
+    return min(range(len(lifts)), key=lambda i: abs(lifts[i][0] - floor))
+
+
+def direction_aware(lifts, floor, want):
+    def cost(i):
+        pos, d = lifts[i]
+        gap = abs(pos - floor)
+        if d == 0:
+            return (1, gap)                 # idle: available, not en route
+        approaching = (d == 1 and pos <= floor) or (d == -1 and pos >= floor)
+        if approaching and d == want:
+            return (0, gap)                 # best: already coming, same direction
+        return (2, gap)                     # would have to turn around
+
+    return min(range(len(lifts)), key=cost)
+
+
+lifts = [(1, 1), (5, 0)]
+print([nearest(lifts, 4), direction_aware(lifts, 4, 1)])`}
+  sct={`test_output_contains("[1, 0]")
+success_msg("The two policies pick different lifts: nearest takes B (index 1) because it is one floor away, while direction-aware takes A (index 0) because it was going to pass floor 4 anyway. Nearest is actively wasteful here -- it moves a lift that did not need to move and leaves it out of position. Volunteering that comparison is the strongest move in this round.")`}
+  height={540}
+/>
+
+### Drill 2 — SCAN against first-come-first-served
+
+<DataCampExercise
+  lang="python"
+  hint={`Split the stops into those ahead in the current direction and those behind. Serve all of ahead in travel order, then reverse and serve behind. Travel cost is the sum of absolute gaps between consecutive stops.`}
+  code={`def scan(start, direction, stops):
+    # TODO: everything ahead in the current direction (in travel order),
+    # then everything behind (in travel order after reversing).
+    pass
+
+
+def travel(start, order):
+    total, pos = 0, start
+    for s in order:
+        total += abs(s - pos)
+        pos = s
+    return total
+
+
+start, stops = 5, [7, 2, 9, 3]
+s = scan(start, 1, stops)
+print([s, travel(start, s)])
+print([list(stops), travel(start, list(stops))])
+# expect [[7, 9, 3, 2], 11]
+# expect [[7, 2, 9, 3], 20]`}
+  solution={`def scan(start, direction, stops):
+    if direction == 1:
+        ahead = sorted(s for s in stops if s >= start)
+        behind = sorted((s for s in stops if s < start), reverse=True)
+    else:
+        ahead = sorted((s for s in stops if s <= start), reverse=True)
+        behind = sorted(s for s in stops if s > start)
+    return ahead + behind
+
+
+def travel(start, order):
+    total, pos = 0, start
+    for s in order:
+        total += abs(s - pos)
+        pos = s
+    return total
+
+
+start, stops = 5, [7, 2, 9, 3]
+s = scan(start, 1, stops)
+print([s, travel(start, s)])
+print([list(stops), travel(start, list(stops))])`}
+  sct={`test_output_contains("[[7, 9, 3, 2], 11]")
+success_msg("11 floors against 20 -- nearly half. FCFS crosses the building three times (up to 7, down to 2, up to 9, down to 3); SCAN sweeps up then sweeps down. This is also why a real lift carries you past your floor before coming back: it is finishing the sweep, not ignoring you.")`}
+  height={560}
+/>
+
+### Drill 3 — the state table, including the obstruction
+
+<DataCampExercise
+  lang="python"
+  hint={`Look each (state, event) pair up. A missing pair leaves the state unchanged. Note that an obstruction while CLOSING goes to doors_opening -- the doors have to travel back -- not straight to doors_open.`}
+  code={`TRANSITIONS = {
+    ("idle", "call"): "moving",
+    ("moving", "arrive"): "doors_opening",
+    ("doors_opening", "opened"): "doors_open",
+    ("doors_open", "timeout"): "doors_closing",
+    ("doors_open", "obstruction"): "doors_open",
+    ("doors_closing", "obstruction"): "doors_opening",
+    ("doors_closing", "closed"): "idle",
+}
+
+
+def run(events, state="idle"):
+    # TODO: return the list of states visited, starting with the given state.
+    # A pair absent from the table is a no-op.
+    pass
+
+
+print(run(["call", "arrive", "opened", "timeout", "closed"]))
+print(run(["call", "arrive", "opened", "timeout", "obstruction", "opened", "timeout", "closed"]))
+print(run(["arrive"]))
+# expect ['idle', 'moving', 'doors_opening', 'doors_open', 'doors_closing', 'idle']
+# expect ['idle', 'moving', 'doors_opening', 'doors_open', 'doors_closing', 'doors_opening', 'doors_open', 'doors_closing', 'idle']
+# expect ['idle', 'idle']`}
+  solution={`TRANSITIONS = {
+    ("idle", "call"): "moving",
+    ("moving", "arrive"): "doors_opening",
+    ("doors_opening", "opened"): "doors_open",
+    ("doors_open", "timeout"): "doors_closing",
+    ("doors_open", "obstruction"): "doors_open",
+    ("doors_closing", "obstruction"): "doors_opening",
+    ("doors_closing", "closed"): "idle",
+}
+
+
+def run(events, state="idle"):
+    seen = [state]
+    for e in events:
+        state = TRANSITIONS.get((state, e), state)     # missing pair = no-op
+        seen.append(state)
+    return seen
+
+
+print(run(["call", "arrive", "opened", "timeout", "closed"]))
+print(run(["call", "arrive", "opened", "timeout", "obstruction", "opened", "timeout", "closed"]))
+print(run(["arrive"]))`}
+  sct={`test_output_contains("doors_closing', 'doors_opening'")
+success_msg("The second sequence is the case people miss: an obstruction while CLOSING returns to doors_opening, not doors_open, because the doors must physically travel back -- and if you snap to doors_open, the opened sensor event that follows has nowhere to go. The third shows the deliberate no-op: an arrive event while idle is a faulty sensor, and a lift full of people must log it rather than halt.")`}
+  height={680}
+/>
+
+## Interview follow-ups
+
+| They ask | What they're checking | The answer |
+| --- | --- | --- |
+| "Start with one lift." | Whether you separate the concerns | The state machine alone: `(state, event) -> state`, no scheduling. Then add the dispatcher when a second lift appears — and say that is why the lift has no opinion about who answers |
+| "Which lift should answer?" | Whether you pre-empt the obvious wrong answer | Not nearest. Prefer a lift already travelling toward the caller in the direction they want: verified, nearest picks B while direction-aware picks A on a two-lift case |
+| "Why is your cost function a tuple?" | Whether the ordering was designed | So the *category* dominates and distance only breaks ties: en route (0) < idle (1) < must reverse (2). It expresses a priority order without an `if` chain |
+| "What order does one lift serve its stops in?" | SCAN, and why | Sweep to the furthest request in the current direction, then reverse. Measured: 11 floors against FCFS's 20 on the same four requests. It is also why a real lift passes your floor before returning |
+| "Is SCAN optimal?" | Honesty about the objective | No — the optimal order is a travelling-salesman variant. SCAN is **starvation-free** and $O(S \log S)$, and in a physical system predictability beats optimality. LOOK is a strict improvement: reverse when nothing is ahead rather than running to the shaft end |
+| "Why not nearest-request-first?" | Whether you spot starvation | Lower average wait, but it can starve a far floor indefinitely. One passenger waiting forever is unacceptable regardless of the average |
+| "Why a state table rather than booleans?" | The core argument | Three booleans give 8 combinations of which **4 are illegal**, including moving with the doors open. One state variable holds 5 states and **zero** illegal ones — the bad state becomes unrepresentable rather than merely checked |
+| "What if a sensor misfires?" | Error modelling | An unknown `(state, event)` pair returns the current state and logs. Verified: `arrive` while idle gives `idle`. Raising would halt a lift with people in it |
+| "Someone blocks the doors while they are closing." | The transition people get wrong | To `doors_opening`, not `doors_open` — the doors must travel back. Snapping to `doors_open` leaves the following `opened` sensor event with nowhere to go |
+| "Add a fire-service mode." | Whether the table extends | A pre-empting event from every state to `service`, plus a `service` state that ignores hall calls. The table makes "from every state" explicit rather than hoping every `if` was updated |
+| "What if the lift is full?" | A standard omission | A weight-sensor event; a full lift declines *hall* calls while still serving *car* calls. That distinction only exists if you kept hall and car calls separate |
+| "How would you test it?" | Boundaries | Per unit: every legal transition fires, every illegal pair is a no-op, the dispatcher prefers en route over closer, and SCAN's order matches a hand-computed sweep |
+
+## Self-check
+
+<Quiz
+  questions={[
+    {
+      q: "What are the two separate problems in an elevator design?",
+      options: [
+        "Moving up and moving down",
+        "The lift as a state machine, and the dispatcher as a scheduling policy — merging them gives a class that must know about every other lift",
+        "The motor control and the button panel",
+        "Hall calls and car calls",
+      ],
+      answer: 1,
+      explain:
+        "Keeping them apart is most of the design. A Lift.should_i_answer(call) method needs global knowledge, which is the god-class smell. The lift owns its own mode; the dispatcher owns the choice between lifts. (Hall versus car calls is a real distinction, but it is a detail inside the dispatcher problem rather than the top-level split.)",
+    },
+    {
+      q: "Lift A is at floor 1 going up; lift B is idle at floor 5. Someone on floor 4 presses up. Which lift should answer?",
+      options: [
+        "B — it is one floor away",
+        "A — it is already travelling up and will pass floor 4 anyway, so B would move unnecessarily and end up out of position",
+        "Either; the difference is negligible",
+        "Whichever has fewer pending stops",
+      ],
+      answer: 1,
+      explain:
+        "Verified: nearest picks B, direction-aware picks A. Nearest is not just suboptimal here, it is actively wasteful — B starts, travels down one floor and stops, while A was passing floor 4 regardless, and B is then badly placed for anything above 5. Volunteering this comparison is the strongest single move in this round.",
+    },
+    {
+      q: "Why is the dispatch cost function a tuple like (0, gap) rather than a single number?",
+      options: [
+        "To avoid floating-point comparison",
+        "So the category dominates and distance only breaks ties — en route (0) beats idle (1) beats must-reverse (2), expressing a priority order without an if-chain",
+        "Because min() requires a tuple",
+        "To make the comparison stable",
+      ],
+      answer: 1,
+      explain:
+        "Tuple comparison is lexicographic, so the first element partitions the candidates into categories and the second orders within a category. Collapsing it into one number means inventing weights — \"idle costs 10 extra floors\" — which is arbitrary and breaks in tall buildings. The tuple encodes the intent directly.",
+    },
+    {
+      q: "A lift at floor 5 going up has stops requested at 7, 2, 9, 3. What does SCAN save over FCFS?",
+      options: [
+        "Nothing — both travel the same distance",
+        "11 floors against 20: FCFS crosses the building three times, SCAN sweeps up then down",
+        "It saves time but travels further",
+        "About 5%",
+      ],
+      answer: 1,
+      explain:
+        "Measured. FCFS goes 5→7→2→9→3, crossing the whole building repeatedly; SCAN serves 7, 9 on the way up then 3, 2 coming down. This is also the explanation for a behaviour passengers find annoying: your lift carries you past your floor because it is finishing the upward sweep, not because it ignored you.",
+    },
+    {
+      q: "Is SCAN the optimal scheduling policy?",
+      options: [
+        "Yes — it minimises total travel",
+        "No — the optimal order is a travelling-salesman variant. SCAN is chosen because it is starvation-free, cheap, and predictable, which matter more in a physical system",
+        "Yes, provided requests arrive in order",
+        "No, and nearest-request-first is optimal instead",
+      ],
+      answer: 1,
+      explain:
+        "Optimality is the wrong objective here. Recomputing a truly optimal route on every new request would be slow and would make the lift's behaviour unpredictable to the people inside it. LOOK is a strict improvement on SCAN — reverse when nothing is ahead rather than running to the shaft end — with the same properties. Nearest-request-first is worse: it can starve a floor.",
+    },
+    {
+      q: "Why not schedule by nearest request (SSTF)?",
+      options: [
+        "It is slower to compute",
+        "It can starve a far floor indefinitely — a passenger waiting forever is unacceptable even if the average wait improves",
+        "It requires knowing all requests in advance",
+        "It is equivalent to SCAN",
+      ],
+      answer: 1,
+      explain:
+        "A steady trickle of requests near the lift keeps it there while the top floor waits. Average wait is the metric SSTF wins on and the wrong metric to optimise in a physical system. Spotting that starvation-freedom is a hard requirement rather than a nice-to-have is the judgement being tested.",
+    },
+    {
+      q: "You model the modes as three booleans: is_moving, doors_open, is_closing. What is wrong?",
+      options: [
+        "Nothing — booleans are simpler",
+        "8 combinations exist and only 4 are legal, so (1,1,0) — moving with the doors open — is representable and every method must defend against it",
+        "Booleans cannot represent five states",
+        "It uses more memory",
+      ],
+      answer: 1,
+      explain:
+        "Verified: 8 combinations, 4 legal, 4 illegal-but-representable, including moving with the doors open. A single state variable holds exactly 5 states and zero illegal ones. The principle generalises well beyond lifts: make the illegal state unrepresentable rather than merely checked.",
+    },
+    {
+      q: "Someone blocks the doors while they are closing. Which state does the lift enter?",
+      options: [
+        "doors_open — the obstruction means the doors are open",
+        "doors_opening — the doors must physically travel back, and snapping to doors_open leaves the following `opened` sensor event with nowhere to go",
+        "idle, then re-open",
+        "It stays in doors_closing and retries",
+      ],
+      answer: 1,
+      explain:
+        "Verified in the traced sequence: doors_closing → doors_opening → doors_open → doors_closing → idle. Modelling it as an instant jump to doors_open breaks the next event: the hardware will report `opened` when the doors finish travelling, and there is no transition for that from doors_open. Drawing the diagram first is what surfaces this.",
+    },
+    {
+      q: "An `arrive` event fires while the lift is idle. What should happen?",
+      options: [
+        "Raise an exception — the state machine is corrupt",
+        "Return the current state and log it; a spurious sensor reading must not halt a lift with people inside",
+        "Transition to moving",
+        "Reset to the initial state",
+      ],
+      answer: 1,
+      explain:
+        "Verified: run(['arrive']) gives ['idle', 'idle']. This is the same reasoning as returning None for a full parking lot — an unexpected external event is not an invariant violation in your own code. Resetting would be worse than either, discarding legitimate state because of noise.",
+    },
+    {
+      q: "Add a fire-service mode. Why is a state table easier to extend than if-statements?",
+      options: [
+        "It is not — you must add a row for every state",
+        "Adding a row for every state is exactly the advantage: the table makes \"from every state\" explicit, whereas scattered ifs leave you hoping you found them all",
+        "The table handles it automatically",
+        "Fire mode does not need a state",
+      ],
+      answer: 1,
+      explain:
+        "The work is the same either way; what differs is whether the work is visible. A table has one row per (state, event) pair, so a missing case is an absent row you can see. With conditionals spread across methods, a missed spot is silent — and the failure mode is a lift that ignores a fire alarm from one particular state.",
+    },
+  ]}
+/>
+
+## Recall card
+
+- **Two problems, kept apart**: the **lift** is a state machine; the **dispatcher** is a
+  swappable scheduling policy. A lift that decides whether *it* should answer needs global
+  knowledge — the god-class smell.
+- **Draw the state diagram first.** It forces the decisions, like `doors_closing → doors_opening`
+  on an obstruction.
+- **One state variable, not booleans.** Three flags give 8 combinations, **4 illegal** — including
+  moving with the doors open. One state gives 5 states and zero illegal. *Make the bad state
+  unrepresentable, not merely checked.*
+- **An unknown `(state, event)` pair is a no-op**, logged. A faulty sensor must not halt a lift.
+- **Nearest-lift dispatch is wrong often enough to pre-empt.** Verified: nearest picks B,
+  direction-aware picks A when A is already coming.
+- **Cost as a tuple** — en route (0) < idle (1) < must reverse (2), distance breaks ties. A
+  priority order with no `if` chain.
+- **SCAN for stop order**: sweep to the furthest request, then reverse. **11 floors against
+  FCFS's 20.** It is why a lift carries you past your floor.
+- **SCAN is not optimal and that is deliberate** — it is starvation-free and predictable. LOOK
+  is strictly better. **SSTF starves** far floors, so it is out.
+- **`stops` is a set**, so pressing a button three times queues one stop.
+- **Hall calls carry a direction; car calls do not.** Collapsing them makes direction-aware
+  dispatch impossible and breaks the full-lift follow-up.
+- **$O(L)$ dispatch over 2–8 lifts is fine.** Say the bound, say it does not matter.
+- **Same shape covers** vending machines, ATMs, traffic lights and order lifecycles.

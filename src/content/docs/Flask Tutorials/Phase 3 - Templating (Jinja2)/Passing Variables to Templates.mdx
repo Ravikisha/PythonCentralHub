@@ -5,7 +5,32 @@ sidebar:
   order: 349
 ---
 
+import Quiz from "../../../../components/Quiz.astro";
+
 Templates become powerful when you pass data to them.
+
+:::note[A misspelled variable renders as nothing, not as an error]
+Jinja's default `Undefined` is deliberately quiet. Verified:
+
+| Template | Result |
+| --- | --- |
+| `{{ missing }}` | `''` — empty string |
+| `{{ d['nope'] }}` | `''` — empty string |
+| `{{ missing.attr }}` | raises `UndefinedError` |
+
+So a typo in a variable name produces a blank space on the page and nothing in the log, and the
+page looks *almost* right — which is why it survives review. Only reaching an attribute *on*
+the missing name raises.
+
+If you would rather find out immediately, switch the environment to strict:
+
+```python
+from jinja2 import StrictUndefined
+app.jinja_env.undefined = StrictUndefined
+```
+
+Then every undefined name raises, which is usually what you want in development.
+:::
 
 ## Passing variables from Flask
 
@@ -177,3 +202,198 @@ success_msg("jsonify returns JSON responses!")`}
   height={152}
 />
 
+## An undefined variable is not an error
+
+This is the behaviour that makes template bugs so hard to see. A name that does not
+exist renders as **nothing at all**:
+
+```mermaid
+flowchart TD
+  T["{{ name }}"] --> Q{"is 'name' in the context?"}
+  Q -->|"yes"| P["print its value, escaped"]
+  Q -->|"no"| U["Undefined"]
+  U --> R["prints as an EMPTY STRING<br/>no error, no warning"]
+  U --> B["is falsy in {% if %}"]
+  U --> A["but attribute access RAISES<br/>UndefinedError"]
+```
+
+Measured:
+
+```python title="undefined.py" showLineNumbers{1}
+render_template_string("start[{{ nope }}]end")
+# 'start[]end'                       <- silent
+
+render_template_string("{% if missing %}yes{% else %}no{% endif %}")
+# 'no'                               <- undefined is falsy
+
+render_template_string("{{ nope.attr }}")
+# jinja2.exceptions.UndefinedError: 'nope' is undefined
+```
+
+So a typo in a variable name produces a blank space on the page, while a typo in an
+*attribute* produces a loud error. The first is the one that reaches production.
+
+:::note[Make it loud during development]
+```python title="strict.py" showLineNumbers{1}
+from jinja2 import StrictUndefined
+app.jinja_env.undefined = StrictUndefined
+```
+Now `{{ nope }}` raises instead of rendering empty. Worth enabling in development and in
+tests; consider leaving it off in production so one missing value cannot take down a
+page.
+:::
+
+## What is already available without passing it
+
+Flask injects a few names into every template context:
+
+| name | what it is |
+|:--|:--|
+| `url_for` | build a URL from an endpoint name |
+| `request` | the current request object |
+| `session` | the session dict |
+| `g` | the per-request global object |
+| `config` | the app config |
+
+```python title="views.py" showLineNumbers{1}
+return render_template("profile.html", user=user, posts=posts)
+```
+
+```text title="profile.html"
+<h1>{{ user.name }}</h1>
+{% for p in posts %}
+  <a href="{{ url_for('post', id=p.id) }}">{{ p.title }}</a>
+{% endfor %}
+```
+
+To add your own name to every template without passing it each time, use a context
+processor:
+
+```python title="context.py" showLineNumbers{1}
+@app.context_processor
+def inject_year():
+    return {"year": datetime.now().year}       # {{ year }} now works everywhere
+```
+
+## See it move
+
+```p5 title="What happens to a name the context does not have" desc="An undefined name prints as empty and is falsy, but touching an attribute on it raises. The quiet case is the dangerous one." height="330"
+let sel = 0;
+const CASES = [
+  { t: "{{ user.name }}", ctx: true, out: "'ada'", kind: "ok" },
+  { t: "{{ nope }}", ctx: false, out: "''  (empty, silent)", kind: "quiet" },
+  { t: "{% if nope %}A{% else %}B{% endif %}", ctx: false, out: "'B'  (undefined is falsy)", kind: "quiet" },
+  { t: "{{ nope.attr }}", ctx: false, out: "UndefinedError: 'nope' is undefined", kind: "loud" },
+];
+
+function setup() {
+  createCanvas(600, 330);
+  textFont("monospace");
+}
+
+function colOf(k) {
+  if (k === "ok") return color(120, 190, 130);
+  if (k === "quiet") return color(255, 211, 67);
+  return color(232, 110, 110);
+}
+
+function draw() {
+  background(13, 17, 23);
+  noStroke();
+  fill(230);
+  textSize(13);
+  textAlign(LEFT, TOP);
+  text("context = { user: {name: 'ada'} }", 24, 16);
+  fill(120);
+  textSize(11);
+  text("'nope' was never passed", 24, 36);
+
+  for (let i = 0; i < CASES.length; i++) {
+    const y = 64 + i * 34;
+    const on = i === sel;
+    const c = colOf(CASES[i].kind);
+    stroke(on ? c : color(40, 48, 58));
+    strokeWeight(on ? 2 : 1);
+    fill(on ? color(26, 32, 42) : color(17, 22, 29));
+    rect(24, y, 340, 28, 3);
+    noStroke();
+    fill(on ? 220 : 120);
+    textSize(11);
+    textAlign(LEFT, CENTER);
+    text(CASES[i].t, 34, y + 14);
+  }
+
+  const cs = CASES[sel];
+  const c = colOf(cs.kind);
+  stroke(c);
+  strokeWeight(1);
+  fill(18, 23, 30);
+  rect(24, 214, 552, 66, 5);
+  noStroke();
+  fill(110);
+  textSize(10);
+  textAlign(LEFT, TOP);
+  text("renders as", 38, 226);
+  fill(c);
+  textSize(14);
+  text(cs.out, 38, 246);
+
+  fill(c);
+  textSize(11);
+  textAlign(LEFT, TOP);
+  const msg = cs.kind === "ok" ? "the value was in the context"
+    : (cs.kind === "quiet" ? "SILENT - a typo here becomes a blank space on the page"
+                           : "LOUD - attribute access on Undefined raises");
+  text(msg, 24, 292);
+}
+
+function mousePressed() {
+  for (let i = 0; i < CASES.length; i++) {
+    const y = 64 + i * 34;
+    if (mouseX > 24 && mouseX < 364 && mouseY > y && mouseY < y + 28) sel = i;
+  }
+}
+```
+
+## Check yourself
+
+<Quiz
+  questions={[
+    {
+      q: "A template contains {{ usr }} but the view passed user=. What is rendered?",
+      options: [
+        "an UndefinedError",
+        "the literal text {{ usr }}",
+        "an empty string, with no error or warning",
+        "the value of user, by fuzzy matching",
+      ],
+      answer: 2,
+      explain:
+        "Undefined renders as empty. Measured: 'start[{{ nope }}]end' gave 'start[]end'. A typo in a variable name becomes a blank space, which is why it reaches production.",
+    },
+    {
+      q: "Why does {{ nope }} render silently while {{ nope.attr }} raises?",
+      options: [
+        "attribute access is checked at compile time",
+        "printing Undefined is defined as empty, but getting an attribute from Undefined is an error",
+        "the second form has a syntax error",
+        "Jinja2 only validates nested expressions",
+      ],
+      answer: 1,
+      explain:
+        "Undefined has a string form (empty) and is falsy, but attribute access on it raises UndefinedError. Set app.jinja_env.undefined = StrictUndefined to make the quiet case loud in development.",
+    },
+    {
+      q: "Which name is available in every template without being passed by the view?",
+      options: [
+        "user",
+        "url_for",
+        "db",
+        "form",
+      ],
+      answer: 1,
+      explain:
+        "Flask injects url_for, request, session, g and config. Anything else must be passed to render_template or added with a @app.context_processor.",
+    },
+  ]}
+/>

@@ -1,0 +1,932 @@
+---
+title: Thread Ordering and Signalling
+description: LeetCode's concurrency round — forcing an order between threads with semaphores, and the race that CPython hides from you until it does not.
+sidebar:
+  order: 1
+difficulty: medium
+---
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+LeetCode has a small, strange concurrency section — problems 1114 to 1226 — and every one of
+them is the same question in a different costume: **how do you force threads to take turns?**
+
+None of them is about speed. There is no complexity to optimise and threads make these programs
+*slower*. What is being tested is whether you can express an ordering constraint with a
+synchronisation primitive rather than with a sleep and a hope.
+
+## The cue
+
+:::tip[You are looking at a signalling problem when...]
+- The requirement is an **order between threads** — "print first, then second, then third" — and
+  the threads may be started in any order.
+- Threads must **alternate** or repeat a fixed cycle: foo/bar, zero/even/odd.
+- One thread must **wait for a condition another thread creates**, rather than waiting for a
+  fixed time.
+- The problem says **"your solution must work regardless of the order the methods are called
+  in"** — that is the whole difficulty, stated outright.
+- Correctness is about **what cannot happen**, not about how fast it happens.
+:::
+
+**When it is not this.** If the goal is to go faster, threads are the wrong tool in CPython for
+CPU work — see the GIL section below, where two threads on a CPU-bound task measured **slower**
+than one. If the shared thing is a buffer with a capacity, that is
+[bounded buffers](../bounded-buffers-and-deadlock/). And if you find yourself reaching for
+`time.sleep` to fix an ordering bug, you have a signalling problem and a sleep is not a
+solution — it is a delay that usually works.
+
+## The primitive to reach for
+
+| Primitive | Means | Use it for |
+| --- | --- | --- |
+| `Semaphore(0)` | "wait for a permit that does not exist yet" | **the default answer** for "B must wait for A" |
+| `Semaphore(n)` | "at most `n` at once" | capacity limits |
+| `Lock` | "one at a time" | protecting a mutation, **not** ordering |
+| `Event` | "a one-shot flag, forever set once set" | one-time initialisation |
+| `Condition` | "wait until a predicate over shared state holds" | anything with a queue or a count |
+| `Barrier(n)` | "nobody proceeds until `n` arrive" | grouping — see H2O on the next page |
+
+**A `Semaphore` initialised to 0 is the workhorse.** It is the primitive that expresses "this
+thread has nothing to do until someone else says so", and almost all of LC 1114–1195 is built
+from a handful of them.
+
+A `Lock` is the wrong tool for ordering and it is the most common wrong answer: a lock says *one
+at a time*, which says nothing about *which one first*.
+
+## LC 1114 — Print in Order
+
+```python title="print_in_order.py" showLineNumbers{1}
+import threading
+
+
+class Foo:
+    def __init__(self):
+        # Both gates start CLOSED. second() and third() cannot proceed until
+        # the thread before them opens their gate.
+        self.gate2 = threading.Semaphore(0)
+        self.gate3 = threading.Semaphore(0)
+
+    def first(self, out):
+        out.append("first")
+        self.gate2.release()          # open the gate for second()
+
+    def second(self, out):
+        self.gate2.acquire()          # blocks until first() released it
+        out.append("second")
+        self.gate3.release()
+
+    def third(self, out):
+        self.gate3.acquire()
+        out.append("third")
+```
+
+Two semaphores, both starting at 0, chained. Verified across four different **thread start
+orders** — including starting `third` first:
+
+| Threads started in order | Output | Stuck? |
+| --- | --- | --- |
+| first, second, third | `first, second, third` | no |
+| **third, second, first** | `first, second, third` | no |
+| second, third, first | `first, second, third` | no |
+| third, first, second | `first, second, third` | no |
+
+The output is identical every time, which is the entire requirement. `third` can be the first
+thread scheduled and it simply blocks on a gate nobody has opened yet.
+
+### Watch the gates open
+
+```p5 title="Semaphore gates: threads started in the WRONG order still print in the right one" desc="Threads are launched third, then second, then first. Two semaphores start at 0, so third and second block immediately on gates nobody has opened. Only first can run -- and each release cascades to the next. Watch the permit counters: a gate holds a permit for exactly as long as it takes the waiting thread to consume it." height="380"
+// Precomputed from the page's dry run: threads started third, second, first.
+const steps = [
+  { note: "all three threads started",                lanes: ["idle","idle","idle"],       g2: 0, g3: 0, out: [] },
+  { note: "third runs, blocks on gate3",              lanes: ["idle","idle","blocked"],    g2: 0, g3: 0, out: [] },
+  { note: "second runs, blocks on gate2",             lanes: ["idle","blocked","blocked"], g2: 0, g3: 0, out: [] },
+  { note: "first runs -- it waits on nothing",        lanes: ["run","blocked","blocked"],  g2: 0, g3: 0, out: ["first"] },
+  { note: "first releases gate2",                     lanes: ["done","blocked","blocked"], g2: 1, g3: 0, out: ["first"] },
+  { note: "second wakes, consumes the permit",        lanes: ["done","run","blocked"],     g2: 0, g3: 0, out: ["first","second"] },
+  { note: "second releases gate3",                    lanes: ["done","done","blocked"],    g2: 0, g3: 1, out: ["first","second"] },
+  { note: "third wakes, consumes the permit",         lanes: ["done","done","run"],        g2: 0, g3: 0, out: ["first","second","third"] },
+];
+
+const NAMES = ["first()", "second()", "third()"];
+let idx = 0;
+let last = 0;
+
+function setup() {
+  createCanvas(600, 380);
+  textFont("monospace");
+}
+
+function toneFor(state) {
+  if (state === "blocked") return [255, 123, 114];
+  if (state === "run") return [140, 210, 160];
+  if (state === "done") return [90, 100, 112];
+  return [70, 78, 90];
+}
+
+function draw() {
+  background(13, 17, 23);
+  if (millis() - last > 1500) { last = millis(); idx = (idx + 1) % steps.length; }
+  const s = steps[idx];
+
+  noStroke();
+  fill(200);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("three threads, two gates", 20, 16);
+
+  // lanes
+  const laneY = [70, 118, 166];
+  for (let i = 0; i < 3; i++) {
+    const c = toneFor(s.lanes[i]);
+    noStroke();
+    fill(40, 46, 54);
+    rect(20, laneY[i], width - 40, 34, 6);
+    fill(c[0], c[1], c[2]);
+    rect(20, laneY[i], 6, 34, 3, 0, 0, 3);
+    fill(210);
+    textSize(13);
+    textAlign(LEFT, CENTER);
+    text(NAMES[i], 38, laneY[i] + 17);
+    fill(c[0], c[1], c[2]);
+    textSize(11);
+    textAlign(RIGHT, CENTER);
+    let label = s.lanes[i];
+    if (label === "blocked") label = "BLOCKED on a closed gate";
+    if (label === "run") label = "running";
+    if (label === "done") label = "finished";
+    if (label === "idle") label = "not scheduled yet";
+    text(label, width - 32, laneY[i] + 17);
+  }
+
+  // gate permit counters
+  const gy = 224;
+  const gates = [["gate2", s.g2], ["gate3", s.g3]];
+  for (let i = 0; i < 2; i++) {
+    const x = 20 + i * 150;
+    const open = gates[i][1] > 0;
+    noStroke();
+    fill(open ? color(219, 171, 90) : color(48, 54, 62));
+    rect(x, gy, 132, 40, 6);
+    fill(open ? 13 : 150);
+    textSize(11);
+    textAlign(LEFT, CENTER);
+    text(gates[i][0] + "  permits: " + gates[i][1], x + 10, gy + 20);
+  }
+
+  // output so far
+  noStroke();
+  fill(150);
+  textSize(11);
+  textAlign(LEFT, TOP);
+  text("output so far", 20, 284);
+  fill(140, 210, 160);
+  textSize(15);
+  text(s.out.length ? s.out.join("  ->  ") : "(nothing printed yet)", 20, 302);
+
+  fill(210, 200, 160);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text(s.note, 20, 340);
+  fill(90, 100, 112);
+  textSize(10);
+  text("step " + (idx + 1) + " of " + steps.length, width - 90, 340);
+}
+```
+
+:::caution[Why a `Lock` cannot do this]
+A `Lock` guarantees mutual exclusion, not order. If `second` acquires the lock first it will
+print first — the lock does not know it is supposed to wait.
+
+The distinction in one line: **a lock protects state, a semaphore-at-zero communicates an
+event.** When a problem says "in order", you want the second thing.
+:::
+
+## LC 1115 — FooBar, and why two semaphores
+
+Print `foobar` `n` times, alternating. The instinct is one lock; the correct answer is **two
+semaphores passing a permit back and forth**:
+
+```python title="foobar.py" showLineNumbers{1}
+import threading
+
+
+class FooBar:
+    def __init__(self, n):
+        self.n = n
+        self.foo_turn = threading.Semaphore(1)    # foo goes first
+        self.bar_turn = threading.Semaphore(0)
+
+    def foo(self, out):
+        for _ in range(self.n):
+            self.foo_turn.acquire()
+            out.append("foo")
+            self.bar_turn.release()              # hand the turn over
+
+    def bar(self, out):
+        for _ in range(self.n):
+            self.bar_turn.acquire()
+            out.append("bar")
+            self.foo_turn.release()              # hand it back
+```
+
+Verified for `n = 1, 3, 5`: `fb`, `fbfbfb`, `fbfbfbfbfb`, none stuck.
+
+The single-semaphore version is the instructive failure. Replace both with one
+`Semaphore(1)` that each method acquires and releases around its own print, and over **200
+runs** the output was:
+
+| Version | Distinct outputs over 200 runs | What it produced |
+| --- | --- | --- |
+| Two semaphores | 1 | `fbfbfb` — correct |
+| **One semaphore** | **1** | **`fffbbb` — wrong, every single time** |
+
+That is worse than random. A shared lock lets `foo` complete its whole loop before `bar` gets a
+look in, and it does so **deterministically** — so the bug is perfectly reproducible in the
+wrong direction and never looks flaky. A test that ran it once and saw `fffbbb` would at least
+fail honestly; the danger is code where the mutual exclusion *looks* like synchronisation.
+
+**The ping-pong pattern generalises.** For a three-way cycle (LC 1116 zero/even/odd), use three
+semaphores and pass the permit round the ring — each method acquires its own and releases the
+next one's.
+
+## Dry run
+
+### The gate chain, step by step
+
+`Foo` with `third` started first, then `second`, then `first`:
+
+| Event | `gate2` | `gate3` | Output |
+| --- | --- | --- | --- |
+| all three threads started | 0 | 0 | -- |
+| `third` runs, blocks on `gate3.acquire()` | 0 | 0 | -- |
+| `second` runs, blocks on `gate2.acquire()` | 0 | 0 | -- |
+| `first` runs — nothing to wait for | 0 | 0 | `first` |
+| `first` calls `gate2.release()` | **1** | 0 | `first` |
+| `second` wakes, acquires, prints | 0 | 0 | `first, second` |
+| `second` calls `gate3.release()` | 0 | **1** | `first, second` |
+| `third` wakes, acquires, prints | 0 | 0 | `first, second, third` |
+
+**`first` is the only method that never blocks**, and that is what makes the chain start. If
+every method waited on something, nothing would ever run — which is the bug you get by
+initialising `gate2` to 0 *and* adding a gate in front of `first`.
+
+### The race CPython hides from you
+
+The textbook demonstration of a data race is an unsynchronised counter. Here is what it actually
+does on CPython 3.14.4, at 8 threads and a deliberately shortened switch interval:
+
+| Setup | Result |
+| --- | --- |
+| 8 threads × 100,000 `n += 1`, default 5 ms switch interval | **800,000 of 800,000** — exact |
+| 8 threads × 1,000,000, default interval | **8,000,000 of 8,000,000** — exact |
+| 8 threads × 1,000,000, 5 µs switch interval | **8,000,000 of 8,000,000** — exact |
+
+**The classic demo does not reproduce.** Increments are not lost, however hard you push it — so
+"`counter += 1` is not atomic, watch it lose updates" is a claim worth checking before repeating.
+
+Widen the window and the race appears immediately:
+
+```python title="race.py" showLineNumbers{1}
+import threading, time
+
+box = {"n": 0}
+
+
+def racy():
+    for _ in range(20000):
+        v = box["n"]
+        time.sleep(0)          # an explicit yield: the window is now wide open
+        box["n"] = v + 1
+```
+
+| Version | Result of 4 threads × 20,000 |
+| --- | --- |
+| Read, yield, write | **20,090 of 80,000** — 59,910 increments lost |
+| The same, wrapped in a `Lock` | **80,000 of 80,000** — exact |
+
+Verified. Two conclusions, and the second matters more:
+
+- **The race is real**, and a lock fixes it completely.
+- **You usually cannot see it.** The unsafe version passed every test at 8 million increments.
+  Race conditions are not rare-but-visible; they are *window-dependent*, and the window widens
+  under load, on different hardware, or when someone adds an innocent call inside the critical
+  section. "It worked on my machine" is not evidence of thread safety — which is exactly why the
+  reasoning has to be about the *invariant*, not about observed behaviour.
+
+```p5 title="The lost-update race, and why you usually cannot see it" desc="Two threads each read the counter, yield, then write back. When their windows overlap, both read the same value and one increment vanishes. The bar shows the measured result: 20,090 of 80,000 survived without a lock, and exactly 80,000 with one. Without the deliberate yield, the unsafe version was exact even at 8 million increments -- which is what makes this class of bug so dangerous." height="400"
+// Left: an animated two-thread interleaving. Right: the measured totals.
+const T = [
+  { a: "read 0",   b: "",         n: 0, lost: 0, note: "thread A reads 0" },
+  { a: "yield",    b: "read 0",   n: 0, lost: 0, note: "A yields -- B reads the SAME 0" },
+  { a: "write 1",  b: "yield",    n: 1, lost: 0, note: "A writes 1" },
+  { a: "",         b: "write 1",  n: 1, lost: 1, note: "B writes 1 too -- one increment is gone" },
+  { a: "read 1",   b: "",         n: 1, lost: 1, note: "next round: A reads 1" },
+  { a: "yield",    b: "read 1",   n: 1, lost: 1, note: "B reads the same 1" },
+  { a: "write 2",  b: "yield",    n: 2, lost: 1, note: "A writes 2" },
+  { a: "",         b: "write 2",  n: 2, lost: 2, note: "B writes 2 -- another one lost" },
+];
+
+let idx = 0;
+let last = 0;
+
+function setup() {
+  createCanvas(600, 400);
+  textFont("monospace");
+}
+
+function draw() {
+  background(13, 17, 23);
+  if (millis() - last > 1300) { last = millis(); idx = (idx + 1) % T.length; }
+  const s = T[idx];
+
+  noStroke();
+  fill(200);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text("read - yield - write, with no lock", 20, 14);
+
+  // two thread lanes
+  const rows = [["thread A", s.a, 52], ["thread B", s.b, 96]];
+  for (let i = 0; i < 2; i++) {
+    const y = rows[i][2];
+    fill(40, 46, 54);
+    rect(20, y, 340, 34, 6);
+    fill(190);
+    textSize(12);
+    textAlign(LEFT, CENTER);
+    text(rows[i][0], 32, y + 17);
+    const op = rows[i][1];
+    if (op) {
+      const isWrite = op.indexOf("write") === 0;
+      const isRead = op.indexOf("read") === 0;
+      fill(isWrite ? color(255, 123, 114) : isRead ? color(88, 166, 255) : color(219, 171, 90));
+      textAlign(RIGHT, CENTER);
+      text(op, 348, y + 17);
+    }
+  }
+
+  // shared counter
+  fill(150);
+  textSize(11);
+  textAlign(LEFT, TOP);
+  text("shared counter", 20, 148);
+  fill(140, 210, 160);
+  textSize(30);
+  text(s.n, 20, 166);
+  fill(255, 123, 114);
+  textSize(12);
+  text("lost so far: " + s.lost, 100, 178);
+
+  fill(210, 200, 160);
+  textSize(11);
+  textAlign(LEFT, TOP);
+  text(s.note, 20, 212);
+
+  // measured bars
+  const bx = 390, bw = 190;
+  fill(200);
+  textSize(11);
+  textAlign(LEFT, TOP);
+  text("measured, 4 threads x 20000", bx, 14);
+  const bars = [
+    { label: "with a lock", v: 80000, c: [140, 210, 160] },
+    { label: "no lock", v: 20090, c: [255, 123, 114] },
+  ];
+  for (let i = 0; i < 2; i++) {
+    const y = 46 + i * 62;
+    const w = (bars[i].v / 80000) * bw;
+    noStroke();
+    fill(38, 44, 52);
+    rect(bx, y + 16, bw, 20, 4);
+    fill(bars[i].c[0], bars[i].c[1], bars[i].c[2]);
+    rect(bx, y + 16, w, 20, 4);
+    fill(180);
+    textSize(11);
+    textAlign(LEFT, TOP);
+    text(bars[i].label, bx, y);
+    fill(bars[i].c[0], bars[i].c[1], bars[i].c[2]);
+    textSize(11);
+    text(bars[i].v + " of 80000", bx, y + 40);
+  }
+
+  stroke(60);
+  line(bx, 186, bx + bw, 186);
+  noStroke();
+  fill(150);
+  textSize(10);
+  textAlign(LEFT, TOP);
+  text("without the explicit yield the", bx, 198);
+  text("unsafe version was EXACT at", bx, 212);
+  text("8 threads x 1,000,000.", bx, 226);
+  fill(219, 171, 90);
+  text("A race you cannot observe", bx, 248);
+  text("is still a race.", bx, 262);
+}
+```
+
+The honest statement for an interview: **a read-modify-write on shared state needs a lock, and
+the fact that you cannot demonstrate a failure does not mean there is not one.**
+
+### Unsynchronised ordering is not random — it is worse
+
+With no synchronisation at all, three threads appending to a list produced, over 200 runs:
+
+| Setup | Distinct orders observed |
+| --- | --- |
+| No sleeps, started first/second/third | **1** — always `first, second, third` |
+| With sleeps of 2 ms / 1 ms / 0 ms | **2** — always `third` first, matching the sleeps |
+
+Neither run was random. The order followed *timing*, and when the work was trivial it happened
+to match the start order **200 times out of 200**.
+
+That is the trap the whole problem set exists for. Unsynchronised code that relies on ordering
+does not fail loudly and intermittently — it works on your laptop, every time, and then breaks
+when the machine is busier or the code inside the thread grows by one line.
+
+## Complexity
+
+Complexity is the wrong axis here, and saying so is part of a good answer.
+
+| Measure | Value |
+| --- | --- |
+| Time complexity | $O(n)$ prints for `n` iterations — the work is not the point |
+| Threads created | $O(1)$ per method, fixed by the problem |
+| Semaphores | $O(1)$ — two for a 2-cycle, three for a 3-cycle |
+| Blocking cost | Each `acquire` on a closed gate is a **context switch**, not a spin |
+| Speedup from threading | **negative** for these problems |
+
+The measurement worth carrying:
+
+| Workload | 2× sequential | 2 threads | Speedup |
+| --- | --- | --- | --- |
+| CPU-bound loop | 0.429 s | 0.630 s | **0.68×** — *slower* |
+| `time.sleep(0.3)` | 0.602 s | 0.301 s | **2.00×** |
+
+Verified. **The GIL means only one thread runs Python bytecode at a time**, so CPU-bound
+threading buys nothing and costs switching overhead — 0.68× is a real slowdown, not noise. I/O
+releases the GIL while waiting, so threads overlap perfectly: 2.00×.
+
+Which gives the rule: **threads for waiting, processes for computing.** `multiprocessing` or
+`concurrent.futures.ProcessPoolExecutor` for CPU work; `threading` or `asyncio` for I/O.
+
+## The variant map
+
+| Problem | The constraint | The shape |
+| --- | --- | --- |
+| **1114** Print in Order | A before B before C | Two `Semaphore(0)` gates, chained |
+| **1115** Print FooBar Alternately | Strict 2-cycle | Two semaphores, ping-pong; one starts at 1 |
+| **1116** Print Zero Even Odd | 3-cycle with state (`0,1,0,2,0,3…`) | Three semaphores round a ring |
+| **1117** Building H2O | Groups of exactly 3 (2 H + 1 O) | Two semaphores **+ a `Barrier(3)`** — [next page](../bounded-buffers-and-deadlock/) |
+| **1195** Fizz Buzz Multithreaded | 4 workers, one number at a time | Four semaphores, or one `Condition` on a counter |
+| **1188** Bounded Blocking Queue | Capacity | A `Condition` — [next page](../bounded-buffers-and-deadlock/) |
+| **1226** Dining Philosophers | Deadlock avoidance | Resource ordering — [next page](../bounded-buffers-and-deadlock/) |
+| "Wait for setup once" | One-time flag | `Event`, not a semaphore — it stays set |
+| "At most 5 concurrent requests" | Capacity | `Semaphore(5)` |
+| "Wait until the queue is non-empty" | Predicate on state | `Condition.wait_for` |
+
+:::note[`Semaphore` versus `Event`, in one sentence]
+A `Semaphore` **counts permits** and each `acquire` consumes one; an `Event` is a **latch** that
+stays set once set, so any number of waiters pass.
+
+Use an `Event` for "initialisation is done" — every thread that checks afterwards should proceed.
+Use a `Semaphore(0)` for "one thread may now take one turn". Getting this backwards in a
+ping-pong problem means every thread proceeds after the first release, and the alternation is
+gone.
+:::
+
+## Pitfalls
+
+- **Using a `Lock` for ordering.** A lock says *one at a time*, never *which one first*. Measured:
+  one shared semaphore in FooBar produces `fffbbb` on **200 of 200** runs.
+- **`time.sleep` as synchronisation.** A sleep that is long enough today is a race tomorrow on a
+  loaded machine. If you need to wait for an *event*, wait on the event.
+- **Initialising every gate to 0.** Something must be able to run: in a ping-pong, exactly one
+  semaphore starts at 1. All-zero deadlocks immediately.
+- **Using an `Event` where you need a `Semaphore`.** An `Event` stays set, so every waiter passes
+  and the alternation collapses. Semaphores count.
+- **Assuming `counter += 1` is atomic because you cannot break it.** Verified exact at 8 million
+  increments — and genuinely broken (59,910 lost of 80,000) once the read and write straddle a
+  yield. Absence of a visible failure is not thread safety.
+- **Assuming the unsynchronised order is random.** It matched start order **200 of 200** with
+  trivial work. Ordering bugs are reproducible-until-they-are-not, which is worse than flaky.
+- **Expecting threads to speed up CPU work.** Measured **0.68×** — slower. The GIL serialises
+  bytecode. Use processes.
+- **Releasing a semaphore you did not acquire.** Python's `Semaphore` has no ownership, so an
+  extra `release` silently raises the permit count and lets two threads through. `BoundedSemaphore`
+  raises instead — use it when a leak would be a bug.
+- **Holding a lock across a blocking call.** Acquiring a lock and then waiting on a semaphore
+  inside it is how a two-primitive deadlock starts. Keep critical sections free of blocking.
+- **Forgetting `with` on locks.** An exception between `acquire` and `release` leaks the lock
+  permanently. `with lock:` is exception-safe; a bare pair is not.
+- **Testing a concurrent program once.** One pass proves nothing. Run it many times, and prefer
+  reasoning about the invariant — some interleavings will never occur on your hardware.
+
+## Try it yourself
+
+### Drill 1 — force the order with gates
+
+<DataCampExercise
+  lang="python"
+  hint={`Two semaphores, both starting at 0. second() acquires the first gate and releases the second; third() acquires the second. first() waits on nothing -- that is what starts the chain.`}
+  code={`import threading
+
+
+class Foo:
+    def __init__(self):
+        # TODO: two gates, both CLOSED.
+        pass
+
+    def first(self, out):
+        # TODO: print, then open the gate for second().
+        pass
+
+    def second(self, out):
+        # TODO: wait for first(), print, then open the gate for third().
+        pass
+
+    def third(self, out):
+        # TODO: wait for second(), then print.
+        pass
+
+
+def run(order):
+    f, out = Foo(), []
+    fns = [lambda: f.first(out), lambda: f.second(out), lambda: f.third(out)]
+    ts = [threading.Thread(target=fns[i], daemon=True) for i in order]
+    for t in ts: t.start()
+    for t in ts: t.join(2.0)
+    return out
+
+
+print([run((0, 1, 2)), run((2, 1, 0))])
+print(run((2, 0, 1)))
+# expect [['first', 'second', 'third'], ['first', 'second', 'third']]
+# expect ['first', 'second', 'third']`}
+  solution={`import threading
+
+
+class Foo:
+    def __init__(self):
+        self.gate2 = threading.Semaphore(0)
+        self.gate3 = threading.Semaphore(0)
+
+    def first(self, out):
+        out.append("first")
+        self.gate2.release()
+
+    def second(self, out):
+        self.gate2.acquire()
+        out.append("second")
+        self.gate3.release()
+
+    def third(self, out):
+        self.gate3.acquire()
+        out.append("third")
+
+
+def run(order):
+    f, out = Foo(), []
+    fns = [lambda: f.first(out), lambda: f.second(out), lambda: f.third(out)]
+    ts = [threading.Thread(target=fns[i], daemon=True) for i in order]
+    for t in ts: t.start()
+    for t in ts: t.join(2.0)
+    return out
+
+
+print([run((0, 1, 2)), run((2, 1, 0))])
+print(run((2, 0, 1)))`}
+  sct={`test_output_contains("['first', 'second', 'third'], ['first', 'second', 'third']")
+success_msg("The second start order launches third() FIRST and the output is unchanged -- it simply blocks on a gate nobody has opened. Note that first() waits on nothing: something must be able to run, and initialising every gate to 0 deadlocks immediately.")`}
+  height={720}
+/>
+
+### Drill 2 — two semaphores, not one
+
+<DataCampExercise
+  lang="python"
+  hint={`Two semaphores passing a single permit back and forth. foo_turn starts at 1 so foo goes first; bar_turn starts at 0. Each method acquires its own turn and releases the other's.`}
+  code={`import threading
+from collections import Counter
+
+
+class FooBar:
+    def __init__(self, n):
+        self.n = n
+        # TODO: two semaphores -- one open, one closed.
+
+    def foo(self, out):
+        # TODO
+        pass
+
+    def bar(self, out):
+        # TODO
+        pass
+
+
+class OneSemaphore:
+    """The wrong version, provided for comparison. A shared lock is not a turn."""
+
+    def __init__(self, n):
+        self.n = n
+        self.s = threading.Semaphore(1)
+
+    def foo(self, out):
+        for _ in range(self.n):
+            self.s.acquire(); out.append("foo"); self.s.release()
+
+    def bar(self, out):
+        for _ in range(self.n):
+            self.s.acquire(); out.append("bar"); self.s.release()
+
+
+def run(cls, n, trials=1):
+    seen = Counter()
+    for _ in range(trials):
+        obj, out = cls(n), []
+        ts = [threading.Thread(target=f, daemon=True)
+              for f in (lambda: obj.foo(out), lambda: obj.bar(out))]
+        for t in ts: t.start()
+        for t in ts: t.join(2.0)
+        seen["".join(w[0] for w in out)] += 1
+    return seen
+
+
+print(sorted(run(FooBar, 3, 50)))
+print(sorted(run(OneSemaphore, 3, 50)))
+# expect ['fbfbfb']
+# expect ['fffbbb']`}
+  solution={`import threading
+from collections import Counter
+
+
+class FooBar:
+    def __init__(self, n):
+        self.n = n
+        self.foo_turn = threading.Semaphore(1)     # foo goes first
+        self.bar_turn = threading.Semaphore(0)
+
+    def foo(self, out):
+        for _ in range(self.n):
+            self.foo_turn.acquire()
+            out.append("foo")
+            self.bar_turn.release()                # hand the turn over
+
+    def bar(self, out):
+        for _ in range(self.n):
+            self.bar_turn.acquire()
+            out.append("bar")
+            self.foo_turn.release()                # hand it back
+
+
+class OneSemaphore:
+    def __init__(self, n):
+        self.n = n
+        self.s = threading.Semaphore(1)
+
+    def foo(self, out):
+        for _ in range(self.n):
+            self.s.acquire(); out.append("foo"); self.s.release()
+
+    def bar(self, out):
+        for _ in range(self.n):
+            self.s.acquire(); out.append("bar"); self.s.release()
+
+
+def run(cls, n, trials=1):
+    seen = Counter()
+    for _ in range(trials):
+        obj, out = cls(n), []
+        ts = [threading.Thread(target=f, daemon=True)
+              for f in (lambda: obj.foo(out), lambda: obj.bar(out))]
+        for t in ts: t.start()
+        for t in ts: t.join(2.0)
+        seen["".join(w[0] for w in out)] += 1
+    return seen
+
+
+print(sorted(run(FooBar, 3, 50)))
+print(sorted(run(OneSemaphore, 3, 50)))`}
+  sct={`test_output_contains("['fbfbfb']")
+success_msg("The one-semaphore version produces fffbbb on every single run -- not randomly, deterministically. A shared lock lets foo finish its whole loop before bar gets in. That is worse than a flaky bug, because mutual exclusion LOOKS like synchronisation and the failure never appears intermittent.")`}
+  height={840}
+/>
+
+### Drill 3 — the race, and the lock
+
+<DataCampExercise
+  lang="python"
+  hint={`Wrap the read-modify-write in a lock using a with-statement. The sleep(0) is a deliberate yield point that widens the window so the race is actually visible -- leave it in both versions.`}
+  code={`import threading, time
+
+
+def count(use_lock, threads=4, per=20000):
+    box = {"n": 0}
+    lock = threading.Lock()
+
+    def work():
+        for _ in range(per):
+            # TODO: read, yield, write -- and make it safe when use_lock is True.
+            # Keep the time.sleep(0) in BOTH versions so the comparison is fair.
+            pass
+
+    ts = [threading.Thread(target=work, daemon=True) for _ in range(threads)]
+    for t in ts: t.start()
+    for t in ts: t.join(60)
+    return box["n"], threads * per
+
+
+unsafe, want = count(False)
+safe, _ = count(True)
+print([safe == want, unsafe < want])
+print([safe, want])
+# expect [True, True]
+# expect [80000, 80000]`}
+  solution={`import threading, time
+
+
+def count(use_lock, threads=4, per=20000):
+    box = {"n": 0}
+    lock = threading.Lock()
+
+    def work():
+        for _ in range(per):
+            if use_lock:
+                with lock:
+                    v = box["n"]
+                    time.sleep(0)
+                    box["n"] = v + 1
+            else:
+                v = box["n"]
+                time.sleep(0)          # yield: another thread reads the same v
+                box["n"] = v + 1
+
+    ts = [threading.Thread(target=work, daemon=True) for _ in range(threads)]
+    for t in ts: t.start()
+    for t in ts: t.join(60)
+    return box["n"], threads * per
+
+
+unsafe, want = count(False)
+safe, _ = count(True)
+print([safe == want, unsafe < want])
+print([safe, want])`}
+  sct={`test_output_contains("[True, True]")
+success_msg("The locked version is exact and the unlocked one loses tens of thousands of increments -- measured 20,090 of 80,000 in one run. The uncomfortable part: WITHOUT the sleep(0), the unlocked version is exact even at 8 million increments on CPython 3.14.4. The race is real and usually invisible, which is why the reasoning has to be about the invariant rather than about what you observed.")`}
+  height={700}
+/>
+
+## Interview follow-ups
+
+| They ask | What they're checking | The answer |
+| --- | --- | --- |
+| "Make these run in order." | The default primitive | Two `Semaphore(0)` gates, chained. Each method waits on its own gate and releases the next — and `first` waits on nothing, which is what starts the chain |
+| "Why not a `Lock`?" | The core distinction | A lock gives mutual exclusion, not order. It cannot express "B after A" because it has no notion of which acquirer should win. **A lock protects state; a semaphore-at-zero communicates an event** |
+| "Alternate foo and bar." | Whether you use two | Two semaphores passing one permit, one starting at 1. A single shared semaphore produces `fffbbb` on 200 of 200 runs — deterministically wrong |
+| "Extend it to three-way." | Generalising | Three semaphores in a ring; each method acquires its own and releases the next. That is LC 1116 |
+| "`Semaphore` or `Event`?" | Knowing the difference | A semaphore **counts** and each acquire consumes a permit; an `Event` is a latch that stays set so all waiters pass. Use `Event` for one-time setup, `Semaphore(0)` for turn-taking — swapping them collapses the alternation |
+| "Is `counter += 1` atomic?" | Precision, not folklore | No, it is a read-modify-write. But it is worth saying that on CPython 3.14.4 it did **not** lose a single increment across 8 threads × 1 M even at a 5 µs switch interval — while a version with an explicit yield between read and write lost 59,910 of 80,000. It needs a lock; you just cannot rely on seeing it fail |
+| "Your program passed 1,000 runs. Is it thread-safe?" | Whether you understand windows | No. Race visibility depends on the window, which widens under load, on other hardware, or when someone adds a line inside the critical section. Correctness has to come from the invariant |
+| "Will threads make this faster?" | The GIL | Not for CPU work: measured **0.68×** — actually slower — because the GIL serialises bytecode. I/O-bound measured **2.00×**. Threads for waiting, processes for computing |
+| "When would you use `asyncio` instead?" | Breadth | Many concurrent I/O waits with no blocking C calls — thousands of sockets. It is cooperative, so one blocking call stalls everything, and it cannot help CPU work either |
+| "How do you avoid leaking a lock?" | Practical | `with lock:` — exception-safe. A bare `acquire`/`release` pair leaks the lock if anything in between raises |
+| "How would you test this?" | Honesty | Many repetitions, plus a timeout so a deadlock fails rather than hangs. And say plainly that testing cannot prove absence of a race — some interleavings never occur locally |
+
+## Self-check
+
+<Quiz
+  questions={[
+    {
+      q: "Why can a `Lock` not solve LC 1114 (Print in Order)?",
+      options: [
+        "Locks are too slow for three threads",
+        "A lock gives mutual exclusion but says nothing about WHICH thread goes first — it cannot express 'B after A'",
+        "Locks cannot be shared between threads",
+        "It can, but it needs three of them",
+      ],
+      answer: 1,
+      explain:
+        "If second() happens to acquire the lock first, it prints first — the lock has no notion of a required order. The one-line distinction worth carrying: a lock protects state, a semaphore initialised to 0 communicates an event. Ordering problems want the second thing.",
+    },
+    {
+      q: "In the chained-gate solution, why does `first()` not wait on anything?",
+      options: [
+        "It is a stylistic choice",
+        "Something must be able to run — if every method waited on a closed gate, nothing would ever start and the program would deadlock immediately",
+        "Because it is called first by the test harness",
+        "It does wait, on an implicit gate",
+      ],
+      answer: 1,
+      explain:
+        "This is the bug you get by mechanically giving every method a gate initialised to 0. The chain needs exactly one entry point. Verified: with two gates at 0 and first() unguarded, all four start orders produce the same output — including starting third() first, which just blocks.",
+    },
+    {
+      q: "FooBar with a single shared `Semaphore(1)` instead of two. What does it produce?",
+      options: [
+        "Random interleavings, sometimes correct",
+        "`fffbbb` on 200 of 200 runs — deterministically wrong, because a shared lock lets foo finish its whole loop first",
+        "A deadlock",
+        "`fbfbfb`, correctly",
+      ],
+      answer: 1,
+      explain:
+        "Measured. And this is worse than a flaky bug: mutual exclusion looks like synchronisation, the failure is perfectly reproducible in the wrong direction, and it never appears intermittent so nobody suspects a race. Two semaphores passing one permit is what expresses a turn.",
+    },
+    {
+      q: "What is the difference between `Semaphore(0)` and `Event`?",
+      options: [
+        "None — Event is a convenience wrapper",
+        "A semaphore counts permits and each acquire consumes one; an Event is a latch that stays set, so every waiter passes",
+        "Event is faster",
+        "Semaphore is for threads, Event for processes",
+      ],
+      answer: 1,
+      explain:
+        "The consequence matters in a ping-pong problem: swap in an Event and after the first set() every waiter proceeds forever, so the alternation collapses entirely. Use Event for one-time facts like \"initialisation finished\", and Semaphore(0) for \"one thread may take one turn\".",
+    },
+    {
+      q: "8 threads each doing 1,000,000 unsynchronised `n += 1` on CPython 3.14.4, with a 5 µs switch interval. What was the result?",
+      options: [
+        "Roughly 2 million — most increments lost",
+        "Exactly 8,000,000 — not one increment lost",
+        "The program crashed",
+        "About 7.9 million",
+      ],
+      answer: 1,
+      explain:
+        "Measured exact, at every setting tried. This is why \"watch the counter lose updates\" is a demo worth verifying before repeating. The operation is still a read-modify-write and still needs a lock — but the version that visibly fails needed an explicit yield between the read and the write, which lost 59,910 of 80,000.",
+    },
+    {
+      q: "Your concurrent program passes 1,000 test runs. Is it thread-safe?",
+      options: [
+        "Yes — that is strong evidence",
+        "No. Race visibility depends on the timing window, which widens under load, on different hardware, or when a line is added inside the critical section",
+        "Yes, if the runs used different thread counts",
+        "Only if it also passes under a debugger",
+      ],
+      answer: 1,
+      explain:
+        "The evidence on this page is the point: an unsafe counter was exact across 8 million increments, then lost three quarters of its updates once the window widened by one sleep(0). Testing can find races but cannot establish their absence — correctness has to be argued from the invariant.",
+    },
+    {
+      q: "Two threads on a CPU-bound loop versus running it twice sequentially. Measured speedup?",
+      options: [
+        "About 2.0×",
+        "0.68× — actually slower, because the GIL serialises Python bytecode and you pay switching overhead on top",
+        "About 1.0×",
+        "Roughly 1.5×",
+      ],
+      answer: 1,
+      explain:
+        "0.429 s sequential against 0.630 s threaded. The same benchmark on an I/O-bound task (time.sleep) gave 2.00×, because waiting releases the GIL. Hence the rule: threads for waiting, processes for computing. Reaching for threading to speed up computation is the misconception this measurement exists to kill.",
+    },
+    {
+      q: "With no synchronisation at all, three threads appending to a list. How many distinct orders appeared over 200 runs?",
+      options: [
+        "All 6 permutations, roughly evenly",
+        "Just 1 — always the start order, because the work was trivial enough to finish before the next thread began",
+        "3",
+        "It varied between runs of the experiment",
+      ],
+      answer: 1,
+      explain:
+        "That is the trap the entire problem set exists for. Unsynchronised ordering is not reliably random and therefore not reliably caught — it works on your laptop 200 times out of 200, then breaks when the machine is busier or the thread body grows. Adding sleeps produced 2 orders, both driven by the sleep durations rather than by program order.",
+    },
+    {
+      q: "Why prefer `with lock:` over `lock.acquire()` / `lock.release()`?",
+      options: [
+        "It is faster",
+        "It releases the lock even if the code between raises — a bare pair leaks the lock permanently and every later acquirer blocks forever",
+        "It allows re-entrancy",
+        "It is required for Condition objects",
+      ],
+      answer: 1,
+      explain:
+        "A leaked lock is a deadlock that looks like a hang with no obvious cause, and the exception that caused it may have been logged and forgotten far away. The context manager makes the release unconditional. The same argument applies to Condition and Semaphore, both of which support `with`.",
+    },
+  ]}
+/>
+
+## Recall card
+
+- **Every LC 1114–1226 problem is "make threads take turns".** None is about speed; threads make
+  them slower.
+- **`Semaphore(0)` is the default answer** for "B waits for A". Chain them for an order, ring them
+  for a cycle.
+- **A `Lock` cannot order anything** — it gives mutual exclusion. *A lock protects state; a
+  semaphore-at-zero communicates an event.*
+- **Exactly one gate starts open.** All-zero deadlocks; `first()` must wait on nothing.
+- **Ping-pong needs two semaphores.** One shared semaphore gave `fffbbb` on **200 of 200** runs —
+  deterministically wrong, which is worse than flaky.
+- **`Event` is a latch, `Semaphore` counts.** An `Event` lets every waiter through forever, so it
+  destroys alternation.
+- **`counter += 1` needs a lock** — but on CPython 3.14.4 it lost **nothing** across 8 threads ×
+  1 M. The visible failure needed a yield between read and write: **59,910 lost of 80,000**.
+- **Absence of an observed race is not thread safety.** The window widens under load, on other
+  hardware, or when a line is added inside it.
+- **Unsynchronised order is not random** — it matched start order 200/200 with trivial work.
+- **GIL: CPU threading measured 0.68× (slower); I/O threading 2.00×.** Threads for waiting,
+  processes for computing.
+- **Always `with lock:`** — a leaked lock is a hang with no visible cause.
+- **Test with repetitions and a timeout**, and say out loud that tests cannot prove a race absent.

@@ -1,0 +1,620 @@
+---
+title: Design Rate Limiter and Hit Counter
+description: Counting events inside a moving time window — the deque of timestamps, the bucketed fixed-memory version, and the token bucket that real rate limiters use.
+sidebar:
+  order: 6
+patterns:
+  - design-trackers-and-feeds
+  - simulation-and-stateful-iteration
+difficulty: medium
+prereqs:
+  - design-trackers-and-feeds
+  - queues-and-deques
+---
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import ArrayStepper from "../../../../components/viz/ArrayStepper.tsx";
+import ProblemLadder from "../../../../components/dsa/ProblemLadder.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+"How many requests has this user made in the last minute, and should I allow the next
+one?" is one of the most common design-round questions that is genuinely about a data
+structure rather than about architecture. It has three answers of increasing quality, and
+the interview is usually a walk up that ladder.
+
+## The cue
+
+:::tip[You are looking at a time-window counter when...]
+- The question counts **events inside a moving window** — requests per minute, hits in the
+  last 300 seconds, logins in the last hour. LC 933, LC 362.
+- The phrase is **"rate limit"**, **"throttle"**, or **"how many in the last N"**.
+- Something must be **allowed or rejected based on recent history**, which is the same
+  counter plus a comparison.
+- The follow-up **"what if there are millions of events per second?"** arrives — that is the
+  question asking you to move from per-event storage to bucketed storage.
+- Events arrive with **non-decreasing timestamps**, which is what makes a deque enough and
+  a sorted structure unnecessary.
+:::
+
+**When it is the wrong tool.** If the window is over a *count* rather than a *time* — "the
+last 10 values" — that is a fixed-size deque with `maxlen`, not an age test. If you need the
+maximum or median inside the window rather than the count, it is
+[monotonic deque](../../phase-05-patterns-arrays-and-strings/monotonic-stack/) or
+[two heaps](../../phase-06-patterns-search-and-selection/two-heaps-and-running-median/). And
+if timestamps can arrive **out of order**, the deque's invariant breaks and you need a sorted
+structure or a bucketed design.
+
+## Visual intuition
+
+Every other window on this site shrinks because it grew too large or because a running sum
+crossed a threshold. This one shrinks because entries **got old** — a different eviction
+rule, and the whole idea of the page:
+
+<ArrayStepper
+  client:visible
+  algo="timestamp-window"
+  values={[1, 3, 6, 8, 11]}
+  k={5}
+  title="The left edge moves because entries expire, not because the window grew"
+  lib="LC 933 · O(1) amortised"
+  desc="The new event is admitted unconditionally — it is always inside its own window — so all the work happens at the far end. Watch steps 3, 4 and 5: the front lands exactly on the cutoff each time, and it survives, because the window is inclusive. That single boundary is the difference between a correct counter and one that is off by one on every call."
+/>
+
+## Design 1 — a deque of timestamps
+
+```python title="recent_counter.py" showLineNumbers{1}
+from collections import deque
+
+
+class RecentCounter:
+    """LC 933: count pings in the inclusive window [t - 3000, t]."""
+
+    def __init__(self, window=3000):
+        self.window = window
+        self.q = deque()
+
+    def ping(self, t):
+        self.q.append(t)                      # always admit: t is in its own window
+        while self.q[0] < t - self.window:    # STRICT <, because the window is inclusive
+            self.q.popleft()                  # expired by AGE, not by count
+        return len(self.q)
+
+
+c = RecentCounter(window=5)
+print([c.ping(t) for t in [1, 3, 6, 8, 11]])   # expect [1, 2, 3, 3, 3]
+```
+
+$O(1)$ **amortised** per `ping` — each timestamp is appended once and removed at most once,
+so `n` pings do $O(n)$ work in total. A single `ping` after a long idle gap is $O(n)$,
+because it drains everything at once. **Space is $O(\text{events in the window})$**, which is
+the weakness the next design fixes.
+
+:::caution[The strict `<` is the whole correctness argument]
+The window `[t - W, t]` is **inclusive at both ends**, so an entry expires only when it is
+*strictly* below the cutoff. Written with `<=`, a timestamp sitting exactly on the cutoff is
+discarded and every subsequent answer is one too small.
+
+On `[1, 3, 6, 8, 11]` with `W = 5` the correct counts are `[1, 2, 3, 3, 3]` and the `<=`
+version gives `[1, 2, 2, 2, 2]` — verified. They agree on the first two calls and diverge on
+the last three, which is exactly the shape that lets this ship: it passes a two-element test.
+:::
+
+## Design 2 — bucket by time, for fixed memory
+
+The follow-up is always "what if there are millions of events per second?" A deque of
+individual timestamps is $O(\text{events})$ space, which is unbounded when traffic is.
+
+Collapse each time unit into **one slot**:
+
+```python title="hit_counter.py" showLineNumbers{1}
+class HitCounter:
+    """LC 362: hits in the last `window` seconds, in O(window) space forever."""
+
+    def __init__(self, window=300):
+        self.window = window
+        self.slots = [(0, 0)] * window        # (timestamp, count) per slot
+
+    def hit(self, t):
+        i = t % self.window
+        ts, count = self.slots[i]
+        self.slots[i] = (t, 1) if ts != t else (t, count + 1)
+
+    def get_hits(self, t):
+        return sum(c for ts, c in self.slots if t - ts < self.window)
+
+
+h = HitCounter(window=5)
+for t in [1, 2, 5, 8, 9]:
+    h.hit(t)
+print(h.get_hits(9))       # expect 3   (t = 5, 8, 9 are within 5 of t = 9)
+```
+
+**$O(1)$ time and $O(1)$ space regardless of traffic** — the slot array is a fixed size, so
+four hits and four billion hits cost the same memory. `get_hits` is $O(\text{window})$, which
+is a constant.
+
+The stale-slot check is the trick: `slots[t % window]` is reused every `window` seconds, so
+the stored timestamp says whether the count belongs to *this* pass or an old one. Overwrite
+on a mismatch, increment on a match.
+
+:::note[This is how real rate limiters are built]
+Fixed memory per key is not an optimisation here, it is the requirement. A limiter tracking a
+million users cannot store per-user event lists of unbounded length, so production systems
+bucket — and the granularity of the bucket is exactly the accuracy you trade away.
+:::
+
+## Design 3 — the token bucket
+
+Buckets fix memory but keep a **boundary artefact**: a fixed one-minute window that resets on
+the minute allows 100 requests at 11:59:59 and 100 more at 12:00:01 — double the intended
+rate across a two-second span.
+
+The token bucket removes that by never resetting:
+
+```python title="token_bucket.py" showLineNumbers{1}
+class TokenBucket:
+    """`rate` tokens per second, up to `capacity` saved up. O(1) state per key."""
+
+    def __init__(self, rate, capacity):
+        self.rate = rate
+        self.capacity = capacity
+        self.tokens = float(capacity)
+        self.last = 0.0
+
+    def allow(self, now, cost=1.0):
+        self.tokens = min(self.capacity, self.tokens + (now - self.last) * self.rate)
+        self.last = now
+        if self.tokens >= cost:
+            self.tokens -= cost
+            return True
+        return False                          # throttled
+
+
+b = TokenBucket(rate=1, capacity=2)
+print([b.allow(t) for t in [0, 0, 0, 1, 2]])   # expect [True, True, False, True, True]
+```
+
+**Two floats of state per key**, no event history at all, and the refill is computed lazily
+from elapsed time rather than by a timer. `capacity` is the burst allowance and `rate` is the
+sustained limit — being able to name those two knobs separately is most of what the follow-up
+is checking.
+
+## Dry run
+
+### The deque, with the boundary exposed
+
+`[1, 3, 6, 8, 11]`, window 5. The cutoff column is `t - 5`.
+
+| Call | Cutoff | Dropped | Deque after | Returns |
+| --- | --- | --- | --- | --- |
+| `ping(1)` | -4 | -- | `[1]` | `1` |
+| `ping(3)` | -2 | -- | `[1, 3]` | `2` |
+| `ping(6)` | **1** | -- | `[1, 3, 6]` | **`3`** |
+| `ping(8)` | **3** | `[1]` | `[3, 6, 8]` | `3` |
+| `ping(11)` | **6** | `[3]` | `[6, 8, 11]` | `3` |
+
+**The front sits exactly on the cutoff at all three of the last calls** — 1 against cutoff 1,
+then 3 against 3, then 6 against 6. Each time it survives, because the window includes its
+own lower bound. Run the same input with `<=`:
+
+| Version | Counts |
+| --- | --- |
+| `q[0] < t - W` (correct) | `[1, 2, 3, 3, 3]` |
+| `q[0] <= t - W` (wrong) | `[1, 2, 2, 2, 2]` |
+
+Verified both ways. They agree on the first two calls, so a small test passes and the bug
+ships.
+
+**`ping(8)` is also the amortised argument in one row**: it drops one entry, and nothing
+bounds how many a single call may drop. Five calls performed five appends and two removals
+here — each timestamp enters once and leaves at most once, so the total is linear even though
+one call can be $O(n)$.
+
+### The buckets, and what the reuse looks like
+
+Window 5, so five slots indexed `t % 5`. Hits at `t = 1, 2, 5, 8, 9`:
+
+| Hit | Slot | Slots after `(ts, count)` | `get_hits(t)` |
+| --- | --- | --- | --- |
+| `t=1` | 1 | `[(0,0), (1,1), (0,0), (0,0), (0,0)]` | 1 |
+| `t=2` | 2 | `[(0,0), (1,1), (2,1), (0,0), (0,0)]` | 2 |
+| `t=5` | **0** | `[(5,1), (1,1), (2,1), (0,0), (0,0)]` | 3 |
+| `t=8` | 3 | `[(5,1), (1,1), (2,1), (8,1), (0,0)]` | **2** |
+| `t=9` | 4 | `[(5,1), (1,1), (2,1), (8,1), (9,1)]` | **3** |
+
+Two things worth reading carefully:
+
+- **Slots are never cleared.** At `t = 8` the entries for `t = 1` and `t = 2` are still
+  physically there — `get_hits` simply does not count them, because `8 - 1 = 7` is not less
+  than 5. Clearing on expiry would need a timer; the timestamp check makes it lazy and free.
+- **`t = 5` lands in slot 0, and `t = 9` in slot 4** — the array wraps with no special case.
+  When `t = 10` arrives it will overwrite slot 0's stale `(5, 1)`, because `5 != 10`.
+
+**Memory is exactly five pairs, forever.** That is the entire reason this design exists, and
+the answer to the millions-per-second follow-up.
+
+### Where the fixed window is wrong
+
+A one-minute counter that resets on the minute, limit 100:
+
+| Time | Requests | Allowed? |
+| --- | --- | --- |
+| 11:59:59 | 100 | yes — the 11:59 window was empty |
+| 12:00:01 | 100 | yes — the 12:00 window is empty |
+
+**200 requests in two seconds against a limit of 100 per minute.** The bucketed design above
+does *not* have this problem, because its window slides — `get_hits(t)` measures back from
+`t`, not from a wall-clock boundary. But a naive "reset the counter every minute" limiter
+does, and naming this artefact unprompted is the thing that distinguishes a good answer here.
+
+## Complexity
+
+| Design | `record` | `query` | Space | Accuracy |
+| --- | --- | --- | --- | --- |
+| Deque of timestamps | $O(1)$ **amortised**, $O(n)$ worst | $O(1)$ | **$O(\text{events in window})$** | exact |
+| Sorted list + binary search | $O(n)$ insert | $O(\log n)$ | $O(\text{events})$ | exact, and strictly worse — the deque needs no search |
+| **Bucketed by time unit** | $O(1)$ | $O(W)$ = $O(1)$ | **$O(W)$ fixed** | exact to one bucket |
+| Fixed window counter | $O(1)$ | $O(1)$ | $O(1)$ | **2x burst at the boundary** |
+| **Token bucket** | $O(1)$ | $O(1)$ | **$O(1)$** — two floats | smooth, with an explicit burst allowance |
+| Sliding-window log per key, `n` keys | $O(1)$ am. | $O(1)$ | $O(nk)$ | exact, and the one that runs out of memory |
+
+Three things to be precise about:
+
+- **The deque is $O(1)$ amortised, not worst case.** Each timestamp enters once and leaves at
+  most once, so `n` calls do $O(n)$ total work — but a single call after an idle gap drains
+  everything and is $O(n)$. Say "amortised".
+- **The bucketed version's $O(W)$ query is a constant**, because `W` is fixed by the problem
+  (300 slots for LC 362). Quoting it as $O(n)$ confuses the window width with the event count.
+- **Accuracy is the axis being traded, not time.** All five designs are $O(1)$-ish per
+  operation. What differs is memory and how wrong the answer is allowed to be — which is why
+  the follow-up is about traffic volume, not about speed.
+
+## The variant map
+
+| Variant | The change | Canonical problem |
+| --- | --- | --- |
+| **Count pings in the last W** | Deque of timestamps | 933 Number of Recent Calls |
+| **Hits in the last 300s, huge traffic** | `W` fixed slots of `(timestamp, count)` | 362 Design Hit Counter |
+| **Allow / reject rather than count** | The same counter plus `count < limit` | rate-limiter design rounds |
+| **Per-user limits** | One counter *per key*, which is why fixed memory matters | production limiters |
+| **Smooth limiting, no boundary burst** | Token bucket: two floats, lazy refill | production limiters |
+| **Bursty allowance** | Token bucket with `capacity > rate` | -- |
+| **Leaky bucket** | Same state, framed as draining at a constant rate | -- |
+| **Average of the last k *values*** | `deque(maxlen=k)` plus a running sum — a count window, not a time window | 346 Moving Average |
+| **Max in the window** | [Monotonic deque](../../phase-05-patterns-arrays-and-strings/monotonic-stack/), not a plain one | 239 |
+| **Median in the window** | [Two heaps with lazy deletion](../../phase-06-patterns-search-and-selection/two-heaps-and-running-median/) | 480 |
+| **Out-of-order timestamps** | The deque invariant breaks — bucket, or use a sorted structure | -- |
+| **Distributed across servers** | Centralised store (Redis) with atomic increments, or per-server limits at `total / servers` | design rounds |
+
+:::note[The three-step ladder is the interview]
+Almost every version of this question walks the same path: deque of timestamps -> "what about
+millions of events?" -> buckets -> "what about the boundary burst?" -> token bucket.
+
+Offering all three unprompted is worse than walking them, because the interviewer wants to
+see you *respond* to each constraint. But knowing where the ladder goes means you never get
+stuck on a rung.
+:::
+
+## Pitfalls
+
+- **`<=` instead of `<` in the expiry test.** The window is inclusive, so an entry expires
+  only when *strictly* below the cutoff. Verified: `[1,3,6,8,11]` with `W=5` gives
+  `[1,2,3,3,3]` correctly and `[1,2,2,2,2]` with `<=`. The two agree on the first two calls,
+  so it survives a small test.
+- **Testing the new event before admitting it.** A new timestamp is always inside its own
+  window. Testing it wastes a comparison and invites an off-by-one; admit first, then expire
+  from the other end.
+- **Popping from the wrong end.** Expired entries are the *oldest*, so `popleft`. `pop()`
+  discards the newest and the counter drifts upward forever.
+- **Claiming $O(1)$ worst case for the deque.** It is $O(1)$ amortised; one call after an idle
+  gap is $O(n)$.
+- **Using `list.pop(0)` instead of a deque.** $O(n)$ per removal turns the whole thing
+  quadratic — measured elsewhere in this course at 546x slower than `deque` at `n = 50{,}000`.
+- **Clearing bucket slots on expiry.** Unnecessary and it needs a timer. The stored timestamp
+  makes staleness detectable lazily; a stale slot is harmless because `get_hits` filters it out.
+- **Forgetting the stale-slot check in `hit`.** `slots[i] = (t, count + 1)` without comparing
+  the stored timestamp adds this second's hit to a count from `W` seconds ago.
+- **A fixed window that resets on the boundary.** Allows 2x the limit across the reset instant
+  — 100 requests at 11:59:59 plus 100 at 12:00:01. The sliding bucket version does not have
+  this; a naive counter does.
+- **Assuming timestamps arrive in order.** The deque relies on it. Out-of-order events need a
+  bucketed or sorted design, and it is worth asking rather than assuming.
+- **Storing a per-key event log in a system with many keys.** $O(nk)$ memory is the design that
+  falls over in production, and it is what the bucketed and token-bucket answers exist to avoid.
+
+## Practice
+
+<ProblemLadder pattern={["design-trackers-and-feeds", "simulation-and-stateful-iteration"]} />
+
+## Try it yourself
+
+### Drill 1 — the inclusive boundary
+
+<DataCampExercise
+  lang="python"
+  hint={`The window is [t - W, t] inclusive, so an entry expires only when it is STRICTLY below t - W. Admit the new timestamp first, then evict from the left.`}
+  code={`from collections import deque
+
+
+def counts(stamps, window):
+    # TODO: return the count after each ping, using an inclusive window.
+    pass
+
+
+def counts_wrong(stamps, window):
+    q = deque()
+    out = []
+    for t in stamps:
+        q.append(t)
+        while q and q[0] <= t - window:      # <= drops the boundary entry
+            q.popleft()
+        out.append(len(q))
+    return out
+
+
+print(counts([1, 3, 6, 8, 11], 5))
+print(counts_wrong([1, 3, 6, 8, 11], 5))
+# expect [1, 2, 3, 3, 3]
+# expect [1, 2, 2, 2, 2]`}
+  solution={`from collections import deque
+
+
+def counts(stamps, window):
+    q = deque()
+    out = []
+    for t in stamps:
+        q.append(t)                          # always admit
+        while q and q[0] < t - window:       # STRICT <
+            q.popleft()
+        out.append(len(q))
+    return out
+
+
+def counts_wrong(stamps, window):
+    q = deque()
+    out = []
+    for t in stamps:
+        q.append(t)
+        while q and q[0] <= t - window:
+            q.popleft()
+        out.append(len(q))
+    return out
+
+
+print(counts([1, 3, 6, 8, 11], 5))
+print(counts_wrong([1, 3, 6, 8, 11], 5))`}
+  sct={`test_output_contains("[1, 2, 3, 3, 3]")
+success_msg("The two versions agree on the first two calls and differ on the last three, because the front lands exactly on the cutoff each time. That is why the wrong operator survives a small test -- you need an input where a timestamp sits on the boundary.")`}
+  height={560}
+/>
+
+### Drill 2 — bucketed, for fixed memory
+
+<DataCampExercise
+  hint={`Slot t % window holds (timestamp, count). On a hit, overwrite the slot if its stored timestamp is stale, otherwise increment. On a query, sum only the slots whose timestamp is within the window.`}
+  lang="python"
+  code={`class HitCounter:
+    def __init__(self, window=5):
+        self.window = window
+        self.slots = [(0, 0)] * window
+
+    def hit(self, t):
+        # TODO: overwrite the slot if stale, otherwise increment.
+        pass
+
+    def get_hits(self, t):
+        # TODO: sum the counts of slots still inside the window.
+        pass
+
+
+h = HitCounter(5)
+for t in [1, 2, 5, 8, 9]:
+    h.hit(t)
+print([h.get_hits(9), h.get_hits(12), h.get_hits(20)])
+# expect [3, 2, 0]`}
+  solution={`class HitCounter:
+    def __init__(self, window=5):
+        self.window = window
+        self.slots = [(0, 0)] * window
+
+    def hit(self, t):
+        i = t % self.window
+        ts, count = self.slots[i]
+        self.slots[i] = (t, 1) if ts != t else (t, count + 1)
+
+    def get_hits(self, t):
+        return sum(c for ts, c in self.slots if t - ts < self.window)
+
+
+h = HitCounter(5)
+for t in [1, 2, 5, 8, 9]:
+    h.hit(t)
+print([h.get_hits(9), h.get_hits(12), h.get_hits(20)])`}
+  sct={`test_output_contains("[3, 2, 0]")
+success_msg("Memory is five pairs whether you record five hits or five billion. Read the middle answer: get_hits(12) is 2, because 12 - 8 and 12 - 9 are both under 5 while the older three have aged out. And get_hits(20) is 0 while every slot still physically holds an old (timestamp, count) -- the stored timestamp is what makes expiry lazy and free, with no clearing pass at all.")`}
+  height={540}
+/>
+
+### Drill 3 — the token bucket
+
+<DataCampExercise
+  lang="python"
+  hint={`Refill lazily: tokens += elapsed * rate, capped at capacity. Then spend one token if there is one. rate is the sustained limit; capacity is the burst allowance.`}
+  code={`class TokenBucket:
+    def __init__(self, rate, capacity):
+        self.rate = rate
+        self.capacity = capacity
+        self.tokens = float(capacity)
+        self.last = 0.0
+
+    def allow(self, now, cost=1.0):
+        # TODO: refill from elapsed time (capped), then spend if possible.
+        pass
+
+
+b = TokenBucket(rate=1, capacity=2)
+print([b.allow(t) for t in [0, 0, 0, 1, 2]])
+# expect [True, True, False, True, True]`}
+  solution={`class TokenBucket:
+    def __init__(self, rate, capacity):
+        self.rate = rate
+        self.capacity = capacity
+        self.tokens = float(capacity)
+        self.last = 0.0
+
+    def allow(self, now, cost=1.0):
+        self.tokens = min(self.capacity, self.tokens + (now - self.last) * self.rate)
+        self.last = now
+        if self.tokens >= cost:
+            self.tokens -= cost
+            return True
+        return False
+
+
+b = TokenBucket(rate=1, capacity=2)
+print([b.allow(t) for t in [0, 0, 0, 1, 2]])`}
+  sct={`test_output_contains("[True, True, False, True, True]")
+success_msg("Two floats of state and no event history at all. The first two calls spend the saved-up burst, the third is throttled because no time has passed to refill, and the next two each get exactly one new token per second. capacity is the burst you allow; rate is the average you enforce.")`}
+  height={520}
+/>
+
+## Interview follow-ups
+
+| They ask | What they're checking | The answer |
+| --- | --- | --- |
+| "Count requests in the last minute." | The base design | A `deque` of timestamps: admit, then `popleft` while the front is strictly below `t - W`. $O(1)$ amortised, $O(\text{events in window})$ space |
+| "Why strict `<` and not `<=`?" | Boundary precision | The window `[t-W, t]` is inclusive, so an entry expires only when strictly older. On `[1,3,6,8,11]` with `W=5` the correct answers are `[1,2,3,3,3]`; `<=` gives `[1,2,2,2,2]` and agrees on the first two calls |
+| "Is it $O(1)$?" | Amortised versus worst case | $O(1)$ **amortised** — each timestamp enters once and leaves once. A single call after an idle gap drains the deque and is $O(n)$ |
+| "Millions of events per second." | Bounded memory | Bucket by time unit: `W` slots of `(timestamp, count)` keyed `t % W`. $O(1)$ time and **$O(1)$ space at any traffic level**, exact to one bucket |
+| "Why store a timestamp in each slot?" | The reuse problem | Slots recycle every `W` units, so the timestamp says whether the count belongs to this pass. Overwrite on a mismatch; without it you add today's hit to a count from `W` seconds ago |
+| "Do you need to clear expired slots?" | Whether you see the lazy option | No — a stale slot is filtered out by the timestamp check at query time. Clearing needs a timer and buys nothing |
+| "A user gets 100 per minute. Any problem with resetting on the minute?" | The boundary artefact | Yes: 100 at 11:59:59 plus 100 at 12:00:01 is 200 in two seconds. Fix by sliding the window (the bucketed version already does) or by using a token bucket, which never resets |
+| "Design it for a million users." | Per-key cost | The per-key state is what matters, so the deque is out. Token bucket: two floats per key, refilled lazily from elapsed time. That is why production limiters use it |
+| "What are the two knobs on a token bucket?" | Whether you can name the trade | `rate` is the sustained limit; `capacity` is the burst allowance. `capacity > rate` deliberately permits a short spike |
+| "Timestamps arrive out of order." | The unstated assumption | The deque relies on non-decreasing arrival and breaks. Bucket instead, or use a sorted structure — and ask about ordering before assuming it |
+| "Now it runs on ten servers." | Distributed reality | Either a shared store with atomic increments (Redis `INCR` plus expiry), or per-server limits at `total / servers`, accepting that a skewed load under-uses the budget. Naming that trade is the answer |
+
+## Self-check
+
+<Quiz
+  questions={[
+    {
+      q: "Why is the expiry test `q[0] < t - W` rather than `q[0] <= t - W`?",
+      options: [
+        "To avoid popping from an empty deque",
+        "The window [t-W, t] is inclusive, so an entry expires only when strictly older than the cutoff",
+        "Because timestamps can repeat",
+        "The two are equivalent for integer timestamps",
+      ],
+      answer: 1,
+      explain:
+        "Verified on [1, 3, 6, 8, 11] with W = 5: the correct counts are [1, 2, 3, 3, 3] and the `<=` version gives [1, 2, 2, 2, 2]. The front lands exactly on the cutoff at three of the five calls. The two versions agree on the first two calls, which is precisely why the wrong operator passes a small test and ships.",
+    },
+    {
+      q: "Why is the incoming timestamp admitted before any expiry check?",
+      options: [
+        "To keep the deque non-empty so q[0] is safe",
+        "A new event is always inside its own window, so testing it is wasted work and invites an off-by-one",
+        "Because the deque must stay sorted",
+        "It is a style choice with no consequence",
+      ],
+      answer: 1,
+      explain:
+        "t is trivially within [t - W, t], so there is no condition under which it should be rejected. All the interesting work is at the other end. Keeping the deque non-empty is a real side benefit, but it is not the reason -- and if it were, a guard would be the fix rather than reordering.",
+    },
+    {
+      q: "Is the deque-of-timestamps design O(1) per call?",
+      options: [
+        "Yes, O(1) worst case -- deque operations are constant",
+        "O(1) amortised only: each timestamp enters once and leaves at most once, but one call after an idle gap can drain the whole deque and is O(n)",
+        "O(log n), since the deque stays sorted",
+        "O(W), the window width",
+      ],
+      answer: 1,
+      explain:
+        "The same accounting as the two-stack queue: n calls perform at most n appends and n removals, so the total is linear, while an individual call is unbounded. In the traced run, ping(8) dropped one entry and nothing caps how many a single call may drop. Say \"amortised\" -- interviewers ask this specifically.",
+    },
+    {
+      q: "The bucketed hit counter never clears expired slots. Is that a bug?",
+      options: [
+        "Yes -- stale counts inflate the answer",
+        "No -- get_hits filters by the stored timestamp, so a stale slot contributes nothing. Clearing would need a timer and buy nothing",
+        "Yes, but only when the window is large",
+        "No, because slots are cleared on the next hit",
+      ],
+      answer: 1,
+      explain:
+        "In the trace, get_hits(20) returns 0 while every slot still physically holds an old (timestamp, count) pair. Laziness is the design: expiry is detected at read time from the stored timestamp, so there is no background work at all. Slots are overwritten on a *hit* to that slot, which is a different thing from being cleared on expiry.",
+    },
+    {
+      q: "Why does each bucket store a timestamp alongside its count?",
+      options: [
+        "For debugging",
+        "Slots recycle every W time units, so the timestamp says whether the count belongs to this pass or to an earlier one",
+        "To allow out-of-order events",
+        "To make get_hits O(1)",
+        ],
+      answer: 1,
+      explain:
+        "Slot t % W is reused every W units. Without the comparison, `slots[i] = (t, count + 1)` would add this second's hit to a count recorded W seconds ago, and the answer would drift upward permanently. Overwrite when the stored timestamp differs; increment only when it matches.",
+    },
+    {
+      q: "A limiter allows 100 requests per minute and resets its counter on each minute boundary. What is wrong?",
+      options: [
+        "Nothing -- that is the definition of 100 per minute",
+        "100 requests at 11:59:59 plus 100 at 12:00:01 is 200 in two seconds -- twice the intended rate across the boundary",
+        "It uses too much memory",
+        "It cannot handle bursts at all",
+      ],
+      answer: 1,
+      explain:
+        "The boundary artefact is the standard follow-up on this problem. The bucketed sliding design does not have it, because get_hits(t) measures backwards from t rather than from a wall-clock boundary. A token bucket also avoids it, by never resetting -- it refills continuously instead.",
+    },
+    {
+      q: "You must rate-limit a million users. Which design, and why?",
+      options: [
+        "A deque per user -- it is exact",
+        "Token bucket: two floats per key with lazy refill, so per-key state is O(1) regardless of traffic",
+        "One shared deque for all users",
+        "Bucket by time with 300 slots per user",
+      ],
+      answer: 1,
+      explain:
+        "Per-key cost is the binding constraint once there are many keys. A deque per user is O(events) each; 300 slots per user is O(300) each, which is bounded but still 300 million pairs. The token bucket carries two floats and computes the refill from elapsed time, which is why production limiters use it.",
+    },
+    {
+      q: "What do `rate` and `capacity` control in a token bucket?",
+      options: [
+        "They are two names for the same limit",
+        "`rate` is the sustained average allowed; `capacity` is the burst that can be saved up and spent at once",
+        "`rate` is per second and `capacity` is per minute",
+        "`capacity` is the queue length for throttled requests",
+      ],
+      answer: 1,
+      explain:
+        "Setting capacity above rate is a deliberate choice to tolerate spikes while still enforcing the long-run average. In the drill, rate=1 and capacity=2 allow two immediate requests, throttle the third, then permit one per second thereafter -- exactly [True, True, False, True, True]. Being able to name the two knobs separately is what the follow-up is checking.",
+    },
+  ]}
+/>
+
+## Recall card
+
+- **Window counter = a deque of timestamps.** Admit the new event unconditionally, then
+  `popleft` while the front is **strictly** below `t - W`.
+- **Strict `<`, because the window is inclusive.** `[1,3,6,8,11]` with `W=5` gives
+  `[1,2,3,3,3]`; `<=` gives `[1,2,2,2,2]` and agrees on the first two calls.
+- **Admit before expiring** -- a new event is always inside its own window.
+- **`popleft`, not `pop`** -- the expired entries are the oldest.
+- **$O(1)$ amortised, $O(n)$ worst case.** Each timestamp enters once and leaves once; one
+  call after an idle gap drains everything.
+- **Millions of events -> bucket by time**: `W` slots of `(timestamp, count)` keyed `t % W`.
+  $O(1)$ time, **$O(1)$ space at any traffic**.
+- **The stored timestamp is what makes slot reuse safe** -- overwrite on a mismatch, increment
+  on a match. **Never clear slots**; expiry is filtered lazily at read time.
+- **A window that resets on the boundary allows 2x** -- 100 at 11:59:59 plus 100 at 12:00:01.
+- **Many keys -> token bucket**: two floats per key, lazy refill from elapsed time. `rate` is
+  the sustained limit, `capacity` the burst allowance.
+- **The deque assumes non-decreasing timestamps.** Out-of-order events need a bucketed or
+  sorted design -- ask.
+- **The ladder is the interview**: deque -> "millions?" -> buckets -> "boundary burst?" ->
+  token bucket.

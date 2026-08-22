@@ -140,6 +140,12 @@ export default defineConfig({
           },
         },
         {
+          label: "Mathematics for Machine Learning",
+          autogenerate: {
+            directory: "Mathematics for Machine Learning",
+          },
+        },
+        {
           label: "Machine Learning",
           autogenerate: {
             directory: "Machine Learning",
@@ -150,6 +156,188 @@ export default defineConfig({
           autogenerate: {
             directory: "Deep Learning",
           },
+        },
+        {
+          label: "DSA with Python",
+          collapsed: true,
+          items: [
+            {
+              label: "Start Here",
+              collapsed: true,
+              badge: { text: "8", variant: "note" },
+              items: [
+                {
+                  label: "00 · Start Here",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-00-Start-Here" },
+                },
+              ],
+            },
+            {
+              label: "Foundations",
+              collapsed: true,
+              badge: { text: "29", variant: "note" },
+              items: [
+                {
+                  label: "01 · Foundations",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-01-Foundations" },
+                },
+                {
+                  label: "02 · Python for DSA & CP",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-02-Python-for-DSA-and-CP" },
+                },
+                {
+                  label: "03 · Core Data Structures",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-03-Core-Data-Structures" },
+                },
+                {
+                  label: "04 · Sorting & Searching",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-04-Sorting-and-Searching" },
+                },
+              ],
+            },
+            {
+              label: "Interview Patterns",
+              collapsed: true,
+              badge: { text: "77", variant: "note" },
+              items: [
+                {
+                  label: "05 · Arrays & Strings",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-05-Patterns-Arrays-and-Strings" },
+                },
+                {
+                  label: "06 · Search & Selection",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-06-Patterns-Search-and-Selection" },
+                },
+                {
+                  label: "07 · Intervals & Greedy",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-07-Patterns-Intervals-and-Greedy" },
+                },
+                {
+                  label: "08 · Linked Lists",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-08-Patterns-Linked-Lists" },
+                },
+                {
+                  label: "09 · Trees",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-09-Patterns-Trees" },
+                },
+                {
+                  label: "10 · Graphs",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-10-Patterns-Graphs" },
+                },
+                {
+                  label: "11 · Recursion & Backtracking",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-11-Recursion-and-Backtracking" },
+                },
+                {
+                  label: "12 · Dynamic Programming",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-12-Dynamic-Programming" },
+                },
+                {
+                  label: "13 · Bit Manipulation & Math",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-13-Bit-Manipulation-and-Math" },
+                },
+                {
+                  label: "14 · Design Problems",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-14-Design-Problems" },
+                },
+                {
+                  label: "15 · Simulation & Implementation",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-15-Simulation-and-Implementation" },
+                },
+              ],
+            },
+            {
+              label: "Advanced & Competitive",
+              collapsed: true,
+              badge: { text: "8", variant: "note" },
+              items: [
+                {
+                  label: "16 · Advanced Graph Algorithms",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-16-Advanced-Graph-Algorithms" },
+                },
+                {
+                  label: "17 · Advanced CP Topics",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-17-Advanced-CP-Topics" },
+                },
+              ],
+            },
+            {
+              label: "Reference & Strategy",
+              collapsed: true,
+              badge: { text: "14", variant: "note" },
+              items: [
+                {
+                  label: "18 · Templates & Cheatsheets",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-18-Templates-and-Cheatsheets" },
+                },
+                {
+                  label: "19 · Interview & Contest Strategy",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-19-Interview-and-Contest-Strategy" },
+                },
+                {
+                  label: "20 · Problem Sets",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-20-Problem-Sets" },
+                },
+              ],
+            },
+            {
+              label: "Company Guides",
+              collapsed: true,
+              badge: { text: "10", variant: "note" },
+              items: [
+                {
+                  label: "21 · Company Guides",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-21-Company-Guides" },
+                },
+              ],
+            },
+            {
+              label: "Low-Level Design",
+              collapsed: true,
+              badge: { text: "5", variant: "note" },
+              items: [
+                {
+                  label: "22 · Low-Level Design (OOD)",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-22-Low-Level-Design" },
+                },
+              ],
+            },
+            {
+              label: "Concurrency",
+              collapsed: true,
+              badge: { text: "2", variant: "note" },
+              items: [
+                {
+                  label: "23 · Concurrency",
+                  collapsed: true,
+                  autogenerate: { directory: "DSA with Python/Phase-23-Concurrency" },
+                },
+              ],
+            },
+          ],
         },
         {
           label: "Software Testing and Quality",
@@ -171,9 +359,21 @@ export default defineConfig({
         },
       ],
       customCss: [
+        // KaTeX stylesheet — required so remark-math/rehype-katex formulas
+        // render with correct glyphs/spacing (fonts bundled by Vite from the pkg).
+        "katex/dist/katex.min.css",
         "./src/styles/global.css",
         "./src/styles/theme.css",
         "./src/styles/viz.css",
+        // Step-through DSA visualizations (src/components/viz/*). Extends the
+        // .pch-viz chassis above, so it must load after viz.css.
+        "./src/styles/dsa-viz.css",
+        // Maths labs (src/components/viz/math/*): six extra tag pills plus the
+        // matrix/axis stage primitives. Extends the same .pch-viz__tag and
+        // .pch-vz__* chassis, so it must load after dsa-viz.css.
+        "./src/styles/math-viz.css",
+        // Problem ladders, sheet trackers and company boards (src/components/dsa/*).
+        "./src/styles/dsa-data.css",
         "./src/styles/landing.css",
         "./src/styles/poppins.css",
         "./src/styles/atkinson.css",

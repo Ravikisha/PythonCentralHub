@@ -5,6 +5,49 @@ sidebar:
   order: 134
 ---
 
+```mermaid title="an async semaphore limits concurrency without blocking a thread" desc="There is one thread, so a task waiting for a permit must not block -- it suspends, and the loop runs something else. That is the difference from a threading semaphore: the ceiling is the same, but waiting is free. The permit is released by leaving the async with block, including when the body raises."
+flowchart TD
+  A["async with sem:"] --> B{"a permit free?"}
+  B -->|yes| C["take it, run the body"]
+  B -->|no| D["SUSPEND -- the loop runs other tasks"]
+  D --> E["a permit is released"]
+  E --> C
+  C --> F["body awaits I/O"]
+  F --> G["leaving the block releases the permit"]
+  G --> H["even if the body raised"]
+  H --> I["a waiting task is resumed"]
+```
+
+:::note[Measured: the ceiling is exact, the speedup is not quite linear]
+Twelve jobs, each `await asyncio.sleep(0.05)`:
+
+| Limit | Peak in flight | Elapsed | Ideal |
+| --- | --- | --- | --- |
+| `Semaphore(2)` | **2** | 0.37 s | 0.30 s |
+| `Semaphore(4)` | **4** | 0.19 s | 0.15 s |
+| `Semaphore(12)` | **12** | 0.06 s | 0.05 s |
+
+The peak never exceeded the limit — the ceiling is a real guarantee, not an average. The elapsed
+times run slightly over the ideal because each wave has to be scheduled, and that overhead is a
+larger share of the total as the waves get shorter.
+
+**Use `asyncio.Semaphore`, not `threading.Semaphore`, in async code.** The threading version
+blocks the whole thread when it waits, which in an event loop means blocking *every* task,
+including the ones holding the permits you are waiting for — a deadlock rather than a slowdown.
+:::
+
+```mermaid title="an asyncio.Lock protects across awaits, which is the whole point" desc="Ordinary async code needs no lock, because control only changes hands at an await you can see. A lock is needed exactly when a critical section CONTAINS an await -- read, await, write -- because another task can run in that gap. The lock makes the whole section atomic with respect to other tasks."
+flowchart TD
+  A["task A: async with lock"] --> B["reads shared state"]
+  B --> C["await -- control goes to the loop"]
+  C --> D{"task B wants the lock"}
+  D --> E["B suspends; it does not enter"]
+  C --> F["A resumes, writes, leaves the block"]
+  F --> G["lock released"]
+  G --> H["B enters and runs the whole section"]
+  I["no await inside the section?"] --> J["you do not need a lock at all"]
+```
+
 ## Why async locks exist
 
 Even in a single-threaded event loop, tasks can interleave at `await` points.
@@ -21,6 +64,7 @@ So if a task:
 
 ```python title="async_lock.py" showLineNumbers{1}
 import asyncio
+import Quiz from "../../../../components/Quiz.astro";
 
 
 lock = asyncio.Lock()
@@ -65,6 +109,117 @@ asyncio.run(main())
 ```
 
 import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+```p5 title="A semaphore caps how many coroutines are inside at once" desc="Twelve jobs of 0.05 seconds each, run under three different permit counts. The ceiling was never exceeded in any run -- peak in flight was exactly the limit. What changes is how many waves the work takes, and the elapsed times run slightly over the ideal because every wave has to be scheduled." height="400"
+const RUNS = [
+  { cap: 2,  peak: 2,  el: 0.37, ideal: 0.30 },
+  { cap: 4,  peak: 4,  el: 0.19, ideal: 0.15 },
+  { cap: 12, peak: 12, el: 0.06, ideal: 0.05 },
+];
+const N = 12, JOB = 0.05;
+let ri = 0, t0 = 0;
+const CYCLE = 3400;
+function setup() { createCanvas(620, 400); textFont("monospace"); t0 = millis(); }
+function draw() {
+  background(13, 17, 23);
+  const el = (millis() - t0) % CYCLE;
+  if (el < 30) ri = Math.floor((millis() - t0) / CYCLE) % RUNS.length;
+  const r = RUNS[ri];
+  const span = Math.ceil(N / r.cap) * JOB;
+  const virt = (el / CYCLE) * (span * 1.15);
+
+  noStroke(); fill(200); textSize(12); textAlign(LEFT, TOP);
+  text("12 jobs, each  await asyncio.sleep(0.05)", 20, 14);
+  fill(88, 166, 255); textSize(22); text("asyncio.Semaphore(" + r.cap + ")", 20, 36);
+
+  const X = 90, W = 470, sec = W / (span * 1.15);
+  let inflight = 0;
+  for (let i = 0; i < N; i++) {
+    const wave = Math.floor(i / r.cap);
+    const s = wave * JOB, y = 78 + i * 19;
+    const active = virt >= s && virt < s + JOB;
+    if (active) inflight += 1;
+    fill(70, 78, 90); textSize(8); textAlign(RIGHT, CENTER); text("job " + i, X - 6, y + 7);
+    fill(24, 29, 36); rect(X, y, W, 14, 2);
+    const frac = Math.max(0, Math.min(1, (virt - s) / JOB));
+    if (frac > 0) {
+      fill(active ? color(140,210,160) : color(70, 110, 88));
+      rect(X + s * sec, y, JOB * sec * frac, 14, 2);
+    }
+  }
+  stroke(255); line(X + virt * sec, 72, X + virt * sec, 78 + N * 19); noStroke();
+
+  fill(150); textSize(11); textAlign(LEFT, TOP); text("permits in use", 20, 316);
+  for (let i = 0; i < r.cap && i < 12; i++) {
+    fill(i < inflight ? color(219,171,90) : color(34, 40, 48));
+    rect(120 + i * 22, 314, 17, 16, 3);
+  }
+  fill(inflight > r.cap ? color(255,123,114) : color(205)); textSize(12);
+  text(inflight + " of " + r.cap, 120 + Math.min(r.cap,12) * 22 + 12, 316);
+
+  stroke(50); line(20, 344, 600, 344); noStroke();
+  fill(200); textSize(11); textAlign(LEFT, TOP);
+  text("peak in flight was exactly " + r.peak + "; elapsed " + r.el.toFixed(2) + " s against an ideal of " + r.ideal.toFixed(2), 20, 356);
+  fill(219,171,90); textSize(10);
+  text("Use asyncio.Semaphore, never threading.Semaphore, inside an event loop: the threading", 20, 378);
+  text("version blocks the whole thread, including the tasks holding the permits it waits for.", 20, 394);
+}
+```
+
+## Check yourself
+
+<Quiz
+  questions={[
+    {
+      q: "Twelve jobs run under `asyncio.Semaphore(4)`. What was the peak number in flight?",
+      options: [
+        "12",
+        "4",
+        "It varies between 1 and 12",
+        "1",
+      ],
+      answer: 1,
+      explain:
+        "Measured at exactly 4. The ceiling is a hard guarantee, not an average — and the same held for limits of 2 and 12.",
+    },
+    {
+      q: "Why must you not use `threading.Semaphore` inside an event loop?",
+      options: [
+        "It is slower",
+        "It blocks the whole thread, including the tasks holding the permits it is waiting for",
+        "It is not thread-safe",
+        "It cannot be awaited, so it silently does nothing",
+      ],
+      answer: 1,
+      explain:
+        "That is a deadlock rather than a slowdown. `asyncio.Semaphore` suspends the waiting task and lets the loop run others, so a permit can actually be released.",
+    },
+    {
+      q: "When is an `asyncio.Lock` actually needed?",
+      options: [
+        "Around any shared variable",
+        "Only when the critical section CONTAINS an `await`",
+        "Never — asyncio is single-threaded",
+        "Only when using `gather`",
+      ],
+      answer: 1,
+      explain:
+        "There is one thread and control only changes hands at an `await`. Code between awaits cannot be interrupted, so it needs no lock; a read-await-write sequence does.",
+    },
+    {
+      q: "The permit is released when?",
+      options: [
+        "When the coroutine returns",
+        "On leaving the `async with` block, including when the body raises",
+        "Only on an explicit `release()`",
+        "When the event loop is idle",
+      ],
+      answer: 1,
+      explain:
+        "That is the point of the context-manager form — an exception inside the body cannot leak a permit and starve everyone else.",
+    },
+  ]}
+/>
 
 ## 🧪 Try It Yourself
 

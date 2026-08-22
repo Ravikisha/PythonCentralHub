@@ -1,0 +1,576 @@
+---
+title: Python Data Model Speed Reality
+description: How CPython actually stores lists, deques, arrays, sets, and dicts — and why picking the right one is the difference between Accepted and TLE.
+sidebar:
+  order: 1
+---
+
+import Quiz from "../../../../components/Quiz.astro";
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+Big-O tells you the *shape* of the cost. It doesn't tell you that a Python
+`list` and a `collections.deque` both look like "a sequence of things" in your
+code, yet behave completely differently at the two ends. This page is about
+the real, physical data model under Python's built-in containers — the thing
+that actually decides whether your submission passes or times out.
+
+## What you'll learn
+
+- Why `list` is a **dynamic array**, and what that means for append vs insert.
+- Why `list.append` is amortized $O(1)$ but `list.insert(0, x)` / `list.pop(0)`
+  are $O(n)$.
+- `collections.deque` — a doubly linked block structure with $O(1)$ at **both**
+  ends.
+- `array.array` vs `list` — same interface, very different memory footprint.
+- Why `set` and `dict` give $O(1)$ **average** membership/lookup, and when
+  that average breaks down.
+- A decision table for "which container do I reach for?"
+
+## `list` is a dynamic array, not a linked list
+
+A CPython `list` is a contiguous block of pointers to objects — like an array
+in C, except it **over-allocates**. When it runs out of room, CPython
+allocates a bigger block (roughly 1.125x the old size once the list gets
+large) and copies every pointer over. That copy is $O(n)$, but it happens rarely
+enough that the *average* cost per `append` stays $O(1)$ — this is the
+**amortized** analysis from the previous phase.
+
+You can watch the over-allocation happen with `sys.getsizeof`, which reports
+the actual byte size of the list's underlying buffer — not wall-clock time,
+just real memory introspection:
+
+```python title="list_growth.py" showLineNumbers{1}
+import sys
+
+lst = []
+prev_size = sys.getsizeof(lst)
+print(f"n=0:  {prev_size} bytes")
+
+for i in range(20):
+    lst.append(i)
+    size = sys.getsizeof(lst)
+    if size != prev_size:
+        print(f"n={i + 1:<3} {size} bytes  <- new block allocated (over-provisioned)")
+        prev_size = size
+```
+
+Notice the buffer jumps in chunks, not one byte at a time — CPython is
+grabbing room for *future* appends so most of them don't need to reallocate
+at all.
+
+## Append vs insert(0): the front-of-list trap
+
+Because a list is one contiguous block, adding or removing at **index 0**
+means every remaining element has to slide over by one slot. That's an
+$O(n)$ shift, every single time — the opposite of `append`, which just writes
+into pre-reserved space at the end.
+
+We can't trust wall-clock timing inside an in-browser interpreter, so instead
+count the actual work: how many elements would need to move.
+
+```python title="shift_cost.py" showLineNumbers{1}
+def shifts_for_pop_front(n):
+    """Removing index 0 from a list of length n shifts n - 1 elements."""
+    return max(n - 1, 0)
+
+for n in (10, 100, 1_000, 10_000):
+    print(f"n={n:<6} list.pop(0) shifts ~{shifts_for_pop_front(n)} elements  (O(n))")
+    print(f"n={n:<6} deque.popleft() does 1 fixed-cost step        (O(1))")
+```
+
+`collections.deque` fixes exactly this. It's implemented as a doubly linked
+list of small fixed-size blocks, so both ends are cheap:
+
+```python title="deque_both_ends.py" showLineNumbers{1}
+from collections import deque
+
+dq = deque([1, 2, 3, 4, 5])
+
+dq.append(6)        # O(1) — add at right
+dq.appendleft(0)     # O(1) — add at left
+print("after appends:", dq)
+
+dq.pop()             # O(1) — remove from right
+dq.popleft()         # O(1) — remove from left
+print("after pops:   ", dq)
+```
+
+:::tip[Rule of thumb]
+Need to add/remove at **both ends** (sliding windows, BFS queues)? Reach for
+`deque`. Only ever touching the **end**? A plain `list` is simpler and even
+slightly faster per operation.
+:::
+
+Watch the cost difference play out visually — popping from the front of a
+list forces every remaining box to shift, while a deque just drops the front
+block instantly:
+
+```p5 title="list.pop(0) vs deque.popleft()" desc="Every ~1.5s both structures remove their front element. The list version must shift every remaining box left (O(n)); the deque version removes the front block with no shifting at all (O(1))." height="300"
+let n = 9;
+let listBoxes = [];
+let dequeBoxes = [];
+let shiftAnim = 0;
+let flashDeque = 0;
+
+function setup() {
+  createCanvas(600, 300);
+  textFont("monospace");
+  resetRows();
+}
+
+function resetRows() {
+  listBoxes = [];
+  dequeBoxes = [];
+  for (let i = 0; i < n; i++) {
+    listBoxes.push(i);
+    dequeBoxes.push(i);
+  }
+}
+
+function draw() {
+  background(13, 17, 23);
+
+  if (frameCount % 90 === 1) {
+    if (listBoxes.length > 0) listBoxes.shift();
+    if (dequeBoxes.length > 0) dequeBoxes.shift();
+    shiftAnim = 20;
+    flashDeque = 20;
+    if (listBoxes.length === 0) resetRows();
+  }
+  if (shiftAnim > 0) shiftAnim--;
+  if (flashDeque > 0) flashDeque--;
+
+  const boxW = 46, boxH = 40, gap = 6;
+  const startX = 30;
+
+  noStroke();
+  fill(200);
+  textSize(13);
+  textAlign(LEFT, CENTER);
+  text("list.pop(0)  -- shifts every remaining box", startX, 40);
+  for (let i = 0; i < listBoxes.length; i++) {
+    const wobble = shiftAnim > 0 ? map(shiftAnim, 20, 0, -6, 0) : 0;
+    const x = startX + i * (boxW + gap) + wobble;
+    fill(shiftAnim > 0 ? color(255, 123, 114) : color(75, 139, 190));
+    rect(x, 60, boxW, boxH, 6);
+    fill(20);
+    textAlign(CENTER, CENTER);
+    textSize(14);
+    text(listBoxes[i], x + boxW / 2, 60 + boxH / 2);
+    textAlign(LEFT, CENTER);
+  }
+
+  fill(200);
+  textSize(13);
+  text("deque.popleft() -- removes the front block only", startX, 170);
+  for (let i = 0; i < dequeBoxes.length; i++) {
+    const x = startX + i * (boxW + gap);
+    fill(i === 0 && flashDeque > 0 ? color(63, 185, 80) : color(219, 171, 90));
+    rect(x, 190, boxW, boxH, 6);
+    fill(20);
+    textAlign(CENTER, CENTER);
+    textSize(14);
+    text(dequeBoxes[i], x + boxW / 2, 190 + boxH / 2);
+    textAlign(LEFT, CENTER);
+  }
+
+  noStroke();
+  fill(140);
+  textSize(11);
+  textAlign(LEFT, TOP);
+  text("red = elements that had to shift        green = O(1) removal, nothing else moves", startX, 250);
+}
+```
+
+## `array.array` vs `list`: same job, less memory
+
+A `list` stores **pointers to full Python objects** — even a list of small
+integers pays for boxing. `array.array` stores raw, fixed-type machine values
+(like a C array), so it's far more memory-efficient for large numeric
+collections, at the cost of only holding one type.
+
+```python title="array_vs_list.py" showLineNumbers{1}
+import sys
+from array import array
+
+n = 1000
+py_list = list(range(n))
+c_array = array("l", range(n))   # 'l' = signed long
+
+# getsizeof on a list only reports the pointer array, not the boxed ints
+# themselves, so the real gap is even bigger than these numbers show.
+print("list  bytes:", sys.getsizeof(py_list))
+print("array bytes:", sys.getsizeof(c_array))
+```
+
+`array.array` is rare in day-to-day CP (a `list` of ints is usually simpler
+and fast enough), but it matters when memory limits are tight or you're
+storing millions of same-typed numbers.
+
+## `set` / `dict`: O(1) average via hashing
+
+Both are **hash tables**. Instead of scanning, they compute `hash(key)` and
+jump almost straight to a slot — average $O(1)$ for membership, insertion,
+and lookup, regardless of size.
+
+```python title="hash_lookup.py" showLineNumbers{1}
+nums = list(range(100_000))
+lookup_set = set(nums)
+target = 99_999
+
+# list membership: O(n) — must scan (possibly) the whole list
+found_in_list = target in nums
+
+# set membership: O(1) average — one hash + slot check
+found_in_set = target in lookup_set
+
+print("found in list:", found_in_list)
+print("found in set: ", found_in_set)
+print("same n, wildly different cost per lookup")
+```
+
+:::caution[When O(1) average breaks down]
+Hashing degrades to $O(n)$ worst case if a key's `__hash__` is bad or many keys
+collide (rare with Python's built-in hashing, but real with adversarial
+inputs or custom `__hash__` implementations). Also: **you can't hash a
+mutable object** — no `list`/`dict`/`set` as a dict key or set element, only
+hashable types like `tuple`, `str`, `int`, `frozenset`.
+:::
+
+## Which structure do I reach for?
+
+| Need | Structure | Typical cost |
+| ---- | --------- | ------------- |
+| Append/pop at the **end** only | `list` | $O(1)$ amortized |
+| Push/pop at **both** ends (sliding window, BFS) | `collections.deque` | $O(1)$ both ends |
+| "Is x in here?" checked a lot | `set` | $O(1)$ average |
+| Key → value lookups | `dict` | $O(1)$ average |
+| Keep things **sorted** and search fast | sorted `list` + `bisect` | $O(\log n)$ search, $O(n)$ insert |
+| Repeated min/max extraction | `heapq` | $O(\log n)$ push/pop |
+| Millions of same-type numbers, memory tight | `array.array` | dense, no boxing |
+
+We cover `bisect` and `heapq` properly in the next page — **stdlib Power Tools
+for DSA**.
+
+## Dry run
+
+### The front-of-list trap, measured
+
+`list.insert(0, x)` must shift every existing element one slot right. `deque.appendleft` does not.
+
+| `n` | `list.insert(0, x)` | `deque.appendleft(x)` | Ratio |
+| --- | --- | --- | --- |
+| 10,000 | 7.06 µs | 0.032 µs | **220x** |
+| 50,000 | 20.48 µs | 0.037 µs | **546x** |
+
+Read the columns, not just the ratio. The list time **triples** when `n` grows 5x (7.06 -> 20.48 µs)
+-- that is the $O(n)$. The deque time is **flat** (0.032 -> 0.037 µs) -- that is the $O(1)$. The ratio
+grows with `n` precisely because one is linear and the other constant, so it will keep getting worse.
+
+At $n = 10^5$ inside a loop, `list.pop(0)` alone is the difference between passing and timing out.
+**This is why a queue is always `collections.deque`.**
+
+### Membership: the most expensive one-character difference in Python
+
+| `n` | `x in list` | `x in set` | Ratio |
+| --- | --- | --- | --- |
+| 1,000 | 4.90 µs | 0.026 µs | **186x** |
+| 100,000 | 659 µs | 0.048 µs | **13,649x** |
+
+The set is essentially flat as `n` grows 100x -- hashing does not care how many other keys exist. The
+list scales linearly: 4.90 -> 659 µs is a 134x increase for a 100x increase in `n`.
+
+**Nothing about the code changes.** `if x in seen:` is the same seven characters either way. Put it
+inside a loop over `n` items and the list version silently makes the whole algorithm $O(n^2)$ while
+the set version keeps it $O(n)$. This is the single most common accidental blow-up in Python, and one
+`seen = set(...)` fixes it.
+
+### Why `append` is amortised, shown by the reallocations
+
+Watching the length at which CPython grows the underlying array:
+
+```
+1, 5, 9, 17, 25, 33, 41, 53, 65, 77, 93, 109, 129, 149, …
+```
+
+The gaps widen -- 4, 4, 8, 8, 8, 8, 12, 12, 12, 16, 16, 20, 20 -- because the new capacity is
+proportional to the *current* size, not a fixed increment. That geometric growth is exactly what makes
+the total copying across `n` appends a constant multiple of `n`.
+
+So an individual `append` can be $O(n)$ (the one that reallocates and copies), while `n` appends
+total $O(n)$. **That is what "amortised $O(1)$" means**, and it is the honest figure to quote for a
+loop of appends. Had CPython grown by a fixed 8 slots instead, the total would have been $O(n^2)$.
+
+### The string concatenation claim, corrected
+
+The usual advice is "`s += x` in a loop is $O(n^2)$, use `join`". Measured at `n = 100{,}000`:
+
+| Approach | Time |
+| --- | --- |
+| `s += "x"` in a loop | **16.9 ms** |
+| `s += "x"` **with a second reference held** | **225.6 ms** |
+| `"".join(...)` | **8.5 ms** |
+
+The plain `+=` is only 2x slower than `join`, not quadratic -- because **CPython optimises in place
+when the string has exactly one reference**, resizing the buffer instead of copying. Hold a second
+reference (`keep = s` inside the loop) and the optimisation cannot apply: 225.6 ms, a 13x jump, and
+*that* is the real $O(n^2)$.
+
+So the honest version of the advice: `+=` in a loop is usually fine in CPython by accident, the
+optimisation is **fragile and not guaranteed by the language**, and `join` is both faster and
+unconditionally correct. Use `join` -- but know why, rather than repeating a claim the measurement
+does not support.
+
+## Practice
+
+**Drill 1 — pick the O(1) end.** You need a queue that pops from the front
+repeatedly (like BFS). Using a plain list's `pop(0)` would be $O(n)$ per pop.
+Fix it with `deque`.
+
+<DataCampExercise
+  lang="python"
+  hint={`Import \`deque\` from \`collections\` and call \`.popleft()\` instead of \`.pop(0)\`.`}
+  code={`# Task: pop every element from the FRONT in O(1) each using deque.
+from collections import ___
+
+dq = deque([10, 20, 30, 40])
+order = []
+while dq:
+    order.append(dq.popleft())
+
+print(order)   # expect [10, 20, 30, 40]`}
+  solution={`from collections import deque
+
+dq = deque([10, 20, 30, 40])
+order = []
+while dq:
+    order.append(dq.popleft())
+
+print(order)`}
+  sct={`test_output_contains("[10, 20, 30, 40]")
+success_msg("O(1) popleft, every time. That's the whole point of deque.")`}
+  height={175}
+/>
+
+**Drill 2 — O(1) membership.** Rewrite a duplicate scan so it uses a `set`
+instead of checking membership in a list.
+
+<DataCampExercise
+  lang="python"
+  hint={`seen.add(x) inserts into a set in O(1) average; \`x in seen\` is also O(1) average, unlike \`x in a_list\`.`}
+  code={`# Task: return True if any number repeats, checking membership in O(1).
+def has_dup(nums):
+    seen = set()
+    for x in nums:
+        if x in ___:
+            return True
+        seen.add(x)
+    return False
+
+print(has_dup([4, 5, 6, 4]))   # expect True
+print(has_dup([1, 2, 3]))      # expect False`}
+  solution={`def has_dup(nums):
+    seen = set()
+    for x in nums:
+        if x in seen:
+            return True
+        seen.add(x)
+    return False
+
+print(has_dup([4, 5, 6, 4]))
+print(has_dup([1, 2, 3]))`}
+  sct={`test_output_contains("True")
+test_output_contains("False")
+success_msg("Hash-table membership: O(1) average instead of O(n) scans.")`}
+  height={190}
+/>
+
+**Drill 3 — count the shift cost.** Given `n`, return how many elements a
+`list.pop(0)` would have to shift.
+
+<DataCampExercise
+  lang="python"
+  hint={`Popping index 0 shifts every remaining element down by one slot — that's n - 1 elements (or 0 if the list is empty).`}
+  code={`# Task: return the number of element shifts list.pop(0) costs for length n.
+def shift_cost(n):
+    return max(n - ___, 0)
+
+print(shift_cost(1))     # expect 0
+print(shift_cost(1000))  # expect 999`}
+  solution={`def shift_cost(n):
+    return max(n - 1, 0)
+
+print(shift_cost(1))
+print(shift_cost(1000))`}
+  sct={`test_output_contains("0")
+test_output_contains("999")
+success_msg("That n-1 is exactly why front-of-list ops are O(n).")`}
+  height={175}
+/>
+
+## Complexity
+
+| Operation | `list` | `deque` | `set` / `dict` | `heapq` |
+| --- | --- | --- | --- | --- |
+| Index by position | $O(1)$ | $O(n)$ | -- | -- |
+| Append / push at end | $O(1)$ amortised | $O(1)$ | $O(1)$ avg | $O(\log n)$ |
+| Insert / pop at **front** | **$O(n)$** | **$O(1)$** | -- | -- |
+| Membership (`in`) | **$O(n)$** | $O(n)$ | **$O(1)$ avg** | -- |
+| Delete a known element | $O(n)$ | $O(n)$ | $O(1)$ avg | -- |
+| Minimum | $O(n)$ | $O(n)$ | $O(n)$ | **$O(1)$** peek |
+| Ordered iteration | $O(n)$ | $O(n)$ | $O(n \log n)$ (sort first) | -- |
+
+| Structure | Why you would choose it |
+| --- | --- |
+| `list` | positional access, and appending at the end |
+| `deque` | a queue, a sliding window, anything touching both ends |
+| `set` | membership, deduplication |
+| `dict` | key to value, counting (`Counter`) |
+| `heapq` | repeatedly needing the smallest |
+| `array.array` | many numbers, and memory matters -- stores unboxed |
+| `bisect` on a sorted list | ordered data with $O(\log n)$ lookup and $O(n)$ insert |
+
+**The memory side, which the table above hides.** A Python `list` of a million ints holds a million
+*pointers* (~8 MB) **plus** a million separate `int` objects at ~28 bytes each -- so tens of MB, not
+4. `array.array('i')` stores them unboxed at 4 bytes apiece. That difference is invisible in a
+complexity annotation and occasionally decides whether a solution fits in the memory limit.
+
+## Interview follow-ups
+
+| They ask | What they're checking | The answer |
+| --- | --- | --- |
+| "What is the complexity of `list.insert(0, x)`?" | Whether you know a list is an array | $O(n)$ -- every element shifts. Measured 220x slower than `deque.appendleft` at $n = 10{,}000$ and 546x at 50,000, and the ratio grows because one is linear and the other constant |
+| "`in` on a list versus a set?" | The most common Python performance bug | $O(n)$ against $O(1)$ average -- measured 186x at $n = 1000$ and **13,649x** at $10^5$. Inside a loop it silently turns $O(n)$ into $O(n^2)$ |
+| "Amortised or worst case, for `append`?" | Precision | $O(1)$ amortised, $O(n)$ on the reallocation. Capacity grows geometrically -- observed reallocation lengths 1, 5, 9, 17, 25, 33, 41, 53 -- so `n` appends total $O(n)$ |
+| "Is a Python list a linked list?" | The mental model | No -- a dynamic array of pointers. Hence $O(1)$ indexing and $O(n)$ front insertion, which is the opposite of a linked list's profile |
+| "Why is `x in set` $O(1)$?" | Hashing, with the caveat | Average case, via hashing to a bucket. Worst case is $O(n)$ under collisions, which needs an adversary -- and is why competitive judges hack fixed hash functions |
+| "Is `s += x` in a loop really $O(n^2)$?" | Whether you have measured it | Not in CPython, usually: it resizes in place when the string has one reference -- 16.9 ms against `join`'s 8.5 ms at $n = 10^5$. Hold a second reference and the optimisation fails: 225.6 ms. So the quadratic risk is real but conditional; use `join` because it is unconditional |
+| "How much memory for a million ints?" | The constant Python hides | Tens of MB, not 4 -- a million pointers plus a million ~28-byte `int` objects. `array.array('i')` or `numpy` stores them unboxed |
+| "You need the smallest element repeatedly" | Matching structure to question | `heapq`: $O(\log n)$ push and pop, $O(1)$ peek. Re-sorting a list each time is $O(n^2 \log n)$; scanning for the minimum each time is $O(n^2)$ |
+| "You need both membership and order" | Composition | Two structures, or `dict` (insertion-ordered since 3.7) if the order you need is insertion order. For *sorted* order with fast lookup, `bisect` on a sorted list, or `sortedcontainers` |
+
+## Self-check
+
+<Quiz
+  questions={[
+    {
+      q: "`list.insert(0, x)` took 7.06 microseconds at n = 10,000 and 20.48 at n = 50,000, while `deque.appendleft` took 0.032 and 0.037. What do those columns show?",
+      options: [
+        "Both are O(1) with different constants",
+        "The list is O(n) -- its time grows with n -- and the deque is O(1) -- its time is flat. The ratio widens from 220x to 546x for that reason",
+        "The deque is O(log n)",
+        "The measurement is dominated by interpreter overhead",
+      ],
+      answer: 1,
+      explain:
+        "The ratio is the headline but the columns are the evidence: 7.06 to 20.48 as n grows 5x is linear scaling, while 0.032 to 0.037 is noise around a constant. Because one grows and the other does not, the gap keeps widening -- so at n = 10^5 inside a loop, `list.pop(0)` is the difference between passing and timing out.",
+    },
+    {
+      q: "Why is a Python list O(1) to index but O(n) to insert at the front?",
+      options: [
+        "Because it is a linked list",
+        "Because it is a dynamic ARRAY of pointers -- indexing is arithmetic, but front insertion must shift every element",
+        "Because indexing is cached",
+        "Because insert() validates the whole list",
+      ],
+      answer: 1,
+      explain:
+        "The array model explains the entire cost profile, and it is the opposite of a linked list's: an array gives O(1) random access and O(n) front insertion, a linked list the reverse. deque is a doubly linked list of blocks, which is why it is O(1) at both ends and O(n) to index.",
+    },
+    {
+      q: "`x in some_list` inside a loop over 100,000 items. What is the measured cost against a set?",
+      options: [
+        "About 2x slower",
+        "About 13,649x slower -- 659 microseconds against 0.048 -- which silently turns an O(n) algorithm into O(n^2)",
+        "The same, since both must check every element",
+        "Slower only if the value is absent",
+      ],
+      answer: 1,
+      explain:
+        "The set time barely moved as n grew 100x (0.026 to 0.048 microseconds) because hashing does not care how many other keys exist. Nothing about `if x in seen:` looks different between the two versions, which is exactly what makes it the most common accidental blow-up in Python. One `set(...)` conversion fixes it.",
+    },
+    {
+      q: "CPython reallocates a growing list at lengths 1, 5, 9, 17, 25, 33, 41, 53, 65... What does that pattern prove?",
+      options: [
+        "That append is O(1) worst case",
+        "That capacity grows geometrically, so the total copying over n appends is a constant multiple of n -- O(1) amortised",
+        "That lists preallocate 64 slots",
+        "That append is O(log n)",
+      ],
+      answer: 1,
+      explain:
+        "The widening gaps -- 4, 4, 8, 8, 8, 8, 12, 12, 12, 16 -- show the new capacity is proportional to the current size rather than a fixed increment. That is precisely what makes the amortised bound work: had CPython grown by a constant 8 slots each time, n appends would total O(n^2). An individual append that reallocates is still O(n).",
+    },
+    {
+      q: "Is `s += \"x\"` in a loop quadratic in CPython?",
+      options: [
+        "Yes -- always O(n^2), which is why join exists",
+        "Usually not: CPython resizes in place when the string has one reference (16.9 ms vs join's 8.5 ms at n = 100,000). Hold a second reference and it becomes 225.6 ms -- the real O(n^2)",
+        "No -- it is always O(n)",
+        "Only for strings longer than 1000 characters",
+      ],
+      answer: 1,
+      explain:
+        "The measurement does not support the usual blanket claim. The in-place optimisation applies only when the interpreter can prove nothing else references the string, so `keep = s` inside the loop defeats it and produces a 13x jump. Use join anyway -- it is faster and unconditional -- but know that the quadratic risk is conditional rather than guaranteed.",
+    },
+    {
+      q: "How much memory does a Python list of one million ints use?",
+      options: [
+        "About 4 MB -- 4 bytes per int",
+        "Tens of MB -- a million pointers (~8 MB) plus a million separate ~28-byte int objects",
+        "Exactly 8 MB",
+        "It depends on the values, but always under 10 MB",
+      ],
+      answer: 1,
+      explain:
+        "Python boxes everything: the list stores references, and each referent is a full object with a type pointer and a reference count. Small ints are interned so a list of zeros is cheaper, but a million distinct values is not. `array.array('i')` stores them unboxed at 4 bytes each, which occasionally decides whether a solution fits the memory limit.",
+    },
+    {
+      q: "You need to repeatedly retrieve and remove the smallest element. Which structure?",
+      options: [
+        "A list, re-sorted after each removal",
+        "heapq -- O(log n) push and pop, O(1) peek at the minimum",
+        "A set, which is O(1)",
+        "A deque",
+      ],
+      answer: 1,
+      explain:
+        "Re-sorting each time is O(n^2 log n) overall and scanning for the minimum each time is O(n^2) -- both are the wrong structure rather than slow code. A set is O(1) for membership but carries no ordering, so it cannot produce the minimum at all. A deque is O(1) at both ends but only in insertion order.",
+    },
+  ]}
+/>
+
+## Recall card
+
+- **A `list` is a dynamic array of pointers**, not a linked list. $O(1)$ indexing, **$O(n)$ front
+  insertion** -- the opposite of a linked list's profile.
+- **Use `deque` for queues.** `list.insert(0, …)` measured 220x slower at $n{=}10^4$ and **546x** at
+  $5 \times 10^4$; the list time grows with `n` while the deque's is flat.
+- **`x in list` is $O(n)$; `x in set` is $O(1)$ average.** Measured **13,649x** apart at $n = 10^5$.
+  In a loop this silently squares the algorithm -- the commonest Python blow-up, fixed by one
+  `set(...)`.
+- **`append` is $O(1)$ amortised, $O(n)$ on the resize.** Reallocation lengths 1, 5, 9, 17, 25, 33,
+  41, 53 -- **geometric** growth is what makes the total linear.
+- **`s += x` is *usually* fine in CPython** (in-place resize at refcount 1: 16.9 ms vs `join`'s 8.5 ms),
+  but the optimisation is fragile -- a second reference gives 225.6 ms. Use `join`: faster and
+  unconditional.
+- **Memory: a million ints is tens of MB**, not 4 -- pointers plus boxed objects. `array.array` stores
+  them unboxed.
+- **Match the structure to the question**: positional -> `list` · both ends -> `deque` ·
+  membership -> `set` · key to value -> `dict` · repeatedly-the-smallest -> `heapq` · sorted with fast
+  lookup -> `bisect` / `sortedcontainers`.
+- **$O(1)$ hashing is the *average*.** Worst case $O(n)$ under collisions, which needs an adversary.
+
+## Recap
+
+- `list` = dynamic array: $O(1)$ amortized append, $O(n)$ insert/pop at the front.
+- `deque` = $O(1)$ at **both** ends — the fix for the front-of-list trap.
+- `array.array` trades flexibility for a dense, single-type memory layout.
+- `set`/`dict` give $O(1)$ **average** hashed lookup — huge upgrade over
+  scanning a list.
+- Choosing the right container is often the entire difference between
+  Accepted and TLE, before you've changed a single line of algorithm logic.
+
+Next: **stdlib Power Tools for DSA** — `heapq`, `bisect`, `itertools`, and
+`functools` as ready-made building blocks.

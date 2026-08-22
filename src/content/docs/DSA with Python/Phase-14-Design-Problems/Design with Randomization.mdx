@@ -1,0 +1,955 @@
+---
+title: Design with Randomization
+description: O(1) random selection via swap-with-last, weighted picks by prefix sums and binary search, and unbiased Fisher-Yates shuffling -- with LeetCode 380, 528 and 384.
+sidebar:
+  order: 4
+patterns:
+  - design-with-randomization
+difficulty: medium
+prereqs:
+  - hash-tables
+  - linked-lists
+companies:
+  - amazon
+  - bloomberg
+  - meta
+---
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+import ArrayStepper from "../../../../components/viz/ArrayStepper.tsx";
+
+
+import ProblemLadder from "../../../../components/dsa/ProblemLadder.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+Randomized design problems have an unusual property: a solution can be
+**subtly wrong in a way that still looks right**. A biased shuffle still returns
+a permutation. A skewed picker still returns valid indices. The tests pass, the
+output looks plausible, and the distribution is wrong.
+
+So these problems are really about two things:
+
+1. **Composing structures for $O(1)$ random access** -- a hash map gives lookup,
+   but only a *dense array* gives uniform random choice.
+2. **Being able to argue that a distribution is uniform** -- because "it looks
+   random" is not a proof, and the classic off-by-one here silently destroys
+   uniformity.
+
+## What you'll learn
+
+- The **swap-with-last** trick: $O(1)$ deletion from an array, which is what
+  makes $O(1)$ random selection possible.
+- **Prefix sums plus binary search** for weighted picking.
+- **Fisher-Yates**, why the loop bound is inclusive, and a concrete
+  demonstration of what goes wrong when it is not.
+- **Reservoir sampling** -- picking uniformly from a stream of unknown length.
+- **Three real LeetCode problems** solved in the browser: 380, 528, 384.
+
+## The cue
+
+:::tip[You are looking at a randomized design when…]
+- **`getRandom()` in $O(1)$** alongside insert and delete -- 380, 381.
+- A **weighted** or **probability-proportional** pick -- 528, 497.
+- **Shuffle** an array uniformly -- 384.
+- Pick a random element **matching a condition** -- 398 random index of a
+  target.
+- The input is a **stream of unknown length** -- reservoir sampling, 382.
+- "Each outcome must be **equally likely**" -- that phrase is asking you to
+  justify uniformity.
+:::
+
+## Visual intuition
+
+`getRandom` needs a **gap-free array**, and deletion must not shift. The resolution is to move the
+last element into the hole — and to remember that its map entry moves too:
+
+<ArrayStepper
+  client:visible
+  algo="swap-remove"
+  values={[10, 20, 30, 40, -20, 50]}
+  title="Delete from the middle in O(1) by promoting the last element"
+  lib="LC 380 · array + index map"
+  desc="Positive values insert, negative remove. When 20 is removed from index 1, the last element (40) fills the hole and the map entry for 40 is rewritten to 1. Miss that second half and the map points at a stale index -- a bug that only shows up on a later remove, far from its cause. The cost is that insertion order is destroyed."
+/>
+
+## Trick 1 — swap with last
+
+To pick uniformly at random in $O(1)$ you need a **dense array** -- contiguous,
+no holes -- so that `random.randrange(len(arr))` is a valid index.
+
+But deleting from the middle of an array is $O(n)$ because everything shifts.
+The trick: you do not care about order, so **overwrite the hole with the last
+element** and shrink.
+
+```python title="randomized_set.py" showLineNumbers{1}
+import random
+
+
+class RandomizedSet:
+    def __init__(self):
+        self.values = []          # dense array -> O(1) uniform random choice
+        self.index = {}           # value -> its position in `values`
+
+    def insert(self, val):
+        if val in self.index:
+            return False
+        self.index[val] = len(self.values)
+        self.values.append(val)
+        return True
+
+    def remove(self, val):
+        if val not in self.index:
+            return False
+        i = self.index[val]
+        last = self.values[-1]
+        self.values[i] = last          # move the last element into the hole
+        self.index[last] = i           # UPDATE ITS RECORDED POSITION
+        self.values.pop()
+        del self.index[val]
+        return True
+
+    def getRandom(self):
+        return random.choice(self.values)
+```
+
+All three operations are $O(1)$ average, with $O(n)$ space.
+
+:::caution[The two lines people get wrong]
+**`self.index[last] = i`.** After moving the last element into the hole, its
+recorded position is stale. Forgetting this update means a later `remove` of
+that element writes to the wrong slot and corrupts the structure -- and the
+symptom appears many operations later, which makes it painful to debug.
+
+**Order of `pop` and `del`.** Update `index[last]` *before* deleting
+`index[val]`, and be careful when `val` **is** the last element: then
+`last == val`, you write `index[val] = i`, and the following
+`del self.index[val]` correctly removes it. The code above handles this
+by luck of ordering -- trace `remove` on a single-element set to convince
+yourself, because getting it backwards leaves a phantom entry in the map.
+:::
+
+## Trick 2 — prefix sums plus binary search
+
+For weights `[1, 3]`, index 1 must be picked three times as often. Build the
+**cumulative** weights and throw a dart at the total:
+
+```python title="weighted_pick.py" showLineNumbers{1}
+import bisect
+import random
+
+
+class WeightedPicker:
+    def __init__(self, w):
+        self.prefix = []
+        total = 0
+        for x in w:
+            total += x
+            self.prefix.append(total)     # e.g. [1, 3] -> [1, 4]
+        self.total = total
+
+    def pickIndex(self):
+        target = random.random() * self.total     # uniform in [0, total)
+        return bisect.bisect_right(self.prefix, target)
+```
+
+The prefix array turns weights into **adjacent intervals on a number line**:
+index 0 owns `[0, 1)`, index 1 owns `[1, 4)`. A uniform dart lands in each
+interval with probability proportional to its width -- which is exactly the
+weight. `bisect_right` finds which interval contains the dart.
+
+**Construction** $O(n)$, **each pick** $O(\log n)$, **space** $O(n)$.
+
+:::note[bisect_right with a float target, or bisect_left with an integer]
+Two correct formulations, and mixing them up gives an off-by-one:
+
+- `target = random.random() * total` (a float in `[0, total)`) with
+  **`bisect_right`**.
+- `target = random.randint(1, total)` (an integer in `[1, total]`) with
+  **`bisect_left`**.
+
+Both give each index its correct share. Two ways to get it wrong, and they are
+not equally bad:
+
+- **An integer target starting from `0`** -- `random.randint(0, total)` with
+  `bisect_left` -- is measurably skewed. It draws `total + 1` equally likely
+  values instead of `total`, and the extra one falls to index 0. For `w = [1, 3]`
+  that hands index 0 a **0.4** share instead of `0.25`, confirmed over 400,000
+  draws. Nothing crashes; the distribution is just wrong.
+- **A float target with `bisect_left`** differs from the correct version only
+  when the dart lands *exactly* on a prefix boundary. With positive weights that
+  is a measure-zero event -- the two agree over 400,000 draws -- so this is
+  latent rather than wrong. It becomes a real bug the moment a **zero weight**
+  exists: `w = [0, 1, 3]` gives `prefix = [0, 1, 4]`, and `random.random()` can
+  return exactly `0.0`, for which `bisect_left` returns index 0 -- an index that
+  should never be picked at all.
+
+Since LC 528 guarantees weights of at least 1, the practical failure there is
+the first one: a mildly skewed distribution rather than an obvious crash, the
+sort of bug you find only by counting outcomes.
+:::
+
+## Trick 3 — Fisher-Yates, and the bias trap
+
+To shuffle uniformly, walk from the end and swap each position with a random
+earlier-or-equal position:
+
+```python title="fisher_yates.py" showLineNumbers{1}
+import random
+
+
+def shuffle(a):
+    for i in range(len(a) - 1, 0, -1):
+        j = random.randint(0, i)      # INCLUSIVE of i -- element may stay put
+        a[i], a[j] = a[j], a[i]
+    return a
+```
+
+:::caution[`randint(0, i)` versus `randint(0, i - 1)` -- a measurable difference]
+The bound must **include `i`**, so each element can remain where it is.
+
+This is not a theoretical concern. Shuffling `[1,2,3]` six thousand times:
+
+| Variant | Distinct permutations produced |
+| --- | --- |
+| `randint(0, i)` -- correct | **6 of 6**, each about 1000 times |
+| `randint(0, i - 1)` -- biased | **2 of 6** -- only `(2,3,1)` and `(3,1,2)` |
+
+The biased version never produces the identity permutation, or three others. It
+still returns a valid permutation every time, so a test that only checks
+"is it a permutation?" passes. You have to count outcomes to see it -- which is
+why the exercise below checks the distribution, not just validity.
+
+The reason: excluding `i` forces every element to move, and "permutations with
+no fixed point" is a strictly smaller set than "all permutations".
+:::
+
+For `reset()`, keep an untouched copy of the original and **return a copy or
+reassign**, being careful not to hand back a list that later shuffles will
+mutate.
+
+## Dry run
+
+### Swap-with-last, watching the index map
+
+The random part is not what breaks; the **bookkeeping** is. Eight deterministic operations on
+`RandomizedSet`, with the map shown sorted by value so the stale-index bug would be visible.
+
+| # | Call | `values` | `index` | Returns |
+| --- | --- | --- | --- | --- |
+| 1 | `insert(10)` | `[10]` | `{10: 0}` | `True` |
+| 2 | `insert(20)` | `[10, 20]` | `{10: 0, 20: 1}` | `True` |
+| 3 | `insert(30)` | `[10, 20, 30]` | `{10: 0, 20: 1, 30: 2}` | `True` |
+| 4 | `remove(10)` | `[30, 20]` | `{20: 1, 30: 0}` **&lt;- was 2** | `True` |
+| 5 | `insert(40)` | `[30, 20, 40]` | `{20: 1, 30: 0, 40: 2}` | `True` |
+| 6 | `remove(40)` | `[30, 20]` | `{20: 1, 30: 0}` | `True` |
+| 7 | `remove(30)` | `[20]` | `{20: 0}` **&lt;- was 1** | `True` |
+| 8 | `remove(20)` | `[]` | `{}` | `True` |
+
+**Step 4 is the step.** Removing `10` at position 0 moves `30` from the tail into slot 0, and
+`index[30]` must change from `2` to `0`. Skip that one line and the map still *looks* fine -- the
+array is correct, every `getRandom` returns a real member -- but `index[30]` now points at a slot
+holding a different value. The damage surfaces at step 7, many operations later: `remove(30)`
+would write `20` into slot 2, which no longer exists, or corrupt a live entry. That delay between
+cause and symptom is what makes this bug expensive.
+
+**Step 6 is the aliasing case.** `40` *is* the last element, so `last == val`. The code writes
+`values[2] = 40` (a no-op), then `index[40] = 2` (also a no-op), then pops and deletes. The order
+saves it: the `del index[val]` runs *after* the `index[last] = i` write, so the entry that was
+just re-set is then correctly removed. Reverse those two lines and a phantom `{40: 2}` survives
+into an array of length 2 -- verified separately on a single-element set, where `insert(7)` then
+`remove(7)` must leave both structures empty.
+
+**Note `values` is never sorted and never needs to be.** After step 4 it reads `[30, 20]`.
+Order is exactly what you traded away to get $O(1)$ deletion, and `getRandom` does not care --
+uniformity needs *density*, not order.
+
+### The weighted-pick number line
+
+Weights `[1, 3]`, so `prefix = [1, 4]` and `total = 4`. The prefix array is two adjacent intervals:
+
+| Index | Interval it owns | Width | Share |
+| --- | --- | --- | --- |
+| 0 | `[0, 1)` | 1 | 1/4 |
+| 1 | `[1, 4)` | 3 | 3/4 |
+
+`bisect_right(prefix, target)` maps a dart to the interval containing it: a target of `0.5`
+returns 0, `1.0` returns 1, `3.99` returns 1. Over 400,000 draws the observed split was
+**100,140 / 299,860** -- a ratio of 2.99 against the expected 3.00.
+
+Swap in `random.randint(0, total)` with `bisect_left` and the same 400,000 draws split
+**159,796 / 240,204**: index 0 gets a 0.40 share instead of 0.25. The algorithm is unchanged, the
+output is always a valid index, and it is wrong. You cannot see this in a trace -- only in a count.
+
+### Fisher-Yates: the inclusive bound, counted
+
+Shuffling `[1, 2, 3]` six thousand times, both variants:
+
+| Variant | Distinct permutations | Distribution |
+| --- | --- | --- |
+| `randint(0, i)` | **6 of 6** | 954 / 998 / 1011 / 1026 / 1007 / 1004 |
+| `randint(0, i - 1)` | **2 of 6** | `(2,3,1)`: 2998 · `(3,1,2)`: 3002 |
+
+Trace the biased version by hand for `n = 3` and the reason is immediate. Only two random draws
+happen: `i = 2` picks `j` from `{0, 1}`, then `i = 1` picks `j` from `{0}` -- forced.
+
+- `j = 0`: swap slots 2 and 0 gives `[3, 2, 1]`, then the forced swap gives `[2, 3, 1]`
+- `j = 1`: swap slots 2 and 1 gives `[1, 3, 2]`, then the forced swap gives `[3, 1, 2]`
+
+Two paths, two outcomes, each with probability 1/2. Excluding `i` forces every element to move,
+so the reachable set is "permutations with no fixed point" -- strictly smaller than all
+permutations, and here that is 2 instead of 6. Every returned value is a valid permutation, so a
+test asserting `sorted(result) == sorted(original)` passes cleanly.
+
+### Reservoir sampling, five items
+
+`pick_one("ABCDE")` over 300,000 trials, with no knowledge of the length:
+
+| Item | Observed frequency |
+| --- | --- |
+| A | 0.2003 |
+| B | 0.2015 |
+| C | 0.1986 |
+| D | 0.2000 |
+| E | 0.1996 |
+
+Uniform to three decimal places, which is the telescoping product made empirical. `A` is
+selected at step 1 with probability 1, then must survive four replacements:
+$1 \cdot \tfrac{1}{2} \cdot \tfrac{2}{3} \cdot \tfrac{3}{4} \cdot \tfrac{4}{5} = \tfrac{1}{5}$.
+`E` is selected at step 5 with probability $\tfrac{1}{5}$ and never risks replacement. Different
+routes, identical destination.
+
+## Complexity
+
+| Design | Per operation | Space |
+| --- | --- | --- |
+| RandomizedSet | $O(1)$ average | $O(n)$ |
+| Weighted pick | $O(\log n)$ per pick, $O(n)$ setup | $O(n)$ |
+| Fisher-Yates shuffle | $O(n)$ per shuffle | $O(n)$ for the original |
+| Reservoir sampling | $O(1)$ per item | $O(k)$ |
+
+## Reservoir sampling
+
+When the input is a stream of **unknown length** you cannot pick an index up
+front. Reservoir sampling keeps one candidate and replaces it with decreasing
+probability:
+
+```python title="reservoir.py" showLineNumbers{1}
+import random
+
+
+def pick_one(stream):
+    chosen = None
+    for count, item in enumerate(stream, start=1):
+        if random.randrange(count) == 0:      # probability 1/count
+            chosen = item
+    return chosen
+```
+
+**Why it is uniform:** item `k` is chosen at step `k` with probability $1/k$, and
+then survives every later step `j > k` with probability $1 - 1/j = (j-1)/j$.
+Multiplying:
+
+$$\frac{1}{k} \cdot \frac{k}{k+1} \cdot \frac{k+1}{k+2} \cdots \frac{n-1}{n} = \frac{1}{n}$$
+
+The terms telescope, so every item ends with probability exactly $1/n$ -- without
+ever knowing `n`. That is the argument to give; it generalises to keeping `k`
+samples by replacing a random reservoir slot with probability $k/count$.
+
+## The variant map
+
+| Variant | The structure | Canonical problem |
+| --- | --- | --- |
+| **$O(1)$ random member** | Dense array + index map, swap-with-last | 380 |
+| **Duplicates allowed** | Map from value to a **set** of positions | 381 |
+| **Weighted pick** | Prefix sums + binary search | 528 · 497 |
+| **Uniform shuffle** | Fisher-Yates with an inclusive bound | 384 |
+| **Random index of a target** | Reservoir sampling over matches, or a precomputed map | 398 |
+| **Random node from a stream** | Reservoir sampling | 382 |
+| **Random point in non-overlapping rectangles** | Weighted by area, then uniform within | 497 |
+
+## Practice -- real LeetCode problems
+
+### LC 380 -- Insert Delete GetRandom O(1) · Medium
+
+**Problem.** Implement a set with `insert(val)`, `remove(val)` (both returning
+whether the set changed) and `getRandom()` returning a uniformly random element.
+All three must be $O(1)$ **average**.
+
+**Constraints.** `-2^31 <= val <= 2^31 - 1`, up to `2 * 10^5` calls, and
+`getRandom` is only called when the set is non-empty.
+
+**Examples.** `insert(1)` gives `True`, `remove(2)` gives `False`,
+`insert(2)` gives `True`, `getRandom()` gives `1` or `2`, `remove(1)` gives
+`True`, `insert(2)` gives `False`
+
+<DataCampExercise
+  lang="python"
+  hint={`Keep a dense list of values plus a dict mapping each value to its position. To remove, overwrite the hole with the LAST element, update that element's recorded position in the dict, then pop the list and delete the removed key. Forgetting to update the moved element's position is the classic bug. getRandom is then random.choice on the list.`}
+  code={`import random
+
+
+class RandomizedSet:
+    def __init__(self):
+        # TODO: a dense list (for O(1) random choice) plus value -> index dict.
+        pass
+
+    def insert(self, val):
+        # TODO: False if already present; otherwise append and record its index.
+        pass
+
+    def remove(self, val):
+        # TODO: False if absent. Otherwise move the LAST element into the hole,
+        # update ITS recorded index, then shrink the list and drop the key.
+        pass
+
+    def getRandom(self):
+        # TODO: uniform over the dense list.
+        pass
+
+
+s = RandomizedSet()
+out = []
+out.append(s.insert(1))                  # True
+out.append(s.remove(2))                  # False
+out.append(s.insert(2))                  # True
+out.append(s.getRandom() in (1, 2))      # True
+out.append(s.remove(1))                  # True
+out.append(s.insert(2))                  # False
+out.append(s.getRandom())                # 2 -- the only element left
+# removing the ONLY element must leave a clean, empty structure
+out.append(s.remove(2))                  # True
+out.append(s.insert(5))                  # True
+out.append(s.getRandom())                # 5
+print(out)
+# expect [True, False, True, True, True, False, 2, True, True, 5]`}
+  solution={`import random
+
+
+class RandomizedSet:
+    def __init__(self):
+        self.values = []          # dense -> O(1) uniform choice
+        self.index = {}           # value -> position in self.values
+
+    def insert(self, val):
+        if val in self.index:
+            return False
+        self.index[val] = len(self.values)
+        self.values.append(val)
+        return True
+
+    def remove(self, val):
+        if val not in self.index:
+            return False
+        i = self.index[val]
+        last = self.values[-1]
+        self.values[i] = last          # fill the hole with the last element
+        self.index[last] = i           # update its recorded position
+        self.values.pop()
+        del self.index[val]
+        return True
+
+    def getRandom(self):
+        return random.choice(self.values)
+
+
+s = RandomizedSet()
+out = []
+out.append(s.insert(1))
+out.append(s.remove(2))
+out.append(s.insert(2))
+out.append(s.getRandom() in (1, 2))
+out.append(s.remove(1))
+out.append(s.insert(2))
+out.append(s.getRandom())
+out.append(s.remove(2))
+out.append(s.insert(5))
+out.append(s.getRandom())
+print(out)`}
+  sct={`test_output_contains("[True, False, True, True, True, False, 2, True, True, 5]")
+success_msg("Swap-with-last keeps the array dense, which is the only reason getRandom can be O(1).")
+`}
+  height={480}
+/>
+
+<details>
+<summary>Editorial — approach, complexity, follow-ups</summary>
+
+Uniform random choice needs a **dense array** so that a random index is always
+valid. Deleting from the middle of an array is normally $O(n)$ -- but since a set
+is unordered, you may fill the hole with the last element and shrink. The map
+keeps positions so removal knows where the hole is.
+
+**Time** $O(1)$ average for all three. **Space** $O(n)$.
+
+Two details, both exercised by the tests:
+
+- **`self.index[last] = i`** -- the moved element's position must be corrected.
+  Skipping it leaves a stale entry that corrupts a later `remove`.
+- **Removing the only element** -- then `last == val` and `i == 0`. The write
+  `index[last] = i` re-adds the key, and the following `del index[val]` removes
+  it again, leaving the structure clean. The final four operations in the test
+  (`remove(2)`, `insert(5)`, `getRandom()`) verify the structure still works
+  after being emptied -- a case that a subtly wrong ordering fails.
+
+A `set` alone cannot do this: Python sets support $O(1)$ add, remove and
+membership, but **no** $O(1)$ uniform random choice -- `random.choice` requires a
+sequence, and `random.sample(s, 1)` on a set is $O(n)$. That is exactly why the
+dense array exists, and it is the answer to "why not just use a set?".
+
+**Follow-ups you should expect:**
+
+- **"Allow duplicates (LC 381)?"** Map each value to a **set of positions**.
+  `remove` pops any one position; the swap-with-last then has to update the moved
+  element's position set, which is fiddlier -- watch the case where the moved
+  element is the one being removed.
+- **"Weighted `getRandom`?"** LC 528's prefix-sum approach, but rebuilding
+  prefix sums on every mutation is $O(n)$; a Fenwick tree gives $O(\log n)$
+  updates and picks.
+- **"$O(1)$ worst case, not average?"** Hash maps are only $O(1)$ average;
+  worst-case guarantees need perfect hashing or a different model.
+
+</details>
+
+### LC 528 -- Random Pick with Weight · Medium
+
+**Problem.** Given an array `w` where `w[i]` is the weight of index `i`,
+implement `pickIndex()` returning index `i` with probability
+`w[i] / sum(w)`.
+
+**Constraints.** `1 <= len(w) <= 10^4`, `1 <= w[i] <= 10^5`, and
+`pickIndex` may be called up to `10^4` times.
+
+**Examples.** `w = [1]` always gives `0` · `w = [1, 3]` gives `0` about 25% of
+the time and `1` about 75%
+
+:::note[Why this test checks a distribution]
+The output is random, so there is no single correct value. The test draws
+several thousand picks and checks (a) only valid indices appear, and (b) each
+index's share is within a generous band of its expected proportion. A biased or
+off-by-one implementation fails the band; a correct one passes regardless of
+which valid formulation you chose.
+:::
+
+<DataCampExercise
+  lang="python"
+  hint={`Build cumulative weights: [1, 3] becomes [1, 4]. Then draw target = random.random() * total and use bisect.bisect_right(prefix, target). This maps each index to an interval whose width is its weight, so a uniform dart lands in it proportionally. If you prefer integers, use random.randint(1, total) with bisect_LEFT -- but do not mix the two conventions.`}
+  code={`import bisect
+import random
+
+
+class Solution:
+    def __init__(self, w):
+        # TODO: cumulative weights, and remember the total.
+        pass
+
+    def pickIndex(self):
+        # TODO: throw a uniform dart at [0, total) and binary search for
+        # the interval it landed in.
+        pass
+
+
+# --- distribution test: valid indices, and roughly the right proportions ---
+random.seed(0)
+s = Solution([1, 3])
+picks = [s.pickIndex() for _ in range(8000)]
+valid = set(picks) == {0, 1}
+share0 = picks.count(0) / len(picks)          # expect about 0.25
+in_band = 0.20 < share0 < 0.30
+
+single = Solution([1])
+always_zero = all(single.pickIndex() == 0 for _ in range(50))
+
+three = Solution([2, 5, 3])
+picks3 = [three.pickIndex() for _ in range(9000)]
+valid3 = set(picks3) == {0, 1, 2}
+share1 = picks3.count(1) / len(picks3)        # expect about 0.5
+in_band3 = 0.45 < share1 < 0.55
+
+print([valid, in_band, always_zero, valid3, in_band3])
+# expect [True, True, True, True, True]`}
+  solution={`import bisect
+import random
+
+
+class Solution:
+    def __init__(self, w):
+        self.prefix = []
+        total = 0
+        for x in w:
+            total += x
+            self.prefix.append(total)     # [1, 3] -> [1, 4]
+        self.total = total
+
+    def pickIndex(self):
+        target = random.random() * self.total      # uniform in [0, total)
+        return bisect.bisect_right(self.prefix, target)
+
+
+random.seed(0)
+s = Solution([1, 3])
+picks = [s.pickIndex() for _ in range(8000)]
+valid = set(picks) == {0, 1}
+share0 = picks.count(0) / len(picks)
+in_band = 0.20 < share0 < 0.30
+
+single = Solution([1])
+always_zero = all(single.pickIndex() == 0 for _ in range(50))
+
+three = Solution([2, 5, 3])
+picks3 = [three.pickIndex() for _ in range(9000)]
+valid3 = set(picks3) == {0, 1, 2}
+share1 = picks3.count(1) / len(picks3)
+in_band3 = 0.45 < share1 < 0.55
+
+print([valid, in_band, always_zero, valid3, in_band3])`}
+  sct={`test_output_contains("[True, True, True, True, True]")
+success_msg("Prefix sums turn weights into intervals on a line -- then one uniform dart plus a binary search does the rest.")
+`}
+  height={490}
+/>
+
+<details>
+<summary>Editorial — approach, complexity, follow-ups</summary>
+
+Cumulative weights lay the indices out as **adjacent intervals** whose widths are
+their weights. A uniform point in `[0, total)` falls in each interval with
+probability proportional to its width, and binary search locates it.
+
+**Time** $O(n)$ to build, $O(\log n)$ per pick. **Space** $O(n)$.
+
+For `w = [2, 5, 3]` the prefix array is `[2, 7, 10]`, so index 0 owns
+`[0, 2)`, index 1 owns `[2, 7)` and index 2 owns `[7, 10)`. Index 1's width is
+5 out of 10 -- hence the ~0.5 share the test checks.
+
+Getting the convention right matters more than it looks. Both of these are
+correct:
+
+- float target in `[0, total)` with `bisect_right`;
+- integer target in `[1, total]` with `bisect_left`.
+
+Mixing them (float with `bisect_left`, or integer starting at `0`) skews the
+distribution slightly -- a bug that passes any test which only checks validity.
+That is precisely why this exercise counts outcomes.
+
+**Follow-ups you should expect:**
+
+- **"$O(1)$ per pick?"** The **alias method** achieves $O(1)$ after $O(n)$
+  preprocessing, by chopping the weights into `n` equal-probability buckets each
+  holding at most two outcomes. Naming it is usually enough.
+- **"Weights change between picks?"** A Fenwick tree over the weights gives
+  $O(\log n)$ updates and $O(\log n)$ picks, rather than rebuilding the prefix
+  array in $O(n)$.
+- **"Random point in a set of rectangles (LC 497)?"** Weight each rectangle by
+  its **area** using exactly this technique, then pick uniformly within the
+  chosen rectangle.
+- **"Why not `random.choices`?"** Python's `random.choices(range(n), weights=w)`
+  does this for you -- worth mentioning for fluency, but it rebuilds the
+  cumulative weights on every call unless you pass `cum_weights`, so it is
+  $O(n)$ per pick as usually written.
+
+</details>
+
+### LC 384 -- Shuffle an Array · Medium
+
+**Problem.** Implement `shuffle()` returning a uniformly random permutation of
+the array, and `reset()` returning the original configuration. All permutations
+must be **equally likely**.
+
+**Constraints.** `1 <= len(nums) <= 50`, values in
+`[-10^6, 10^6]`, up to `10^4` calls.
+
+**Examples.** For `[1,2,3]`: `shuffle()` returns some permutation,
+`reset()` returns `[1,2,3]`, and over many calls each of the 6 permutations
+appears about equally often.
+
+:::note[Why this test counts permutations]
+A biased shuffle still returns a valid permutation every time, so checking
+validity proves nothing. The test therefore shuffles `[1,2,3]` several thousand
+times and requires **all 6** permutations to appear with roughly equal
+frequency -- which the common off-by-one fails outright, producing only 2 of the 6.
+:::
+
+<DataCampExercise
+  lang="python"
+  hint={`Fisher-Yates: walk i from the last index down to 1, pick j = random.randint(0, i) and swap. The bound must INCLUDE i so an element can stay in place -- randint(0, i - 1) forces every element to move and produces only permutations with no fixed point. Keep an untouched copy for reset, and be careful not to return a list that later shuffles will mutate.`}
+  code={`import random
+
+
+class Solution:
+    def __init__(self, nums):
+        # TODO: keep the original AND a working copy.
+        pass
+
+    def reset(self):
+        # TODO: restore and return the original configuration.
+        pass
+
+    def shuffle(self):
+        # TODO: Fisher-Yates. The random bound must INCLUDE i.
+        pass
+
+
+# --- distribution test: all 6 permutations of [1,2,3], roughly equally ---
+from collections import Counter
+
+random.seed(1)
+s = Solution([1, 2, 3])
+is_perm = sorted(s.shuffle()) == [1, 2, 3]
+resets_ok = s.reset() == [1, 2, 3]
+
+counts = Counter(tuple(Solution([1, 2, 3]).shuffle()) for _ in range(6000))
+all_six = len(counts) == 6
+balanced = all(700 < c < 1300 for c in counts.values())
+
+print([is_perm, resets_ok, all_six, balanced])
+# expect [True, True, True, True]`}
+  solution={`import random
+
+
+class Solution:
+    def __init__(self, nums):
+        self.original = list(nums)      # untouched reference copy
+        self.arr = list(nums)
+
+    def reset(self):
+        self.arr = list(self.original)  # fresh copy, so shuffles cannot alias it
+        return self.arr
+
+    def shuffle(self):
+        a = self.arr
+        for i in range(len(a) - 1, 0, -1):
+            j = random.randint(0, i)    # INCLUSIVE: element may stay put
+            a[i], a[j] = a[j], a[i]
+        return a
+
+
+from collections import Counter
+
+random.seed(1)
+s = Solution([1, 2, 3])
+is_perm = sorted(s.shuffle()) == [1, 2, 3]
+resets_ok = s.reset() == [1, 2, 3]
+
+counts = Counter(tuple(Solution([1, 2, 3]).shuffle()) for _ in range(6000))
+all_six = len(counts) == 6
+balanced = all(700 < c < 1300 for c in counts.values())
+
+print([is_perm, resets_ok, all_six, balanced])`}
+  sct={`test_output_contains("[True, True, True, True]")
+success_msg("randint(0, i) inclusive -- exclude i and you only ever produce permutations with no fixed point.")
+`}
+  height={470}
+/>
+
+<details>
+<summary>Editorial — approach, complexity, follow-ups</summary>
+
+Fisher-Yates builds a uniform permutation in one pass. Walking `i` downward, the
+element placed at position `i` is chosen uniformly from the `i + 1` candidates
+that have not yet been fixed. Multiplying the choices gives
+$n \times (n-1) \times \cdots \times 1 = n!$ equally likely outcomes.
+
+**Time** $O(n)$ per shuffle. **Space** $O(n)$ for the original copy.
+
+The **inclusive bound is the whole problem**. With `randint(0, i - 1)`, position
+`i` can never keep its own element, so every permutation with a fixed point is
+unreachable. Empirically, shuffling `[1,2,3]` that way produces only
+`(2,3,1)` and `(3,1,2)` -- 2 of 6 -- while the correct version produces all six at
+roughly 1/6 each. This is why the exercise counts permutations rather than
+merely checking validity.
+
+`reset()` returning a **fresh copy** matters too: returning `self.original`
+directly would hand the caller the reference copy, and a later in-place shuffle
+of that same list would corrupt the baseline.
+
+Note `random.shuffle(self.arr)` is the one-line stdlib answer and is itself
+Fisher-Yates. Mention it, then implement the loop -- the question exists to check
+you know what the library is doing.
+
+**Follow-ups you should expect:**
+
+- **"Prove it is uniform."** The counting argument above; be ready to give it,
+  since this is the most likely follow-up.
+- **"What is wrong with `sort(key=lambda _: random.random())`?"** It is $O(n \log
+  n)$ instead of $O(n)$, and while random keys do give a uniform result, the
+  related "swap each element with any random index" shuffle is *not* uniform --
+  a common and instructive mistake.
+- **"Shuffle a stream / linked list?"** Reservoir sampling for a subset;
+  a linked list has no $O(1)$ indexing, so you would copy to an array first.
+- **"Cryptographically secure?"** Use `secrets.SystemRandom`; `random` is a
+  Mersenne Twister and is predictable from enough output.
+
+</details>
+
+## LeetCode problem set
+
+
+Generated from the problem database, so each entry carries its sheet
+membership and reported companies. Tick them off as you go — progress is
+saved in this browser, and the Export button writes it to a file you can keep.
+
+:::tip[LC 382 is reservoir sampling's natural home]
+Linked List Random Node asks for a uniformly random node when you may not know
+the length and want $O(1)$ space. Counting first, then walking again, is a
+perfectly good two-pass answer -- say it.
+
+The one-pass answer is reservoir sampling: keep the current candidate, and at
+node `k` replace it with probability $1/k$. The telescoping product shown earlier
+proves every node ends at exactly $1/n$.
+
+It is the same technique behind LC 398, and the standard answer to any "sample
+from a stream you cannot re-read" question -- including genuine
+large-data-processing situations.
+:::
+
+<ProblemLadder pattern="design-with-randomization"
+  notes={{"380":"Swap-with-last keeps the array dense; update the moved element's index","381":"Value maps to a **set** of positions; the swap update gets fiddly","382":"Reservoir sampling -- length unknown without a full pass","384":"Fisher-Yates with an **inclusive** bound","398":"Reservoir sampling over the matching indices, or precompute a map","497":"Weight rectangles by **area**, then pick uniformly inside","528":"Prefix sums + binary search; match the target and bisect conventions"}} />
+
+## Interview follow-ups
+
+| They ask | What they're checking | The answer |
+| --- | --- | --- |
+| "Why not just use a `set`?" | Understanding the constraint | Sets give $O(1)$ add/remove but **no** $O(1)$ uniform choice; you need a dense array |
+| "Prove your shuffle is uniform" | Rigour | Position `i` draws uniformly from `i + 1` remaining candidates, giving $n!$ equally likely outcomes |
+| "What breaks with `randint(0, i - 1)`?" | Whether you know the trap | Every element is forced to move, so only fixed-point-free permutations occur -- 2 of 6 for `[1,2,3]` |
+| "$O(1)$ weighted pick?" | Breadth | The alias method: $O(n)$ setup, $O(1)$ picks |
+| "Weights change over time?" | Adaptability | A Fenwick tree over the weights gives $O(\log n)$ update and pick |
+| "Unknown-length stream?" | The right tool | Reservoir sampling, with the telescoping-probability proof |
+| "Is `random` good enough?" | Practical awareness | It is a Mersenne Twister -- fine for interviews, predictable for security; use `secrets` if it matters |
+| "$O(1)$ worst case?" | Precision | Hash maps are $O(1)$ *average*; worst-case needs a different model |
+
+## Edge-case checklist
+
+- **Removing the only element** (LC 380) -- `last == val`; verify the map is left
+  clean and the structure still works afterwards.
+- **Remove then re-insert** -- catches stale index entries.
+- **Removing a value that is already last** -- the swap is a no-op but the map
+  updates must still be right.
+- **Single weight** (LC 528) -- `[1]` must always return `0`.
+- **Very uneven weights** -- `[1, 100000]`; index 0 is rare but must remain
+  reachable.
+- **Single-element array** (LC 384) -- the shuffle loop body never runs; still
+  valid.
+- **Two-element array** -- the smallest case where bias is observable.
+- **Duplicate values when shuffling** -- permutations are indistinguishable, so
+  count distinct *arrangements* carefully if testing.
+- **`reset` aliasing** -- never return the internal original list by reference.
+
+## Self-check
+
+<Quiz
+  questions={[
+    {
+      q: "In `RandomizedSet.remove`, why is `self.index[last] = i` required?",
+      options: [
+        "To keep the map sorted",
+        "The last element was just moved into slot `i`, so its recorded position is stale -- a later removal would write to the wrong slot",
+        "It is redundant; the following `pop` fixes the map",
+        "It is only needed when the set holds duplicates",
+      ],
+      answer: 1,
+      explain:
+        "Swap-with-last moves an element without telling the map. In the trace, removing 10 pulls 30 from slot 2 into slot 0, so `index[30]` must become 0. Omit it and nothing fails immediately -- the array is intact and every `getRandom` returns a real member. It fails many operations later, when `remove(30)` writes into a slot that no longer holds 30. The delay between cause and symptom is the expensive part.",
+    },
+    {
+      q: "Why does `RandomizedSet` need a dense array rather than, say, a dict keyed by position?",
+      options: [
+        "Arrays use less memory",
+        "`random.choice` needs every index in range to be a valid element -- holes would make the pick non-uniform or invalid",
+        "Dicts cannot be indexed by integer",
+        "It does not; a dict works identically",
+      ],
+      answer: 1,
+      explain:
+        "Uniform O(1) selection means drawing an index in [0, n) and dereferencing it. That requires contiguity: no holes, so every draw hits a live element. Order is irrelevant, which is exactly why swap-with-last is allowed -- you trade order (which you never needed) for O(1) deletion (which you do).",
+    },
+    {
+      q: "Weighted pick with `w = [1, 3]`. Which pairing is correct?",
+      options: [
+        "`random.randint(0, total)` with `bisect_left`",
+        "`random.random() * total` with `bisect_right`, or `random.randint(1, total)` with `bisect_left`",
+        "`random.randrange(total)` with `bisect_right` on the raw weights",
+        "Any combination -- bisect direction does not affect the distribution",
+      ],
+      answer: 1,
+      explain:
+        "Both listed pairings give index 0 a 1/4 share and index 1 a 3/4 share, confirmed over 400,000 draws (100,140 / 299,860). `randint(0, total)` with `bisect_left` draws total + 1 equally likely values instead of total, and the extra one lands on index 0: measured 0.40 instead of 0.25. Every returned index is valid, so only counting outcomes exposes it.",
+    },
+    {
+      q: "Fisher-Yates written with `randint(0, i - 1)` instead of `randint(0, i)`. What is the observable consequence for a 3-element list?",
+      options: [
+        "It sometimes returns a list that is not a permutation",
+        "It produces only 2 of the 6 permutations, and never the identity",
+        "It is slower but still uniform",
+        "It biases toward the identity permutation",
+      ],
+      answer: 1,
+      explain:
+        "Excluding `i` forces every element to move, so the reachable set becomes permutations with no fixed point -- strictly smaller than all permutations. For n = 3 that is exactly 2: over 6000 shuffles, only (2,3,1) and (3,1,2) appeared, about 3000 each. Each result is still a valid permutation, so `sorted(result) == sorted(original)` passes. You have to count outcomes.",
+    },
+    {
+      q: "Reservoir sampling over a stream of unknown length: why is `if random.randrange(count) == 0` uniform?",
+      options: [
+        "Because the last item always wins with probability 1/n",
+        "Item k is chosen with probability 1/k and survives each later step j with probability (j-1)/j; the product telescopes to 1/n",
+        "Because randrange is uniform, so any use of it is uniform",
+        "It is only approximately uniform, with error O(1/n)",
+      ],
+      answer: 1,
+      explain:
+        "The telescoping is the whole proof: (1/k) x (k/(k+1)) x ... x ((n-1)/n) = 1/n, with every intermediate term cancelling. Measured over 300,000 trials on five items: 0.2003, 0.2015, 0.1986, 0.2000, 0.1996 -- exactly uniform, and n was never known. This is the argument to give out loud, and it generalises to k samples by replacing a random reservoir slot with probability k/count.",
+    },
+    {
+      q: "How would you extend `RandomizedSet` to allow duplicates (LC 381)?",
+      options: [
+        "Store a count per value instead of a position",
+        "Map each value to a *set* of positions, and on removal pull an arbitrary one out of that set",
+        "Keep the array sorted so duplicates are adjacent",
+        "Use a second array for the duplicates",
+      ],
+      answer: 1,
+      explain:
+        "The array stays dense and swap-with-last still works; only the map's value type changes from one index to a set of indices. Removal picks any index from the set, swaps in the last element, and updates that element's set -- discard its old index and add the new one. A count alone loses the positions, and sorting reintroduces the O(n) shift you were avoiding.",
+    },
+  ]}
+/>
+
+## Recall card
+
+- **$O(1)$ uniform pick needs a dense array** -- no holes, so `randrange(len(arr))` is always a
+  valid index. Order is what you give up, and you never needed it.
+- **Swap-with-last** turns $O(n)$ middle deletion into $O(1)$: overwrite the hole with the tail,
+  then shrink. **Update the moved element's recorded index** -- the one line that, if missed,
+  corrupts the structure many operations later.
+- **Weighted pick = prefix sums + binary search.** Weights become adjacent intervals; a uniform
+  dart lands in each with probability proportional to its width. $O(n)$ build, $O(\log n)$ pick.
+- **Pair the bounds correctly**: float target in `[0, total)` with `bisect_right`, or integer in
+  `[1, total]` with `bisect_left`. `randint(0, total)` skews index 0 -- measured 0.40 against 0.25.
+- **Fisher-Yates needs `randint(0, i)`, inclusive**, so elements may stay put. Excluding `i` gives
+  only fixed-point-free permutations: 2 of 6 for `n = 3`.
+- **Randomness bugs return valid answers.** Every wrong variant above still produces a legal
+  index or a legal permutation. Test by counting outcomes, never by asserting validity.
+- **Reservoir sampling** keeps one candidate, replacing with probability `1/count`. The product
+  telescopes to $1/n$ without ever knowing `n`. For `k` samples, replace a random slot with
+  probability `k/count`.
+
+## Recap
+
+- Uniform random choice needs a **dense array**. **Swap-with-last** makes
+  deletion $O(1)$ without holes -- and you must **update the moved element's
+  recorded index**.
+- A hash map alone cannot do this: sets have no $O(1)$ uniform choice.
+- **Weighted picks**: prefix sums turn weights into adjacent intervals; a uniform
+  dart plus binary search selects proportionally. Keep the target/bisect
+  conventions consistent.
+- **Fisher-Yates** with an **inclusive** bound. `randint(0, i - 1)` is the
+  classic bug and produces only 2 of 6 permutations on a 3-element array -- while
+  still always returning a valid permutation.
+- **Reservoir sampling** handles unknown-length streams; the telescoping product
+  is the uniformity proof.
+- Randomized bugs are **invisible to validity checks**. Test distributions, and
+  be ready to *argue* uniformity rather than assert it.
+
+Next: **Design Trackers and Feeds** -- time-windowed counters, merged feeds, and
+the systems-flavoured end of design questions.
