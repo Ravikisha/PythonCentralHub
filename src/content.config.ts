@@ -1,5 +1,7 @@
-import { defineCollection, z } from 'astro:content';
-import { docsSchema, i18nSchema } from '@astrojs/starlight/schema';
+import { defineCollection } from 'astro:content';
+import { z } from 'astro/zod';
+import { docsLoader } from '@astrojs/starlight/loaders';
+import { docsSchema } from '@astrojs/starlight/schema';
 
 /**
  * DSA interview metadata.
@@ -28,13 +30,13 @@ const dsaMeta = z.object({
 	 * Where this topic sits in the public study sheets. Each value is that
 	 * sheet's own section/step label, or `true` for sheets without sections.
 	 */
-	sheets: z.record(z.union([z.string(), z.boolean()])).optional(),
+	// Zod 4 (Astro 6+) requires an explicit key schema for `z.record`.
+	sheets: z.record(z.string(), z.union([z.string(), z.boolean()])).optional(),
 
 	/** Company slugs that ask this pattern often, e.g. `google`, `meta`. */
 	companies: z.array(z.string()).optional(),
 });
 
 export const collections = {
-	docs: defineCollection({ schema: docsSchema({ extend: dsaMeta }) }),
-	i18n: defineCollection({ type: 'data', schema: i18nSchema() }),
+	docs: defineCollection({ loader: docsLoader(), schema: docsSchema({ extend: dsaMeta }) }),
 };

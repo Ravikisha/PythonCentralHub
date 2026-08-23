@@ -6,12 +6,12 @@ import robotsTxt from "astro-robots-txt";
 import remakeMermaid from "./lib/mermaid/remake.ts";
 import remakeP5 from "./lib/p5/remake.ts";
 import remarkDefaultCodeMeta from "./lib/remark/default-code-meta.ts";
-import markdownIntegration from "@astropub/md";
+import { unified } from "@astrojs/markdown-remark";
 
 const site = "https://pythoncentralhub.live";
 
 /** @type {import('rehype-pretty-code').Options} */
-import tailwind from "@astrojs/tailwind";
+import tailwindcss from "@tailwindcss/vite";
 import sitemap from "@astrojs/sitemap";
 import react from "@astrojs/react";
 
@@ -66,11 +66,17 @@ function remarkEscapeBraces() {
 
 // https://astro.build/config
 export default defineConfig({
+  // Astro 7 changed the default to "jsx", which collapses whitespace using
+  // React's rules and can drop spaces between inline elements. `true` is the
+  // lossless pre-v7 behaviour -- keeps rendered output byte-comparable.
+  compressHTML: true,
+
   image: {
     domains: ["yt3.googleusercontent.com"],
   },
 
   vite: {
+    plugins: [tailwindcss()],
     resolve: {
       alias: {
         "@": fileURLToPath(new URL("./src", import.meta.url)),
@@ -80,10 +86,16 @@ export default defineConfig({
 
   site,
   markdown: {
+    // Disable Astro's built-in Shiki highlighting -- rehype-pretty-code below
+    // owns every code block on the site.
     syntaxHighlight: false,
-    // Disable syntax built-in syntax hightlighting from astro
-    rehypePlugins: [[rehypePrettyCode, options], rehypeKatex],
-    remarkPlugins: [remakeMermaid, remakeP5, remarkDefaultCodeMeta, remarkMath, remarkEscapeBraces],
+    // Astro 7 defaults to the Satteri processor. This site's whole markdown
+    // pipeline is remark/rehype (mermaid, p5, KaTeX, rehype-pretty-code), so
+    // keep the unified processor and hang the plugins off it.
+    processor: unified({
+      rehypePlugins: [[rehypePrettyCode, options], rehypeKatex],
+      remarkPlugins: [remakeMermaid, remakeP5, remarkDefaultCodeMeta, remarkMath, remarkEscapeBraces],
+    }),
   },
   integrations: [
     starlight({
@@ -93,6 +105,10 @@ export default defineConfig({
       },
       // Show "Last updated" on content pages, derived from git history.
       lastUpdated: true,
+      // Starlight ships Expressive Code, which would take over every fenced
+      // block. This site's code styling is rehype-pretty-code (see
+      // markdown.processor) + src/styles/global.css, so keep EC out.
+      expressiveCode: false,
       components: {
         Footer: "./src/components/Footer.astro",
         // Injects per-page JSON-LD structured data.
@@ -101,61 +117,46 @@ export default defineConfig({
         Sidebar: "./src/components/Sidebar.astro",
       },
       favicon: "./src/assets/favicon.ico",
-      social: {
-        github: "https://github.com/Ravikisha/PythonCentralHub.git",
-        instagram: "https://www.instagram.com/ravikishan.404",
-        "x.com": "https://twitter.com/@Ravikishan_",
-        email: "mailto:ravikishan63392@gmail.com",
-        linkedin: "https://www.linkedin.com/in/ravikisha/",
-      },
+      // Starlight 0.33 replaced the keyed object with an array of link items.
+      social: [
+        { icon: "github", label: "GitHub", href: "https://github.com/Ravikisha/PythonCentralHub.git" },
+        { icon: "instagram", label: "Instagram", href: "https://www.instagram.com/ravikishan.404" },
+        { icon: "x.com", label: "X", href: "https://twitter.com/@Ravikishan_" },
+        { icon: "email", label: "Email", href: "mailto:ravikishan63392@gmail.com" },
+        { icon: "linkedin", label: "LinkedIn", href: "https://www.linkedin.com/in/ravikisha/" },
+      ],
       sidebar: [
         {
           label: "Guides",
-          autogenerate: {
-            directory: "guides",
-          },
+          items: [{ autogenerate: { directory: "guides" } }],
         },
         {
           label: "Tutorials",
-          autogenerate: {
-            directory: "tutorials",
-          },
+          items: [{ autogenerate: { directory: "tutorials" } }],
         },
         {
           label: "Flask Tutorials",
-          autogenerate: {
-            directory: "Flask Tutorials",
-          },
+          items: [{ autogenerate: { directory: "Flask Tutorials" } }],
         },
         {
           label: "Python Automation and Scripting",
-          autogenerate: {
-            directory: "Python Automation and Scripting",
-          },
+          items: [{ autogenerate: { directory: "Python Automation and Scripting" } }],
         },
         {
           label: "Data Analytics",
-          autogenerate: {
-            directory: "Data Analytics",
-          },
+          items: [{ autogenerate: { directory: "Data Analytics" } }],
         },
         {
           label: "Mathematics for Machine Learning",
-          autogenerate: {
-            directory: "Mathematics for Machine Learning",
-          },
+          items: [{ autogenerate: { directory: "Mathematics for Machine Learning" } }],
         },
         {
           label: "Machine Learning",
-          autogenerate: {
-            directory: "Machine Learning",
-          },
+          items: [{ autogenerate: { directory: "Machine Learning" } }],
         },
         {
           label: "Deep Learning",
-          autogenerate: {
-            directory: "Deep Learning",
-          },
+          items: [{ autogenerate: { directory: "Deep Learning" } }],
         },
         {
           label: "DSA with Python",
@@ -169,7 +170,7 @@ export default defineConfig({
                 {
                   label: "00 · Start Here",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-00-Start-Here" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-00-Start-Here" } }],
                 },
               ],
             },
@@ -181,22 +182,22 @@ export default defineConfig({
                 {
                   label: "01 · Foundations",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-01-Foundations" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-01-Foundations" } }],
                 },
                 {
                   label: "02 · Python for DSA & CP",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-02-Python-for-DSA-and-CP" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-02-Python-for-DSA-and-CP" } }],
                 },
                 {
                   label: "03 · Core Data Structures",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-03-Core-Data-Structures" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-03-Core-Data-Structures" } }],
                 },
                 {
                   label: "04 · Sorting & Searching",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-04-Sorting-and-Searching" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-04-Sorting-and-Searching" } }],
                 },
               ],
             },
@@ -208,57 +209,57 @@ export default defineConfig({
                 {
                   label: "05 · Arrays & Strings",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-05-Patterns-Arrays-and-Strings" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-05-Patterns-Arrays-and-Strings" } }],
                 },
                 {
                   label: "06 · Search & Selection",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-06-Patterns-Search-and-Selection" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-06-Patterns-Search-and-Selection" } }],
                 },
                 {
                   label: "07 · Intervals & Greedy",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-07-Patterns-Intervals-and-Greedy" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-07-Patterns-Intervals-and-Greedy" } }],
                 },
                 {
                   label: "08 · Linked Lists",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-08-Patterns-Linked-Lists" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-08-Patterns-Linked-Lists" } }],
                 },
                 {
                   label: "09 · Trees",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-09-Patterns-Trees" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-09-Patterns-Trees" } }],
                 },
                 {
                   label: "10 · Graphs",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-10-Patterns-Graphs" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-10-Patterns-Graphs" } }],
                 },
                 {
                   label: "11 · Recursion & Backtracking",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-11-Recursion-and-Backtracking" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-11-Recursion-and-Backtracking" } }],
                 },
                 {
                   label: "12 · Dynamic Programming",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-12-Dynamic-Programming" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-12-Dynamic-Programming" } }],
                 },
                 {
                   label: "13 · Bit Manipulation & Math",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-13-Bit-Manipulation-and-Math" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-13-Bit-Manipulation-and-Math" } }],
                 },
                 {
                   label: "14 · Design Problems",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-14-Design-Problems" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-14-Design-Problems" } }],
                 },
                 {
                   label: "15 · Simulation & Implementation",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-15-Simulation-and-Implementation" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-15-Simulation-and-Implementation" } }],
                 },
               ],
             },
@@ -270,12 +271,12 @@ export default defineConfig({
                 {
                   label: "16 · Advanced Graph Algorithms",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-16-Advanced-Graph-Algorithms" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-16-Advanced-Graph-Algorithms" } }],
                 },
                 {
                   label: "17 · Advanced CP Topics",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-17-Advanced-CP-Topics" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-17-Advanced-CP-Topics" } }],
                 },
               ],
             },
@@ -287,17 +288,17 @@ export default defineConfig({
                 {
                   label: "18 · Templates & Cheatsheets",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-18-Templates-and-Cheatsheets" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-18-Templates-and-Cheatsheets" } }],
                 },
                 {
                   label: "19 · Interview & Contest Strategy",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-19-Interview-and-Contest-Strategy" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-19-Interview-and-Contest-Strategy" } }],
                 },
                 {
                   label: "20 · Problem Sets",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-20-Problem-Sets" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-20-Problem-Sets" } }],
                 },
               ],
             },
@@ -309,7 +310,7 @@ export default defineConfig({
                 {
                   label: "21 · Company Guides",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-21-Company-Guides" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-21-Company-Guides" } }],
                 },
               ],
             },
@@ -321,7 +322,7 @@ export default defineConfig({
                 {
                   label: "22 · Low-Level Design (OOD)",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-22-Low-Level-Design" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-22-Low-Level-Design" } }],
                 },
               ],
             },
@@ -333,7 +334,7 @@ export default defineConfig({
                 {
                   label: "23 · Concurrency",
                   collapsed: true,
-                  autogenerate: { directory: "DSA with Python/Phase-23-Concurrency" },
+                  items: [{ autogenerate: { directory: "DSA with Python/Phase-23-Concurrency" } }],
                 },
               ],
             },
@@ -341,24 +342,21 @@ export default defineConfig({
         },
         {
           label: "Software Testing and Quality",
-          autogenerate: {
-            directory: "Software Testing and Quality",
-          },
+          items: [{ autogenerate: { directory: "Software Testing and Quality" } }],
         },
         {
           label: "Projects",
-          autogenerate: {
-            directory: "projects",
-          },
+          items: [{ autogenerate: { directory: "projects" } }],
         },
         {
           label: "Reference",
-          autogenerate: {
-            directory: "reference",
-          },
+          items: [{ autogenerate: { directory: "reference" } }],
         },
       ],
       customCss: [
+        // Tailwind v4 entrypoint. MUST stay first: it declares the
+        // base/starlight/theme/components/utilities layer order.
+        "./src/styles/tailwind.css",
         // KaTeX stylesheet — required so remark-math/rehype-katex formulas
         // render with correct glyphs/spacing (fonts bundled by Vite from the pkg).
         "katex/dist/katex.min.css",
@@ -624,9 +622,6 @@ export default defineConfig({
       ],
     }),
     react(),
-    tailwind({
-      applyBaseStyles: false,
-    }),
     sitemap({
       // Give index/guides/tutorials higher priority than deep pages and
       // stamp a build-time lastmod so crawlers see fresh dates.
@@ -649,6 +644,5 @@ export default defineConfig({
       },
     }),
     robotsTxt(),
-    markdownIntegration(),
   ],
 });

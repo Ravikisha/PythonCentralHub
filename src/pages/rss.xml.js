@@ -10,11 +10,12 @@ export async function GET(context) {
       const id = entry.id.toLowerCase();
       return id.startsWith("tutorials/") || id.startsWith("projects/");
     })
-    .filter((entry) => entry.slug !== "404")
+    // Astro 5 content layer: entries are keyed by `id` (the old `slug`).
+    .filter((entry) => entry.id !== "404")
     .map((entry) => ({
       title: entry.data.title,
       description: entry.data.description ?? "",
-      link: `/${entry.slug}/`,
+      link: `/${entry.id}/`,
       // @astrojs/rss requires pubDate on every item. Docs frontmatter has no
       // date field, so fall back to lastUpdated when present, else a fixed date.
       pubDate: entry.data.lastUpdated ?? new Date("2024-01-01T00:00:00Z"),
