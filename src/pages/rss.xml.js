@@ -5,6 +5,11 @@ export async function GET(context) {
   const docs = await getCollection("docs");
 
   // Syndicate tutorials and project pages (skip drafts and the 404 page).
+  //
+  // English only, by design. Translated entries carry a locale-prefixed id
+  // (`es/tutorials/...`), so the `tutorials/` and `projects/` prefix test below
+  // already excludes them and the single feed at /rss.xml stays one language.
+  // Per-language feeds would need one endpoint per locale.
   const items = docs
     .filter((entry) => {
       const id = entry.id.toLowerCase();

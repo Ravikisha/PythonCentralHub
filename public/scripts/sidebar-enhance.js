@@ -87,7 +87,11 @@
         return d.open;
       });
       var label = toggleAll.querySelector(".pch-toggle-label");
-      if (label) label.textContent = anyOpen ? "Collapse all" : "Expand all";
+      // Labels are rendered onto the button by Sidebar.astro via
+      // Astro.locals.t, so this file carries no translatable copy.
+      var collapseLabel = toggleAll.dataset.labelCollapse || "Collapse all";
+      var expandLabel = toggleAll.dataset.labelExpand || "Expand all";
+      if (label) label.textContent = anyOpen ? collapseLabel : expandLabel;
       toggleAll.setAttribute("aria-expanded", anyOpen ? "true" : "false");
     }
 

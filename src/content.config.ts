@@ -1,7 +1,7 @@
 import { defineCollection } from 'astro:content';
 import { z } from 'astro/zod';
-import { docsLoader } from '@astrojs/starlight/loaders';
-import { docsSchema } from '@astrojs/starlight/schema';
+import { docsLoader, i18nLoader } from '@astrojs/starlight/loaders';
+import { docsSchema, i18nSchema } from '@astrojs/starlight/schema';
 
 /**
  * DSA interview metadata.
@@ -37,6 +37,87 @@ const dsaMeta = z.object({
 	companies: z.array(z.string()).optional(),
 });
 
+/**
+ * UI strings owned by this site rather than by Starlight.
+ *
+ * Starlight ships its own chrome translated for 36 locales, but it knows
+ * nothing about the copy in `src/components/*` (Share, Print, the feedback
+ * form, the quiz and exercise panels, the algorithm cards). Declaring the keys
+ * here makes `Astro.locals.t('pch.share')` type-checked, so a typo or a key
+ * dropped from one language's JSON is a build error instead of a blank label
+ * on a live page.
+ *
+ * `.partial()` because only `src/content/i18n/en.json` has to be complete --
+ * any key missing from another language falls back to English.
+ */
+const pchUiStrings = z
+	.object({
+		'pch.share': z.string(),
+		'pch.print': z.string(),
+		'pch.shareCopied': z.string(),
+		'pch.shareCopiedTitle': z.string(),
+		'pch.shareCopiedDesc': z.string(),
+		'pch.shareDone': z.string(),
+		'pch.shareError': z.string(),
+
+		'pch.sidebarSearchPlaceholder': z.string(),
+		'pch.sidebarSearchLabel': z.string(),
+		'pch.sidebarCollapseAll': z.string(),
+		'pch.sidebarExpandAll': z.string(),
+		'pch.sidebarNoResults': z.string(),
+
+		'pch.feedbackHeading': z.string(),
+		'pch.feedbackSubheading': z.string(),
+		'pch.feedbackEmail': z.string(),
+		'pch.feedbackEmailPlaceholder': z.string(),
+		'pch.feedbackComment': z.string(),
+		'pch.feedbackCommentPlaceholder': z.string(),
+		'pch.feedbackSubmit': z.string(),
+		'pch.feedbackNoscript': z.string(),
+		'pch.ratingVeryDissatisfied': z.string(),
+		'pch.ratingDissatisfied': z.string(),
+		'pch.ratingNeutral': z.string(),
+		'pch.ratingSatisfied': z.string(),
+		'pch.ratingVerySatisfied': z.string(),
+
+		'pch.coffeeTagline': z.string(),
+		'pch.coffeeCta': z.string(),
+
+		'pch.quizTag': z.string(),
+		'pch.quizDefaultTitle': z.string(),
+		'pch.quizShowAnswer': z.string(),
+
+		'pch.exerciseTag': z.string(),
+		'pch.exerciseTitle': z.string(),
+		'pch.openFullscreen': z.string(),
+
+		'pch.viewSource': z.string(),
+		'pch.viewOnGithub': z.string(),
+
+		'pch.contactEmail': z.string(),
+		'pch.contactEmailPlaceholder': z.string(),
+		'pch.contactName': z.string(),
+		'pch.contactNamePlaceholder': z.string(),
+		'pch.contactMessage': z.string(),
+		'pch.contactMessagePlaceholder': z.string(),
+		'pch.contactSubmit': z.string(),
+		'pch.contactIntro': z.string(),
+		'pch.contactNoscript': z.string(),
+
+		'pch.algoTag': z.string(),
+		'pch.algoApi': z.string(),
+		'pch.algoAssumes': z.string(),
+		'pch.algoCost': z.string(),
+		'pch.algoTrain': z.string(),
+		'pch.algoPredict': z.string(),
+		'pch.algoMemory': z.string(),
+		'pch.algoHyperparams': z.string(),
+		'pch.algoReachFor': z.string(),
+		'pch.algoLookElsewhere': z.string(),
+	})
+	.partial();
+
 export const collections = {
 	docs: defineCollection({ loader: docsLoader(), schema: docsSchema({ extend: dsaMeta }) }),
+	i18n: defineCollection({ loader: i18nLoader(), schema: i18nSchema({ extend: pchUiStrings }) }),
 };

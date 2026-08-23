@@ -7,6 +7,8 @@ import remakeMermaid from "./lib/mermaid/remake.ts";
 import remakeP5 from "./lib/p5/remake.ts";
 import remarkDefaultCodeMeta from "./lib/remark/default-code-meta.ts";
 import { unified } from "@astrojs/markdown-remark";
+import { LOCALES } from "./src/i18n/locales.ts";
+import { withSidebarTranslations, untranslatedLabels } from "./src/i18n/sidebar-labels.ts";
 
 const site = "https://pythoncentralhub.live";
 
@@ -103,6 +105,13 @@ export default defineConfig({
       logo: {
         src: "./src/assets/pythonlogo.png",
       },
+      // English is served at the site root (no `/en/` prefix) so the 1116
+      // already-indexed URLs keep working; every other language is prefixed.
+      // Untranslated pages fall back to the English content automatically and
+      // show Starlight's <FallbackContentNotice />, so a language can ship
+      // with a handful of pages translated instead of all 1116.
+      defaultLocale: "root",
+      locales: LOCALES,
       // Show "Last updated" on content pages, derived from git history.
       lastUpdated: true,
       // Starlight ships Expressive Code, which would take over every fenced
@@ -125,7 +134,7 @@ export default defineConfig({
         { icon: "email", label: "Email", href: "mailto:ravikishan63392@gmail.com" },
         { icon: "linkedin", label: "LinkedIn", href: "https://www.linkedin.com/in/ravikisha/" },
       ],
-      sidebar: [
+      sidebar: withSidebarTranslations([
         {
           label: "Guides",
           items: [{ autogenerate: { directory: "guides" } }],
@@ -352,7 +361,7 @@ export default defineConfig({
           label: "Reference",
           items: [{ autogenerate: { directory: "reference" } }],
         },
-      ],
+      ]),
       customCss: [
         // Tailwind v4 entrypoint. MUST stay first: it declares the
         // base/starlight/theme/components/utilities layer order.
@@ -623,6 +632,16 @@ export default defineConfig({
     }),
     react(),
     sitemap({
+      // Emit <xhtml:link rel="alternate" hreflang="..."> for every locale so
+      // search engines treat the five language variants as one page, not as
+      // duplicate content. Mirrors what Starlight's own sitemap helper does;
+      // spelled out here because this config passes a custom `serialize`.
+      i18n: {
+        defaultLocale: "root",
+        locales: Object.fromEntries(
+          Object.entries(LOCALES).map(([segment, { lang }]) => [segment, lang]),
+        ),
+      },
       // Give index/guides/tutorials higher priority than deep pages and
       // stamp a build-time lastmod so crawlers see fresh dates.
       serialize(item) {
