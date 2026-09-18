@@ -1,0 +1,480 @@
+---
+title: Numerical Solution
+description: "Section 12.5 — the subgradient of a loss with a kink, both SVMs written as standard-form quadratic programs, and a measurement of the aside the book makes in passing: a generic convex solver is 49,548 times slower than a specialised one."
+sidebar:
+  order: 1209
+---
+
+import DataCampExercise from "../../../../components/DataCampExercise.astro";
+import Figure from "../../../../components/Figure.astro";
+import Quiz from "../../../../components/Quiz.astro";
+
+Everything so far has been a derivation. Section 12.5 asks the practical question: **given all these
+equivalent formulations, which one do you hand to a solver, and what does it cost?**
+
+## The hinge has one kink, and Equation 12.54 covers it
+
+Equation 12.31 is convex and unconstrained, so gradient descent is the obvious method — except the
+hinge is not differentiable at $t = 1$. The fix is a **subgradient**:
+
+$$
+g(t) = \begin{cases}
+-1 & t < 1\\
+[-1, 0] & t = 1\\
+0 & t > 1
+\end{cases}
+\qquad \text{(12.54)}
+$$
+
+A number $g$ is a subgradient of $\ell$ at $t_0$ when $\ell(t) \geq \ell(t_0) + g\,(t - t_0)$ for
+**every** $t$ — geometrically, when the line through $(t_0, \ell(t_0))$ with slope $g$ stays below the
+loss everywhere. At the kink a whole interval of slopes qualifies:
+
+```python title="which_slopes_qualify.py" showLineNumbers{1}
+import numpy as np
+
+ts = np.linspace(-6, 6, 240001)
+lt = np.maximum(0.0, 1 - ts)                 # the hinge loss
+
+print(f"{'candidate g':>13} {'valid at t0 = 1?':>18} {'worst violation':>17}")
+for g in (-1.5, -1.0, -0.7, -0.5, -0.25, 0.0, 0.25):
+    viol = float(np.max(0.0 + g * (ts - 1.0) - lt))   # l(t0) = 0 at t0 = 1
+    print(f"{g:>13.2f} {str(viol <= 1e-12):>18} {max(viol, 0.0):>17.3e}")
+```
+
+```
+  candidate g   valid at t0 = 1?   worst violation
+        -1.50              False         3.500e+00
+        -1.00               True         0.000e+00
+        -0.70               True         0.000e+00
+        -0.50               True         0.000e+00
+        -0.25               True         0.000e+00
+         0.00               True         0.000e+00
+         0.25              False         1.250e+00
+```
+
+**Everything in $[-1, 0]$ qualifies and nothing outside it does.** Away from the kink the subgradient
+is unique — scanning $3{,}001$ candidate slopes at $t_0 = -2$, $0.5$, $2$ and $3$ leaves exactly one
+valid in each case. That is why Equation 12.54 gives a set at one point and a number everywhere else.
+
+<Figure
+  src="/images/mml/numerical-solution/the-subgradient"
+  alt="Left, the hinge loss in red falling from 3 to zero at t equals one, with five dashed lines of slopes minus one through zero all passing through the point (1, 0) and staying below the loss. Right, the subgradient as a function of t: a horizontal red line at minus one for t below one, a horizontal line at zero for t above one, and a faint vertical segment joining them at t equals one."
+  title="The hinge is differentiable everywhere except at one point, and Equation 12.54 covers it"
+  caption="The fan of dashed lines is the subdifferential. Any one of them is a legitimate step direction — which is exactly why subgradient descent is slower than gradient descent: the direction is only guaranteed not to point uphill."
+/>
+
+## What a subgradient costs
+
+```python title="subgradient_descent.py" showLineNumbers{1}
+def subgrad(XX, YY, C, iters, eta0=0.5, seed=0):
+    d = XX.shape[1]
+    rg = np.random.default_rng(seed)
+    w, b = rg.normal(0, 0.3, d), float(rg.normal(0, 0.3))
+    best = obj(w, b, XX, YY, C)
+    for k in range(1, iters + 1):
+        t = YY * (XX @ w + b)
+        act = t < 1.0                       # 12.54: g = -1 exactly here
+        gw = w - C * (YY[act] @ XX[act]) if act.any() else w.copy()
+        gb = -C * YY[act].sum() if act.any() else 0.0
+        eta = eta0 / k
+        w, b = w - eta * gw, b - eta * gb
+        best = min(best, obj(w, b, XX, YY, C))   # note: BEST, not last
+    return best
+```
+
+```
+  iterations    best objective   gap to the QP
+          10      3.9235861529       4.859e-02
+         100      3.8882244562       1.322e-02
+        1000      3.8791122429       4.112e-03
+       10000      3.8762946193       1.295e-03
+      100000      3.8754091186       4.091e-04
+```
+
+**A hundred thousand iterations to reach four decimal places.** Each factor of ten in iterations buys
+roughly a factor of three in accuracy — the $O(1/\sqrt{k})$ rate that is characteristic of subgradient
+methods, against the linear or quadratic convergence a smooth problem would allow.
+
+Note the `best` rather than the last iterate. A subgradient step **can increase the objective**, so
+the running minimum is what converges; tracking only the current point gives a sequence that wobbles.
+
+## Both formulations as standard-form quadratic programs
+
+The book writes each SVM in the standard form of §7.3.2, $\min \tfrac12\mathbf{v}^\top\mathbf{P}\mathbf{v} + \mathbf{q}^\top\mathbf{v}$ subject to $\mathbf{G}\mathbf{v} \leq \mathbf{h}$.
+
+**The primal**, with variables $[\mathbf{w}; b; \boldsymbol\xi] \in \mathbb{R}^{D+1+N}$:
+
+$$
+\min_{\mathbf{w}, b, \boldsymbol\xi}\ \frac12
+\begin{bmatrix}\mathbf{w}\\ b\\ \boldsymbol\xi\end{bmatrix}^\top
+\begin{bmatrix}\mathbf{I}_D & \mathbf{0}\\ \mathbf{0} & \mathbf{0}\end{bmatrix}
+\begin{bmatrix}\mathbf{w}\\ b\\ \boldsymbol\xi\end{bmatrix}
++ \begin{bmatrix}\mathbf{0}_{D+1}\\ C\mathbf{1}_N\end{bmatrix}^\top
+\begin{bmatrix}\mathbf{w}\\ b\\ \boldsymbol\xi\end{bmatrix}
+\quad\text{s.t.}\quad
+\begin{bmatrix}-\mathbf{Y}\mathbf{X} & -\mathbf{y} & -\mathbf{I}_N\\
+\mathbf{0} & \mathbf{0} & -\mathbf{I}_N\end{bmatrix}
+\begin{bmatrix}\mathbf{w}\\ b\\ \boldsymbol\xi\end{bmatrix}
+\leq \begin{bmatrix}-\mathbf{1}_N\\ \mathbf{0}_N\end{bmatrix}
+\qquad \text{(12.55), (12.56)}
+$$
+
+**The dual**, with variables $\boldsymbol\alpha \in \mathbb{R}^N$:
+
+$$
+\min_{\boldsymbol\alpha}\ \tfrac12\boldsymbol\alpha^\top\mathbf{Y}\mathbf{K}\mathbf{Y}\boldsymbol\alpha
+- \mathbf{1}^\top\boldsymbol\alpha
+\quad\text{s.t.}\quad
+\begin{bmatrix}\mathbf{y}^\top\\ -\mathbf{y}^\top\\ -\mathbf{I}_N\\ \mathbf{I}_N\end{bmatrix}
+\boldsymbol\alpha \leq
+\begin{bmatrix}\mathbf{0}_2\\ \mathbf{0}_N\\ C\mathbf{1}_N\end{bmatrix}
+\qquad \text{(12.57)}
+$$
+
+Both built and solved on the nine-point example, against the reference optimum $3.8750000000$:
+
+| form | variables | constraint rows | solved value | gap |
+| --- | --- | --- | --- | --- |
+| primal, 12.56 | $D + 1 + N = 12$ | $2N = 18$ | $3.8750000000$ | $7.105\times10^{-15}$ |
+| dual, 12.57 | $N = 9$ | $2N + 2 = 20$ | $-3.8750000000$ | $2.132\times10^{-14}$ |
+
+:::note[Equation 12.58 is a workaround, and it doubles a row]
+The dual has the equality $\mathbf{y}^\top\boldsymbol\alpha = 0$, and the standard form only accepts
+inequalities. Equation 12.58's fix is to write each equality twice:
+
+$$
+\mathbf{A}\mathbf{x} = \mathbf{b}
+\quad\text{becomes}\quad
+\mathbf{A}\mathbf{x} \leq \mathbf{b} \ \text{ and } \ \mathbf{A}\mathbf{x} \geq \mathbf{b}
+\qquad \text{(12.58)}
+$$
+
+That is why the dual's constraint matrix above has $2N + 2$ rows rather than $2N + 1$: the first two
+rows are $\mathbf{y}^\top$ and $-\mathbf{y}^\top$, the same constraint from both sides. The book adds
+that *"particular software implementations of convex optimization methods may provide the ability to
+express equality constraints"* — and the ones worth using all do.
+:::
+
+## Which formulation is smaller?
+
+The primal's size grows with $D$, the dual's does not:
+
+| setting | $D$ | $N$ | primal variables | dual variables |
+| --- | --- | --- | --- | --- |
+| the running example | $2$ | $9$ | $12$ | $9$ |
+| digits, $8$ vs $3$ | $64$ | $360$ | $425$ | $360$ |
+| MNIST, two classes | $784$ | $12{,}000$ | $12{,}785$ | $12{,}000$ |
+| text, bag of words | $50{,}000$ | $2{,}000$ | $52{,}001$ | $\mathbf{2{,}000}$ |
+| genomics | $20{,}000$ | $200$ | $20{,}201$ | $\mathbf{200}$ |
+| **with an RBF kernel** | $\infty$ | $1{,}000$ | **infinite** | $\mathbf{1{,}000}$ |
+
+The last row is the one that matters. **An RBF kernel's feature space has no finite dimension, so the
+primal has no finite variable count at all** — the dual is not merely smaller there, it is the only
+one of the two that exists. That is the practical payoff of page 1206's derivation, and page 1208's
+rank measurement is the same fact seen from another angle.
+
+## "Not often used in practice"
+
+The section ends with an admission:
+
+> *The approach presented here, expressing the SVM problem in standard convex optimization form, is
+> not often used in practice.*
+
+It is worth knowing how large "not often" is. Timing the generic SLSQP solve of Equation 12.57
+against LIBSVM — the solver the book cites as one of the two main implementations — on the same data:
+
+```
+  N =   200 : LIBSVM       2.8 ms, generic SLSQP      249.3 ms, ratio     89.2x
+  N =   800 : LIBSVM       2.4 ms, generic SLSQP    29415.5 ms, ratio  12349.1x
+  N =  2000 : LIBSVM      10.2 ms, generic SLSQP   504152.8 ms, ratio  49548.2x
+```
+
+**Eight minutes against ten milliseconds at $N = 2000$, and the gap widens with every doubling.** The
+generic solver treats $\mathbf{Y}\mathbf{K}\mathbf{Y}$ as an arbitrary dense quadratic form and
+maintains an approximation to its inverse; a specialised SVM solver exploits three things the generic
+one cannot know:
+
+| what a specialised solver uses | where it comes from |
+| --- | --- |
+| the constraints are **box** constraints plus one equality | Equation 12.41 |
+| the solution is **sparse** — most $\alpha_n$ are zero | page 1206 |
+| sub-problems of size $2$ have a closed form | the structure of the box |
+
+Sequential minimal optimisation updates two multipliers at a time, keeps
+$\sum_n y_n\alpha_n = 0$ satisfied by construction, and never forms an $N \times N$ inverse.
+
+<Figure
+  src="/images/mml/numerical-solution/what-it-costs-to-solve"
+  alt="Left, a log-log plot of the objective gap against iterations for subgradient descent, falling from about 5 to 2e-4 over 200,000 iterations, with a dashed reference line of slope one over root k. Right, a log-log plot of fitting time against N: a nearly flat green LIBSVM line around one to four milliseconds, and a steeply rising red line for the generic solver, annotated with ratios 94x, 328x, 1615x and 6220x."
+  title="Two ways to solve it, and the cost of each"
+  caption="The right panel's generic solver is capped at 120 iterations, so its ratios are a lower bound — the uncapped run in the table above reaches 49,548x at N = 2000. Both axes are logarithmic; the gap is a widening gulf, not a constant factor."
+/>
+
+:::caution[Reading the timing honestly]
+Two caveats on that table, because a 49,548-fold ratio invites over-reading.
+
+**It is not a fair contest, and that is the point.** SLSQP is a general-purpose sequential quadratic
+programming routine solving a problem it knows nothing about; LIBSVM is two decades of work on this
+exact problem. The comparison measures what the structure is worth, not what the algorithms are worth.
+
+**The ratio is not a constant.** It is $89\times$ at $N = 200$ and $49{,}548\times$ at $N = 2000$,
+because the generic solver's cost grows far faster in $N$. Quoting a single number would be wrong;
+the shape of the growth is the finding.
+:::
+
+<Quiz
+  title="Check your understanding"
+  questions={[
+    {
+      question: "At t = 1 the hinge loss has subgradient set [-1, 0]. What does it mean for a number g to be in that set?",
+      options: [
+        "That g is the average of the left and right derivatives",
+        "That the line through (1, 0) with slope g stays below the loss for every t — measured, every g in [-1, 0] satisfies this and nothing outside it does",
+        "That g is the limit of difference quotients",
+        "That g minimises the loss"
+      ],
+      answer: 1,
+      explanation: "The defining inequality is l(t) >= l(t0) + g(t - t0) for all t. At t0 = 1 with l(1) = 0 this is a fan of supporting lines. Away from the kink the fan collapses to one line, which is the ordinary derivative."
+    },
+    {
+      question: "Subgradient descent on Equation 12.31 needed 100,000 iterations to get within 4.1e-04 of the optimum. Why is that expected?",
+      options: [
+        "Because the problem is non-convex",
+        "Because the step size was too small",
+        "Because a subgradient is not guaranteed to be a descent direction, so the method converges at roughly one over the square root of the iteration count rather than linearly",
+        "Because the hinge loss has no minimum"
+      ],
+      answer: 2,
+      explanation: "Each factor of ten in iterations bought about a factor of three in accuracy, which is the 1/sqrt(k) signature. It is also why the code tracks the best objective seen rather than the current one: a subgradient step can increase the objective."
+    },
+    {
+      question: "Why does Equation 12.57's constraint matrix have 2N + 2 rows rather than 2N + 1?",
+      options: [
+        "Because there are two classes",
+        "Because the standard form accepts only inequalities, so Equation 12.58 writes the single equality y'alpha = 0 twice, once in each direction",
+        "Because b needs its own constraint",
+        "Because the box needs three bounds"
+      ],
+      answer: 1,
+      explanation: "The first two rows are y-transpose and minus y-transpose against a right-hand side of zero. The book notes that real convex-optimisation software usually accepts equality constraints directly, making the workaround unnecessary in practice."
+    },
+    {
+      question: "With an RBF kernel, what is the number of variables in the primal quadratic program?",
+      options: [
+        "N",
+        "D + 1 + N, where D is large but finite",
+        "Infinite — the RBF feature space has no finite dimension, so the primal does not exist as a finite program and the dual is the only usable formulation",
+        "The same as the number of support vectors"
+      ],
+      answer: 2,
+      explanation: "This is the practical payoff of the dual derivation. Page 1208 measured the same fact as a Gram matrix rank that never saturates: 50, 93, 125, 154, 171 as N grew from 50 to 800."
+    }
+  ]}
+/>
+
+## Exercises
+
+### Exercise 1 – Test which slopes are subgradients
+
+<DataCampExercise
+  lang="python"
+  hint={`A slope g is valid at t0 when l(t0) + g*(t - t0) never rises above l(t). Take the maximum of the difference over a fine grid.`}
+  code={`import numpy as np
+
+ts = np.linspace(-6, 6, 240001)
+lt = np.maximum(0.0, 1 - ts)
+
+print(f"{'candidate g':>13} {'valid at t0 = 1?':>18} {'worst violation':>17}")
+for g in (-1.5, -1.0, -0.7, -0.5, -0.25, 0.0, 0.25):
+    # Task: how far the supporting line rises above the loss, at worst.
+    viol = float(___)
+    print(f"{g:>13.2f} {str(viol <= 1e-12):>18} {max(viol, 0.0):>17.3e}")
+
+# -- Expected output ------------------------------
+#   candidate g   valid at t0 = 1?   worst violation
+#         -1.50              False         3.500e+00
+#         -1.00               True         0.000e+00
+#         -0.70               True         0.000e+00
+#         -0.50               True         0.000e+00
+#         -0.25               True         0.000e+00
+#          0.00               True         0.000e+00
+#          0.25              False         1.250e+00
+# -------------------------------------------------`}
+  solution={`import numpy as np
+ts = np.linspace(-6, 6, 240001)
+lt = np.maximum(0.0, 1 - ts)
+print(f"{'candidate g':>13} {'valid at t0 = 1?':>18} {'worst violation':>17}")
+for g in (-1.5, -1.0, -0.7, -0.5, -0.25, 0.0, 0.25):
+    viol = float(np.max(0.0 + g * (ts - 1.0) - lt))
+    print(f"{g:>13.2f} {str(viol <= 1e-12):>18} {max(viol, 0.0):>17.3e}")`}
+  sct={`test_output_contains("-1.00               True         0.000e+00")
+test_output_contains("0.25              False         1.250e+00")
+success_msg("The interval [-1, 0] exactly. Outside it the supporting line cuts above the loss somewhere, which disqualifies it. Equation 12.54 is not a convention — it is the complete set of slopes that work.")`}
+  height={420}
+/>
+
+### Exercise 2 – Run subgradient descent and watch the rate
+
+<DataCampExercise
+  lang="python"
+  hint={`The active set is the examples with margin below one. Their contribution to the gradient in w is minus C times the sum of y_n x_n over that set.`}
+  code={`import numpy as np
+
+X = np.array([[3.0,  1.0], [3.0, -1.0], [6.0,  1.0], [6.0, -1.0],
+              [1.0,  0.0], [0.0,  1.0], [0.0, -1.0], [-1.0, 0.0]])
+Y = np.array([ 1.0,  1.0,  1.0,  1.0,  -1.0, -1.0, -1.0, -1.0])
+XB = np.vstack([X, [4.5, 0.0]])
+YB = np.r_[Y, -1.0]
+C = 1.0
+F_STAR = 3.8750000000              # the optimum, from the QP
+
+def obj(w, b):
+    return 0.5 * w @ w + C * np.maximum(0.0, 1 - YB * (XB @ w + b)).sum()
+
+def subgrad(iters, eta0=0.5, seed=0):
+    rg = np.random.default_rng(seed)
+    w, b = rg.normal(0, 0.3, 2), float(rg.normal(0, 0.3))
+    best = obj(w, b)
+    for k in range(1, iters + 1):
+        t = YB * (XB @ w + b)
+        # Task: which examples currently contribute a non-zero subgradient?
+        act = ___
+        gw = w - C * (YB[act] @ XB[act]) if act.any() else w.copy()
+        gb = -C * YB[act].sum() if act.any() else 0.0
+        eta = eta0 / k
+        w, b = w - eta * gw, b - eta * gb
+        best = min(best, obj(w, b))
+    return best
+
+print(f"{'iterations':>12} {'best objective':>17} {'gap':>12}")
+for it in (10, 100, 1000, 10000):
+    fb = subgrad(it)
+    print(f"{it:>12} {fb:>17.10f} {fb - F_STAR:>12.3e}")
+
+# -- Expected output ------------------------------
+#   iterations    best objective          gap
+#           10      3.9235861529    4.859e-02
+#          100      3.8882244562    1.322e-02
+#         1000      3.8791122429    4.112e-03
+#        10000      3.8762946193    1.295e-03
+# -------------------------------------------------`}
+  solution={`import numpy as np
+X = np.array([[3.0,  1.0], [3.0, -1.0], [6.0,  1.0], [6.0, -1.0],
+              [1.0,  0.0], [0.0,  1.0], [0.0, -1.0], [-1.0, 0.0]])
+Y = np.array([ 1.0,  1.0,  1.0,  1.0,  -1.0, -1.0, -1.0, -1.0])
+XB = np.vstack([X, [4.5, 0.0]])
+YB = np.r_[Y, -1.0]
+C = 1.0
+F_STAR = 3.8750000000
+def obj(w, b):
+    return 0.5 * w @ w + C * np.maximum(0.0, 1 - YB * (XB @ w + b)).sum()
+def subgrad(iters, eta0=0.5, seed=0):
+    rg = np.random.default_rng(seed)
+    w, b = rg.normal(0, 0.3, 2), float(rg.normal(0, 0.3))
+    best = obj(w, b)
+    for k in range(1, iters + 1):
+        t = YB * (XB @ w + b)
+        act = t < 1.0
+        gw = w - C * (YB[act] @ XB[act]) if act.any() else w.copy()
+        gb = -C * YB[act].sum() if act.any() else 0.0
+        eta = eta0 / k
+        w, b = w - eta * gw, b - eta * gb
+        best = min(best, obj(w, b))
+    return best
+print(f"{'iterations':>12} {'best objective':>17} {'gap':>12}")
+for it in (10, 100, 1000, 10000):
+    fb = subgrad(it)
+    print(f"{it:>12} {fb:>17.10f} {fb - F_STAR:>12.3e}")`}
+  sct={`test_output_contains("10000      3.8762946193    1.295e-03")
+test_output_contains("100      3.8882244562    1.322e-02")
+success_msg("Ten times the iterations buys about three times the accuracy — the one-over-root-k rate. Note the running minimum: a subgradient step can increase the objective, so the last iterate is not the best one.")`}
+  height={480}
+/>
+
+### Exercise 3 – Build Equation 12.57's constraint matrix
+
+<DataCampExercise
+  lang="python"
+  hint={`The first two rows are the label vector and its negation, encoding the equality twice as Equation 12.58 prescribes. Then minus the identity for the lower bounds and plus the identity for the upper.`}
+  code={`import numpy as np
+from scipy.optimize import minimize
+
+X = np.array([[3.0,  1.0], [3.0, -1.0], [6.0,  1.0], [6.0, -1.0],
+              [1.0,  0.0], [0.0,  1.0], [0.0, -1.0], [-1.0, 0.0]])
+Y = np.array([ 1.0,  1.0,  1.0,  1.0,  -1.0, -1.0, -1.0, -1.0])
+XB = np.vstack([X, [4.5, 0.0]])
+YB = np.r_[Y, -1.0]
+C = 1.0
+n = len(XB)
+
+H = (YB[:, None] * YB[None, :]) * (XB @ XB.T)
+# Task: stack the four blocks of Equation 12.57's constraint matrix.
+G = ___
+h = np.r_[0.0, 0.0, np.zeros(n), C * np.ones(n)]
+
+r = minimize(lambda a: 0.5 * a @ H @ a - a.sum(), np.full(n, C / 2),
+             jac=lambda a: H @ a - 1.0,
+             constraints=[{"type": "ineq", "fun": lambda a: h - G @ a,
+                           "jac": lambda a: -G}],
+             method="SLSQP", options={"maxiter": 40000, "ftol": 1e-14})
+
+print(f"G has shape        : {G.shape}")
+print(f"constraint rows    : {G.shape[0]} = 2 + 2N")
+print(f"dual value         : {r.fun:.10f}")
+print(f"primal optimum     : {-r.fun:.10f}")
+print(f"matches 3.875?     : {abs(-r.fun - 3.875) < 1e-8}")
+
+# -- Expected output ------------------------------
+# G has shape        : (20, 9)
+# constraint rows    : 20 = 2 + 2N
+# dual value         : -3.8750000000
+# primal optimum     : 3.8750000000
+# matches 3.875?     : True
+# -------------------------------------------------`}
+  solution={`import numpy as np
+from scipy.optimize import minimize
+X = np.array([[3.0,  1.0], [3.0, -1.0], [6.0,  1.0], [6.0, -1.0],
+              [1.0,  0.0], [0.0,  1.0], [0.0, -1.0], [-1.0, 0.0]])
+Y = np.array([ 1.0,  1.0,  1.0,  1.0,  -1.0, -1.0, -1.0, -1.0])
+XB = np.vstack([X, [4.5, 0.0]])
+YB = np.r_[Y, -1.0]
+C = 1.0
+n = len(XB)
+H = (YB[:, None] * YB[None, :]) * (XB @ XB.T)
+G = np.vstack([YB[None, :], -YB[None, :], -np.eye(n), np.eye(n)])
+h = np.r_[0.0, 0.0, np.zeros(n), C * np.ones(n)]
+r = minimize(lambda a: 0.5 * a @ H @ a - a.sum(), np.full(n, C / 2),
+             jac=lambda a: H @ a - 1.0,
+             constraints=[{"type": "ineq", "fun": lambda a: h - G @ a,
+                           "jac": lambda a: -G}],
+             method="SLSQP", options={"maxiter": 40000, "ftol": 1e-14})
+print(f"G has shape        : {G.shape}")
+print(f"constraint rows    : {G.shape[0]} = 2 + 2N")
+print(f"dual value         : {r.fun:.10f}")
+print(f"primal optimum     : {-r.fun:.10f}")
+print(f"matches 3.875?     : {abs(-r.fun - 3.875) < 1e-8}")`}
+  sct={`test_output_contains("G has shape        : (20, 9)")
+test_output_contains("primal optimum     : 3.8750000000")
+test_output_contains("matches 3.875?     : True")
+success_msg("Twenty rows for nine variables: two for the single equality written twice, and eighteen for the box. The dual value is the negative of the primal optimum, which is strong duality showing up as a sign.")`}
+  height={460}
+/>
+
+## Recall card
+
+- **Equation 12.31 is convex and unconstrained but not differentiable**, because the hinge has a kink at t equal to one.
+- **A subgradient is any slope whose supporting line stays below the loss everywhere.** At the kink that is the whole interval from minus one to zero — measured, every value in it works and nothing outside it does.
+- **Away from the kink the subgradient is unique** and equals the ordinary derivative, which is why Equation 12.54 lists a set at one point and a number elsewhere.
+- **Subgradient descent converges at about one over the square root of the iteration count.** A hundred thousand steps reached four decimal places; each factor of ten in iterations bought about a factor of three.
+- **A subgradient step can increase the objective**, so the running minimum is what converges, not the current iterate.
+- **The primal quadratic program has D plus one plus N variables**, with the identity block for w and zeros for b and the slacks — which is the matrix form of b being unregularised.
+- **The dual has N variables and no dependence on D at all.**
+- **Equation 12.58 writes each equality as two inequalities**, which is why the dual's constraint matrix has two rows more than twice N. Real solvers accept equalities directly.
+- **Both standard forms were built and solved, agreeing with the reference optimum to 7.1e-15 and 2.1e-14.**
+- **With an RBF kernel the primal has infinitely many variables and the dual has N.** The dual is not merely smaller there; it is the only one of the two that exists.
+- **The book's aside that this approach is 'not often used in practice' is an understatement.** A generic solver took 504 seconds where LIBSVM took 10 milliseconds at N equal to 2000 — a factor of 49,548, and growing with N.
+- **What the specialised solvers exploit is structure the generic one cannot see:** box constraints plus one equality, a sparse solution, and two-variable sub-problems with a closed form.
+
+**Next:** **[Chapter 12 Worked Problems](../chapter-12-worked-problems/)** — problems built from the
+chapter's own claims, this module's own.

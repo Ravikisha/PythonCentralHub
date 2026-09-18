@@ -23,9 +23,20 @@ from _style import Palette, figure
 
 GRID = 200001  # odd, so the midpoint of the interval is a sample
 
+# The fine grid is what the trapezoid integrals below are computed on, and the
+# printed areas depend on it. Drawing does not: the axes are a few hundred
+# pixels wide, so plotting all 200,001 samples wrote ~250 of them per pixel and
+# produced a 10 MB SVG. Compute on GRID, draw on PLOT_GRID.
+PLOT_GRID = 2001  # also odd, so x = 0 stays a sample and the fills meet there
+
 
 def _x() -> np.ndarray:
     return np.linspace(-np.pi, np.pi, GRID)
+
+
+def _xp() -> np.ndarray:
+    """The grid used for DRAWING only. Never use it for a reported number."""
+    return np.linspace(-np.pi, np.pi, PLOT_GRID)
 
 
 def sin_cos_cancels(fig, ax, p: Palette) -> None:
@@ -38,16 +49,20 @@ def sin_cos_cancels(fig, ax, p: Palette) -> None:
     v = np.cos(x)
     w = u * v
 
-    top.plot(x, u, color=p.blue, linewidth=2.2, label=r"$u(x) = \sin x$")
-    top.plot(x, v, color=p.amber, linewidth=2.2, label=r"$v(x) = \cos x$")
+    xp = _xp()                       # drawing only; every number below uses x
+    up, vp = np.sin(xp), np.cos(xp)
+    wp = up * vp
+
+    top.plot(xp, up, color=p.blue, linewidth=2.2, label=r"$u(x) = \sin x$")
+    top.plot(xp, vp, color=p.amber, linewidth=2.2, label=r"$v(x) = \cos x$")
     top.axhline(0, color=p.grid, linewidth=0.9)
     top.legend(loc="upper right", fontsize=8.5, ncol=2)
     top.set_ylim(-1.35, 1.65)
     top.set_ylabel("value")
 
-    bottom.plot(x, w, color=p.purple, linewidth=2.0, label=r"$u(x)\,v(x) = \frac{1}{2}\sin 2x$")
-    bottom.fill_between(x, 0, w, where=w > 0, color=p.green, alpha=0.42, label="positive area")
-    bottom.fill_between(x, 0, w, where=w < 0, color=p.red, alpha=0.42, label="negative area")
+    bottom.plot(xp, wp, color=p.purple, linewidth=2.0, label=r"$u(x)\,v(x) = \frac{1}{2}\sin 2x$")
+    bottom.fill_between(xp, 0, wp, where=wp > 0, color=p.green, alpha=0.42, label="positive area")
+    bottom.fill_between(xp, 0, wp, where=wp < 0, color=p.red, alpha=0.42, label="negative area")
     bottom.axhline(0, color=p.grid, linewidth=0.9)
     bottom.set_xlabel("$x$")
     bottom.set_ylabel("product")
