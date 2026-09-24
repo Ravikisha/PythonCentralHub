@@ -1,0 +1,173 @@
+rules_version = '2';
+
+// Firestore security rules for Python Central Hub.
+//
+// Deploy with: npm run firebase:rules
+//
+// The web SDK config is client-visible by design, so these rules are the only
+// thing standing between the database and the open internet. Default posture
+// is deny; every allowance below is explicit.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // A real account: Google, GitHub or email+password.
+    //
+    // Anonymous sessions are excluded on purpose. A guest's progress is kept
+    // in their browser's localStorage and never sent here, so the database
+    // only ever holds data belonging to a login its owner can get back into.
+    // The client enforces the same rule; this is the half that cannot be
+    // edited by whoever is holding the browser.
+    function isAccount() {
+      return request.auth != null
+             && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    function isOwner(uid) {
+      return isAccount() && request.auth.uid == uid;
+    }
+
+    // Shape check for users/{uid}. Keeps a compromised or hand-rolled client
+    // from stuffing arbitrary payloads into the profile document.
+    function validProfile(uid) {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+               'uid', 'email', 'displayName', 'photoURL', 'locale',
+               'providers', 'createdAt', 'updatedAt', 'settings'
+             ])
+             && d.uid == uid
+             && (!('email' in d) || d.email is string)
+             && (!('displayName' in d) || (d.displayName is string && d.displayName.size() <= 80))
+             && (!('photoURL' in d) || (d.photoURL is string && d.photoURL.size() <= 2048))
+             && (!('locale' in d) || (d.locale is string && d.locale.size() <= 10))
+             && (!('providers' in d) || d.providers is list)
+             && (!('settings' in d) || d.settings is map);
+    }
+
+    // Contact + feedback form submissions.
+    //
+    // Append-only from the client: anyone may file one, nobody may read,
+    // change or delete one. Submissions are never readable back, so a
+    // sender's address is not exposed to the next visitor.
+    //
+    // These rules match what the site actually does. The earlier example
+    // rules denied client writes entirely on the assumption that submissions
+    // went through the `submitForm` Cloud Function in
+    // functions/index.example.js -- but that function was never deployed, and
+    // Contact.astro / Feedback.astro write here directly. Denying writes
+    // would simply have broken both forms.
+    //
+    // The reCAPTCHA token is stored but NOT verified: verifying it needs a
+    // server. Until `submitForm` is deployed these caps are the only spam
+    // control, so keep them tight.
+    function validSubmission(fields) {
+      let d = request.resource.data;
+      return d.keys().hasOnly(fields)
+             && d.keys().hasAll(['createdAt'])
+             && d.createdAt is string
+             && (!('email' in d) || (d.email is string && d.email.size() <= 254))
+             && (!('recaptchaToken' in d) || d.recaptchaToken is string);
+    }
+
+    match /contact/{doc} {
+      allow read, update, delete: if false;
+      allow create: if validSubmission(
+                         ['name', 'email', 'message', 'recaptchaToken', 'createdAt'])
+                       && request.resource.data.name is string
+                       && request.resource.data.name.size() <= 120
+                       && request.resource.data.message is string
+                       && request.resource.data.message.size() <= 5000;
+    }
+
+    match /feedback/{doc} {
+      allow read, update, delete: if false;
+      allow create: if validSubmission(
+                         ['feedback', 'email', 'comment', 'recaptchaToken', 'createdAt'])
+                       && request.resource.data.feedback is string
+                       && request.resource.data.feedback.size() <= 40
+                       && (!('comment' in request.resource.data)
+                           || request.resource.data.comment.size() <= 5000);
+    }
+
+    // Learner profile. Readable and writable only by its owner.
+    match /users/{uid} {
+      allow get, list: if isOwner(uid);
+      allow create, update: if isOwner(uid) && validProfile(uid);
+      allow delete: if isOwner(uid);
+
+      // Per-user subcollections (progress, quiz results, bookmarks, notes).
+      // Self-reported learning state, so the owner may write it freely. The
+      // things that must NOT be self-reported -- exam answer keys, graded
+      // attempts, issued certificates -- live in top-level collections that
+      // only the Admin SDK can touch.
+      match /{sub=**} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+
+    // Module page counts, seeded from the build manifest. Public because the
+    // verification page needs it and it is the same data the site ships in
+    // /progress-manifest.json anyway.
+    match /config/{doc} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Exam questions WITHOUT their answers. Readable by a signed-in account
+    // so the paper can be rendered; the key lives in examKeys and is
+    // unreadable by anyone.
+    match /exams/{module} {
+      allow read: if isAccount();
+      allow write: if false;
+    }
+
+    // Answer keys. No client may read these under any circumstances -- that
+    // is the entire point of grading on the server.
+    match /examKeys/{module} {
+      allow read, write: if false;
+    }
+
+    // Graded attempts. The owner may see their own record; only the
+    // `gradeExam` function can create one.
+    match /attempts/{id} {
+      allow get: if isAccount() && resource.data.uid == request.auth.uid;
+      allow list, write: if false;
+    }
+
+    // Issued certificates.
+    //
+    // `get` is public so anyone handed a certificate id can check it -- that
+    // is what makes the certificate worth anything. `list` is denied so the
+    // collection cannot be enumerated for holders' names and addresses; a
+    // learner's own certificates are indexed under
+    // users/{uid}/stats/certificates instead.
+    match /certificates/{certId} {
+      allow get: if true;
+      allow list, write: if false;
+    }
+
+    // Public leaderboard.
+    //
+    // Readable and listable by anyone -- a board nobody can see is not a
+    // board. Written only by the `publishLeaderboard` function, which
+    // recomputes the numbers from server-side records: a self-reported
+    // ranking would be worthless, since being wrong is the whole problem on
+    // this particular surface. Opting out deletes the row rather than hiding
+    // it.
+    match /leaderboard/{uid} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Outbox for the "Trigger Email from Firestore" extension. Written by the
+    // digest function, read by the extension, and off-limits to every client:
+    // these documents contain subscribers' email addresses.
+    match /mail/{doc} {
+      allow read, write: if false;
+    }
+
+    // Anything not matched above.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

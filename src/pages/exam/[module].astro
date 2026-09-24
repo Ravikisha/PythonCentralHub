@@ -1,0 +1,318 @@
+---
+/**
+ * /exam/<module> — the final assessment for one module.
+ *
+ * One page is generated per file in src/data/exams/, so a module without an
+ * exam has no route rather than a route that apologises.
+ *
+ * The paper itself is NOT baked into this page. It is fetched at runtime from
+ * Firestore `exams/<module>`, which holds the questions without their answers;
+ * the key never leaves the server and grading happens in the `gradeExam`
+ * callable. Rendering the questions at build time would put them in the static
+ * HTML, where the next step is someone diffing them against the key.
+ */
+import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import yaml from "js-yaml";
+import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
+import AuthMessages from "../../components/auth/AuthMessages.astro";
+
+export function getStaticPaths() {
+  const dir = "src/data/exams";
+  if (!existsSync(dir)) return [];
+
+  return readdirSync(dir)
+    .filter((f) => /\.ya?ml$/.test(f))
+    .map((f) => {
+      const exam = yaml.load(readFileSync(join(dir, f), "utf8")) as {
+        module: string;
+        title?: string;
+      };
+      return {
+        params: { module: exam.module },
+        props: { title: exam.title ?? exam.module },
+      };
+    });
+}
+
+const { module: moduleSlug } = Astro.params;
+const { title } = Astro.props;
+const t = Astro.locals.t;
+---
+
+<StarlightPage
+  frontmatter={{
+    title,
+    template: "splash",
+    pagefind: false,
+    head: [{ tag: "meta", attrs: { name: "robots", content: "noindex, follow" } }],
+  }}
+>
+  <div class="pch-exam not-content" data-pch-exam data-module={moduleSlug}>
+    <p class="pch-auth__intro" data-pch-exam-intro>{t("pch.examLoading")}</p>
+
+    <div data-pch-gate hidden>
+      <p class="pch-auth__intro" data-pch-gate-text></p>
+      <a class="pch-auth__secondary" data-pch-gate-link></a>
+    </div>
+
+    <form id="pch-exam-form" hidden novalidate>
+      <ol class="pch-exam__list" data-pch-questions></ol>
+      <button type="submit" class="pch-auth__submit" data-pch-submit>
+        {t("pch.examSubmit")}
+      </button>
+    </form>
+
+    <p class="pch-auth__status" data-pch-status hidden></p>
+
+    <section class="pch-exam__result" data-pch-result hidden>
+      <p class="pch-exam__score"><strong data-pch-score></strong><span>%</span></p>
+      <p data-pch-verdict></p>
+      <p class="pch-dash__actions">
+        <button type="button" class="pch-auth__submit" data-pch-claim hidden>
+          {t("pch.examClaim")}
+        </button>
+        <button type="button" class="pch-auth__secondary" data-pch-retry hidden>
+          {t("pch.examRetry")}
+        </button>
+      </p>
+    </section>
+
+    {/* Strings the script needs at runtime. */}
+    <p hidden data-text-signin>{t("pch.examSignIn")}</p>
+    <p hidden data-text-verify>{t("pch.examVerify")}</p>
+    <p hidden data-text-signinlink>{t("pch.authSignIn")}</p>
+    <p hidden data-text-verifylink>{t("pch.authVerifyTitle")}</p>
+    <p hidden data-text-passed>{t("pch.examPassed")}</p>
+    <p hidden data-text-failed>{t("pch.examFailed")}</p>
+    <p hidden data-text-unanswered>{t("pch.examUnanswered")}</p>
+    <p hidden data-text-missing>{t("pch.examMissing")}</p>
+    <p hidden data-text-wrong>{t("pch.examWrong")}</p>
+    <p hidden data-text-grading>{t("pch.examGrading")}</p>
+    <p hidden data-text-issued>{t("pch.examIssued")}</p>
+
+    <AuthMessages />
+  </div>
+</StarlightPage>
+
+<script>
+  import { messageFor, setStatus } from "../../lib/auth/messages";
+
+  interface ExamDoc {
+    title: string;
+    passScore: number;
+    questions: { q: string; options: string[] }[];
+  }
+  interface Grade {
+    score: number;
+    passScore: number;
+    passed: boolean;
+    correct: number;
+    total: number;
+    wrong: number[];
+    explanations: string[];
+  }
+
+  const root = document.querySelector<HTMLElement>("[data-pch-exam]");
+  const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel);
+  const text = (sel: string) => $(sel)?.textContent?.trim() ?? "";
+
+  if (root) {
+    const moduleSlug = root.dataset.module!;
+    const intro = $("[data-pch-exam-intro]");
+    const gate = $("[data-pch-gate]");
+    const form = document.getElementById("pch-exam-form") as HTMLFormElement | null;
+    const list = $("[data-pch-questions]");
+    const status = $("[data-pch-status]");
+    const result = $("[data-pch-result]");
+
+    /** Show the "you need an account / a verified address" panel and stop. */
+    const showGate = (message: string, href: string, label: string) => {
+      if (intro) intro.hidden = true;
+      if (!gate) return;
+      $("[data-pch-gate-text]")!.textContent = message;
+      const link = $<HTMLAnchorElement>("[data-pch-gate-link]")!;
+      link.href = href;
+      link.textContent = label;
+      gate.hidden = false;
+    };
+
+    (async () => {
+      const { currentUser } = await import("../../lib/firebase/auth");
+      const user = await currentUser();
+
+      // Both gates exist server-side too, in `requireVerifiedCaller`. These
+      // are here so the learner is told why before sitting a paper that would
+      // be refused at grading time.
+      if (!user || user.isAnonymous) {
+        showGate(
+          text("[data-text-signin]"),
+          `/login?next=/exam/${moduleSlug}`,
+          text("[data-text-signinlink]")
+        );
+        return;
+      }
+      await user.reload();
+      if (!user.emailVerified) {
+        showGate(text("[data-text-verify]"), "/verify-email", text("[data-text-verifylink]"));
+        return;
+      }
+
+      /* ---- fetch the paper ---- */
+      let exam: ExamDoc;
+      try {
+        const { doc, getDoc } = await import("firebase/firestore");
+        const { getDb } = await import("../../lib/firebase/client");
+        const snap = await getDoc(doc(await getDb(), "exams", moduleSlug));
+        if (!snap.exists()) {
+          if (intro) intro.textContent = text("[data-text-missing]");
+          return;
+        }
+        exam = snap.data() as ExamDoc;
+      } catch (err) {
+        console.error("[exam] load failed:", err);
+        if (intro) intro.textContent = messageFor("pch.authErrGeneric");
+        return;
+      }
+
+      if (intro) intro.hidden = true;
+
+      exam.questions.forEach((question, qi) => {
+        const li = document.createElement("li");
+        li.className = "pch-exam__item";
+        li.dataset.index = String(qi);
+
+        const p = document.createElement("p");
+        p.className = "pch-exam__q";
+        // Question text is author-written Markdown-ish prose but arrives from
+        // the database, so it goes in as text, never as HTML.
+        p.textContent = question.q;
+        li.appendChild(p);
+
+        question.options.forEach((option, oi) => {
+          const id = `q${qi}o${oi}`;
+          const label = document.createElement("label");
+          label.className = "pch-exam__option";
+          label.htmlFor = id;
+
+          const input = document.createElement("input");
+          input.type = "radio";
+          input.name = `q${qi}`;
+          input.id = id;
+          input.value = String(oi);
+
+          const span = document.createElement("span");
+          span.textContent = option;
+
+          label.append(input, span);
+          li.appendChild(label);
+        });
+
+        const explain = document.createElement("p");
+        explain.className = "pch-exam__explain";
+        explain.hidden = true;
+        explain.dataset.explain = "";
+        li.appendChild(explain);
+
+        list?.appendChild(li);
+      });
+
+      if (form) form.hidden = false;
+
+      /* ---- submit ---- */
+      form?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        setStatus(status, null);
+
+        const answers: number[] = [];
+        for (let i = 0; i < exam.questions.length; i += 1) {
+          const picked = form.querySelector<HTMLInputElement>(
+            `input[name="q${i}"]:checked`
+          );
+          if (!picked) {
+            setStatus(status, text("[data-text-unanswered]"), "error");
+            return;
+          }
+          answers.push(Number(picked.value));
+        }
+
+        const submit = $<HTMLButtonElement>("[data-pch-submit]");
+        if (submit) submit.disabled = true;
+        setStatus(status, text("[data-text-grading]"), "info");
+
+        try {
+          const { callApi } = await import("../../lib/firebase/client");
+          const grade = await callApi<Grade>("grade-exam", {
+            module: moduleSlug,
+            answers,
+          });
+          render(grade);
+        } catch (err) {
+          const message = (err as { message?: string }).message;
+          setStatus(status, message || messageFor("pch.authErrGeneric"), "error");
+          if (submit) submit.disabled = false;
+        }
+      });
+
+      /** Show the mark, flag the wrong answers, reveal explanations if passed. */
+      function render(grade: Grade) {
+        setStatus(status, null);
+        if (form) form.hidden = true;
+        if (!result) return;
+
+        $("[data-pch-score]")!.textContent = String(grade.score);
+        result.dataset.passed = String(grade.passed);
+        $("[data-pch-verdict]")!.textContent = grade.passed
+          ? text("[data-text-passed]")
+          : text("[data-text-failed]");
+
+        const wrongLabel = text("[data-text-wrong]");
+        document.querySelectorAll<HTMLElement>(".pch-exam__item").forEach((item, i) => {
+          item.dataset.wrong = String(grade.wrong.includes(i));
+          if (grade.wrong.includes(i)) item.title = wrongLabel;
+
+          const explain = item.querySelector<HTMLElement>("[data-explain]");
+          // Explanations only come back on a pass; on a fail the array is
+          // empty by design, so there is nothing to reveal.
+          if (explain && grade.explanations[i]) {
+            explain.textContent = grade.explanations[i];
+            explain.hidden = false;
+          }
+        });
+
+        $<HTMLButtonElement>("[data-pch-claim]")!.hidden = !grade.passed;
+        $<HTMLButtonElement>("[data-pch-retry]")!.hidden = grade.passed;
+        result.hidden = false;
+        // The paper stays on screen above the result, so bring the mark into
+        // view rather than leaving the reader at the last question.
+        result.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+
+      /* ---- claim the certificate ---- */
+      $<HTMLButtonElement>("[data-pch-claim]")?.addEventListener("click", async (e) => {
+        const btn = e.currentTarget as HTMLButtonElement;
+        btn.disabled = true;
+        setStatus(status, null);
+        try {
+          const { callApi } = await import("../../lib/firebase/client");
+          const { certificateId } = await callApi<{ certificateId: string }>(
+            "issue-certificate",
+            { module: moduleSlug }
+          );
+          setStatus(status, text("[data-text-issued]"), "success");
+          window.location.href = `/certificates?new=${certificateId}`;
+        } catch (err) {
+          // The server refuses with a readable reason -- "Complete 154 of 171
+          // pages first" -- which is more use than a generic failure.
+          const message = (err as { message?: string }).message;
+          setStatus(status, message || messageFor("pch.authErrGeneric"), "error");
+          btn.disabled = false;
+        }
+      });
+
+      $<HTMLButtonElement>("[data-pch-retry]")?.addEventListener("click", () => {
+        window.location.reload();
+      });
+    })();
+  }
+</script>

@@ -124,6 +124,8 @@ export default defineConfig({
         Head: "./src/components/Head.astro",
         // Adds sidebar search + collapse/expand-all with persisted state.
         Sidebar: "./src/components/Sidebar.astro",
+        // Wraps the default social links and appends the account menu.
+        SocialIcons: "./src/components/SocialIcons.astro",
       },
       favicon: "./src/assets/favicon.ico",
       // Starlight 0.33 replaced the keyed object with an array of link items.
@@ -381,6 +383,14 @@ export default defineConfig({
         "./src/styles/math-viz.css",
         // Problem ladders, sheet trackers and company boards (src/components/dsa/*).
         "./src/styles/dsa-data.css",
+        // Header account menu + the /login, /signup, /profile pages.
+        "./src/styles/auth.css",
+        // Per-page completion controls, sidebar ticks and /dashboard. Extends
+        // the .pch-auth__secondary button from auth.css, so it loads after it.
+        "./src/styles/progress.css",
+        // Exams, certificates and the public verification page. Reuses the
+        // auth button classes and the progress prompt marker.
+        "./src/styles/certificates.css",
         "./src/styles/landing.css",
         "./src/styles/poppins.css",
         "./src/styles/atkinson.css",

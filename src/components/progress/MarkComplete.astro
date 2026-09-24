@@ -1,0 +1,201 @@
+---
+/**
+ * MarkComplete — the per-page progress controls.
+ *
+ * Rendered from the Footer override, so this is on every content page. It is
+ * also the page-level progress host: it records the "continue where you left
+ * off" pointer and listens for finished quizzes, because doing that here
+ * keeps it to one small script per page instead of three.
+ *
+ * Hidden until the script confirms the page is curriculum content -- the home
+ * page, the auth pages and the policy page have no progress to track, and
+ * only the URL can tell them apart on a static build.
+ */
+const t = Astro.locals.t;
+---
+
+<div class="pch-progress" data-pch-progress hidden>
+  <button
+    type="button"
+    class="pch-progress__complete"
+    data-pch-complete
+    aria-pressed="false"
+    data-label-mark={t("pch.progressMark")}
+    data-label-done={t("pch.progressDone")}
+  >
+    <span class="pch-prompt" data-pch-prompt aria-hidden="true"></span>
+    <span data-pch-complete-label>{t("pch.progressMark")}</span>
+  </button>
+
+  <button
+    type="button"
+    class="pch-progress__note-toggle"
+    data-pch-note-toggle
+    aria-expanded="false"
+    title={t("pch.noteAdd")}
+  >
+    <i class="fas fa-pen" aria-hidden="true"></i>
+    <span class="pch-progress__sr">{t("pch.noteAdd")}</span>
+  </button>
+
+  <button
+    type="button"
+    class="pch-progress__bookmark"
+    data-pch-bookmark
+    aria-pressed="false"
+    title={t("pch.progressBookmark")}
+    data-label-on={t("pch.progressBookmarked")}
+    data-label-off={t("pch.progressBookmark")}
+  >
+    <i class="fas fa-bookmark" aria-hidden="true"></i>
+    <span class="pch-progress__sr">{t("pch.progressBookmark")}</span>
+  </button>
+</div>
+
+<div class="pch-note" data-pch-note hidden>
+  <label class="pch-note__label" for="pch-note-body">{t("pch.noteLabel")}</label>
+  <textarea
+    id="pch-note-body"
+    class="pch-note__body"
+    rows="4"
+    maxlength="4000"
+    placeholder={t("pch.notePlaceholder")}
+    data-pch-note-body></textarea>
+  <p class="pch-note__state" data-pch-note-state aria-live="polite"></p>
+  <p hidden data-text-saved>{t("pch.noteSaved")}</p>
+</div>
+
+<script>
+  import { pageIdOf } from "../../lib/progress/ids";
+  import {
+    isComplete,
+    setComplete,
+    isBookmarked,
+    setBookmark,
+    setNote,
+    getNote,
+    setLastPage,
+    recordQuiz,
+    subscribe,
+    read,
+  } from "../../lib/progress/local";
+  import { readHint } from "../../lib/auth/hint";
+
+  const root = document.querySelector<HTMLElement>("[data-pch-progress]");
+  const pageId = pageIdOf(window.location.pathname);
+
+  if (root && pageId) {
+    root.hidden = false;
+
+    const completeBtn = root.querySelector<HTMLButtonElement>("[data-pch-complete]")!;
+    const completeLabel = root.querySelector<HTMLElement>("[data-pch-complete-label]")!;
+    const prompt = root.querySelector<HTMLElement>("[data-pch-prompt]")!;
+    const bookmarkBtn = root.querySelector<HTMLButtonElement>("[data-pch-bookmark]")!;
+
+    const paint = () => {
+      const done = isComplete(pageId);
+      completeBtn.setAttribute("aria-pressed", String(done));
+      prompt.dataset.state = done ? "done" : "";
+      completeLabel.textContent = done
+        ? completeBtn.dataset.labelDone!
+        : completeBtn.dataset.labelMark!;
+
+      const saved = isBookmarked(pageId);
+      bookmarkBtn.setAttribute("aria-pressed", String(saved));
+      bookmarkBtn.title = saved ? bookmarkBtn.dataset.labelOn! : bookmarkBtn.dataset.labelOff!;
+    };
+
+    paint();
+    // Keeps the buttons honest when progress changes in another tab.
+    subscribe(paint);
+
+    completeBtn.addEventListener("click", () => {
+      setComplete(pageId, completeBtn.getAttribute("aria-pressed") !== "true");
+      paint();
+    });
+
+    bookmarkBtn.addEventListener("click", () => {
+      setBookmark(pageId, bookmarkBtn.getAttribute("aria-pressed") !== "true");
+      paint();
+    });
+
+    /* ---- private note ----
+       Debounced rather than saved per keystroke: each save is a localStorage
+       write plus, for a signed-in learner, a queued Firestore write. */
+    const notePanel = document.querySelector<HTMLElement>("[data-pch-note]");
+    const noteToggle = root.querySelector<HTMLButtonElement>("[data-pch-note-toggle]");
+    const noteBody = document.querySelector<HTMLTextAreaElement>("[data-pch-note-body]");
+    const noteState = document.querySelector<HTMLElement>("[data-pch-note-state]");
+    const savedText =
+      document.querySelector("[data-text-saved]")?.textContent?.trim() ?? "";
+
+    if (notePanel && noteToggle && noteBody) {
+      const existing = getNote(pageId);
+      noteBody.value = existing;
+      // A page that already has a note opens with it visible -- otherwise the
+      // note is invisible until you think to look for it.
+      if (existing) {
+        notePanel.hidden = false;
+        noteToggle.setAttribute("aria-expanded", "true");
+      }
+      noteToggle.dataset.has = String(!!existing);
+
+      noteToggle.addEventListener("click", () => {
+        const open = notePanel.hidden;
+        notePanel.hidden = !open;
+        noteToggle.setAttribute("aria-expanded", String(open));
+        if (open) noteBody.focus();
+      });
+
+      let noteTimer: number | undefined;
+      noteBody.addEventListener("input", () => {
+        window.clearTimeout(noteTimer);
+        noteTimer = window.setTimeout(() => {
+          setNote(pageId, noteBody.value);
+          noteToggle.dataset.has = String(!!noteBody.value.trim());
+          if (noteState) noteState.textContent = savedText;
+        }, 700);
+      });
+    }
+
+    /* ---- continue-where-you-left-off pointer ---- */
+    const title =
+      document.querySelector("h1")?.textContent?.trim() ||
+      document.title.split("|")[0].trim();
+    setLastPage(pageId, window.location.pathname, title);
+
+    /* ---- quiz results ----
+       Quiz.astro announces a finished quiz rather than writing progress
+       itself, so the quiz component stays free of any storage dependency. */
+    document.addEventListener("pch:quiz-complete", (e) => {
+      const detail = (e as CustomEvent<{ ordinal: number; correct: number; total: number }>)
+        .detail;
+      if (!detail) return;
+      recordQuiz(pageId, detail.ordinal, detail.correct, detail.total);
+    });
+
+    /* ---- first load on a new device ----
+       A signed-in learner arriving on a device that has never held their
+       progress would otherwise see an empty sidebar until they happened to
+       open the dashboard. Pull once, at idle, and only for a real account --
+       a guest's progress lives only in this browser, so there is nothing in
+       the cloud to pull. `hydrateOnce` is a no-op afterwards, so this costs
+       nothing on subsequent pages. */
+    const hint = readHint();
+    if (hint && !hint.anon && !read().hydrated) {
+      const hydrate = async () => {
+        try {
+          const { hydrateOnce } = await import("../../lib/progress/sync");
+          await hydrateOnce(); // repaints through the store's subscribers
+        } catch (err) {
+          console.warn("[progress] hydrate deferred:", err);
+        }
+      };
+      if (typeof window.requestIdleCallback === "function") {
+        window.requestIdleCallback(() => void hydrate(), { timeout: 6000 });
+      } else {
+        window.setTimeout(() => void hydrate(), 2500);
+      }
+    }
+  }
+</script>
