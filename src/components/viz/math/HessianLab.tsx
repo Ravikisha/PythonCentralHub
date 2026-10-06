@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * HessianLab — §5.7's two pages, one claim per frame.
  *

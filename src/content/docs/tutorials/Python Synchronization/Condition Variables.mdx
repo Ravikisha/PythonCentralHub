@@ -148,7 +148,63 @@ Always re-check the condition after waking:
 - spurious wakeups can happen
 - another consumer might have consumed the item first
 
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
+
+## The problem a Condition solves
+
+Suppose a consumer thread needs an item that is not there yet. It could check in a loop, again and again, wasting CPU. Or it could sleep for a while and risk reacting late. A `Condition` gives a better answer: the consumer **sleeps until another thread tells it the state has changed**, using no CPU while it waits.
+
+## How wait and notify work
+
+A condition wraps a lock. Everything happens inside `with cond:`. Calling `cond.wait()` does three things atomically: it releases the lock, puts the thread to sleep, and re-acquires the lock when the thread is woken. Releasing the lock is essential, because otherwise the producer could never get in to add an item. `cond.notify()` wakes one waiting thread and `cond.notify_all()` wakes them all. The woken thread continues only after the notifier leaves its `with` block and frees the lock.
+
+## Tracing the example
+
+The consumer enters the block and finds `items` empty, so it waits. Every 0.2 seconds the producer takes the lock, appends an item, prints, and calls `notify()`. The consumer wakes, pops the item, and leaves the block. The `print("consumed", v)` sits outside the lock on purpose, so other threads are not held up while printing.
+
+## Waiting on a predicate
+
+Because the wait-in-a-loop pattern is so common, Condition has a shortcut, `wait_for`, which takes a function and keeps waiting until it returns true:
+
+```python title="condition_wait_for.py" showLineNumbers{1}
+import threading
+import time
+
+ready = False
+cond = threading.Condition()
+
+
+def waiter() -> None:
+    with cond:
+        cond.wait_for(lambda: ready)  # sleeps until ready is True
+        print("go!")
+
+
+def setter() -> None:
+    global ready
+    time.sleep(0.3)
+    with cond:
+        ready = True
+        cond.notify_all()
+
+
+t1 = threading.Thread(target=waiter)
+t2 = threading.Thread(target=setter)
+t1.start(); t2.start()
+t1.join(); t2.join()
+```
+
+`wait_for` checks the predicate first, so it also works if `ready` was already true.
+
+## Common mistakes
+
+- **Using `if` instead of `while`.** After waking, the state may already have been taken by another consumer, so re-check it in a loop or use `wait_for`.
+- **Calling `wait` or `notify` without holding the lock.** Python raises a `RuntimeError`.
+- **Changing the state without notifying.** The waiter sleeps forever.
+- **Notifying before the state changes.** Change the data first, then notify.
+
+## When to use it
+
+Use a Condition when threads must wait for a *state* to become true, such as a buffer having room or a flag being set. If you only need a simple producer-consumer hand-off, `queue.Queue` does all of this for you and is usually the better choice.
 
 ## 🧪 Try It Yourself
 
@@ -156,8 +212,8 @@ import DataCampExercise from "../../../../components/DataCampExercise.astro";
 
 <DataCampExercise
   lang="python"
-  hint={`Use \`with condition:\` then \`condition.wait()\` and \`condition.notify()\`.`}
-  code={`# Task: Exercise 1 – Condition notify and wait
+  hint={`Use \`with cond:\` then \`cond.notify()\` in the producer and \`cond.wait_for(...)\` in the consumer.`}
+  code={`# Task: Exercise 1 – Condition notify and wait_for
 import threading
 
 cond = threading.Condition()
@@ -170,13 +226,11 @@ def producer():
 
 def consumer():
     with cond:
-        cond.___()         # replace ___ with wait
+        cond.___(lambda: len(items) > 0)   # replace ___ with wait_for
         print("Got:", items[0])
 
-t1 = threading.Thread(target=consumer)
-t2 = threading.Thread(target=producer)
-t1.start(); t2.start()
-t1.join(); t2.join()`}
+producer()
+consumer()`}
   solution={`import threading
 
 cond = threading.Condition()
@@ -189,76 +243,72 @@ def producer():
 
 def consumer():
     with cond:
-        cond.wait()
+        cond.wait_for(lambda: len(items) > 0)
         print("Got:", items[0])
 
-t1 = threading.Thread(target=consumer)
-t2 = threading.Thread(target=producer)
-t1.start(); t2.start()
-t1.join(); t2.join()`}
-  sct={`test_output_contains("Got: data")
+producer()
+consumer()`}
+  sct={`test_output_contains("Got: data", pattern=False)
 success_msg("Condition variable used correctly!")`}
-  height={160}
+  height={240}
 />
 
 ### Exercise 2 – notify_all
 
 <DataCampExercise
   lang="python"
-  hint={`Use \`condition.notify_all()\` to wake up all waiting threads at once.`}
-  code={`# Task: Exercise 2 – notify_all
-import threading
+  hint={`Use \`await cond.wait()\` in each waiter and \`cond.notify_all()\` to wake all of them at once.`}
+  code={`# Task: Exercise 2 – notify_all (with asyncio tasks)
+import asyncio
 
-cond = threading.Condition()
-ready = []
+async def main():
+    cond = asyncio.Condition()
+    ready = []
 
-def waiter(n):
-    with cond:
-        cond.wait()
-        ready.append(n)
+    async def waiter(n):
+        async with cond:
+            await cond.wait()
+            ready.append(n)
 
-def broadcaster():
-    with cond:
-        cond.___()       # replace ___ with notify_all
+    async def broadcaster():
+        await asyncio.sleep(0)   # let every waiter start waiting first
+        async with cond:
+            cond.___()           # replace ___ with notify_all
 
-threads = [threading.Thread(target=waiter, args=(i,)) for i in range(3)]
-for t in threads: t.start()
-broadcaster_t = threading.Thread(target=broadcaster)
-broadcaster_t.start()
-broadcaster_t.join()
-for t in threads: t.join()
-print("Ready count:", len(ready))`}
-  solution={`import threading
+    await asyncio.gather(*(waiter(i) for i in range(3)), broadcaster())
+    print("Ready count:", len(ready))
 
-cond = threading.Condition()
-ready = []
+asyncio.run(main())`}
+  solution={`import asyncio
 
-def waiter(n):
-    with cond:
-        cond.wait()
-        ready.append(n)
+async def main():
+    cond = asyncio.Condition()
+    ready = []
 
-def broadcaster():
-    with cond:
-        cond.notify_all()
+    async def waiter(n):
+        async with cond:
+            await cond.wait()
+            ready.append(n)
 
-threads = [threading.Thread(target=waiter, args=(i,)) for i in range(3)]
-for t in threads: t.start()
-broadcaster_t = threading.Thread(target=broadcaster)
-broadcaster_t.start()
-broadcaster_t.join()
-for t in threads: t.join()
-print("Ready count:", len(ready))`}
-  sct={`test_output_contains("Ready count: 3")
-success_msg("notify_all wakes every waiting thread!")`}
-  height={165}
+    async def broadcaster():
+        await asyncio.sleep(0)
+        async with cond:
+            cond.notify_all()
+
+    await asyncio.gather(*(waiter(i) for i in range(3)), broadcaster())
+    print("Ready count:", len(ready))
+
+asyncio.run(main())`}
+  sct={`test_output_contains("Ready count: 3", pattern=False)
+success_msg("notify_all wakes every waiting task!")`}
+  height={290}
 />
 
 ### Exercise 3 – Predicate Wait
 
 <DataCampExercise
   lang="python"
-  hint={`Use \`condition.wait_for(lambda: condition_expr)\` to avoid spurious wakeups.`}
+  hint={`Use \`cond.wait_for(lambda: flag)\` - it returns as soon as the predicate is true.`}
   code={`# Task: Exercise 3 – Predicate Wait
 import threading
 
@@ -277,10 +327,8 @@ def checker():
         cond.wait_for(lambda: ___)  # replace ___ with flag
         print("Flag is now True!")
 
-t1 = threading.Thread(target=checker)
-t2 = threading.Thread(target=setter)
-t1.start(); t2.start()
-t1.join(); t2.join()`}
+setter()
+checker()`}
   solution={`import threading
 
 cond = threading.Condition()
@@ -297,12 +345,10 @@ def checker():
         cond.wait_for(lambda: flag)
         print("Flag is now True!")
 
-t1 = threading.Thread(target=checker)
-t2 = threading.Thread(target=setter)
-t1.start(); t2.start()
-t1.join(); t2.join()`}
-  sct={`test_output_contains("Flag is now True!")
+setter()
+checker()`}
+  sct={`test_output_contains("Flag is now True!", pattern=False)
 success_msg("wait_for checks the predicate!")`}
-  height={162}
+  height={230}
 />
 

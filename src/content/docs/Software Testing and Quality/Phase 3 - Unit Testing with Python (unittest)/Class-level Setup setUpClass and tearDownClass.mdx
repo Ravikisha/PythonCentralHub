@@ -5,17 +5,15 @@ sidebar:
   order: 212
 ---
 
-```mermaid title="pytest fixture scopes, and when each one is torn down" desc="A fixture's scope decides how often it is built. Session runs once for the whole test run, module once per file, function once per test -- the default. Teardowns unwind in the reverse order, so a function fixture is always cleaned up before the module fixture it depends on."
+```mermaid title="unittest hook order for a class with two tests" desc="setUpClass runs once before the first test and tearDownClass once after the last. setUp and tearDown wrap every individual test, so per-test state is rebuilt each time while class-level state is built only once."
 flowchart TD
-  A["session fixture -- setup"] --> B["module fixture -- setup"]
-  B --> C["function fixture -- setup"]
-  C --> D["test_one"]
-  D --> E["function fixture -- teardown"]
-  E --> F["function fixture -- setup"]
-  F --> G["test_two"]
-  G --> H["function fixture -- teardown"]
-  H --> I["module fixture -- teardown"]
-  I --> J["session fixture -- teardown"]
+  A["setUpClass -- once"] --> B["setUp"]
+  B --> C["test_one"]
+  C --> D["tearDown"]
+  D --> E["setUp"]
+  E --> F["test_two"]
+  F --> G["tearDown"]
+  G --> H["tearDownClass -- once"]
 ```
 
 ## Why class-level setup?
@@ -53,3 +51,96 @@ class TestExpensiveSetup(unittest.TestCase):
 
 - Don’t share mutable state between tests unless read-only.
 - Tests should not depend on run order.
+
+## When to use it
+
+`setUp` runs before every test, which is right for most cases because each test starts from a clean state. When creating the state is slow, such as parsing a big file, starting a server or building a database schema, repeating it for every test wastes time. `setUpClass` runs once before the first test in the class, and `tearDownClass` once after the last.
+
+The order for a class with two tests is: `setUpClass`, then `setUp`, `test_a`, `tearDown`, then `setUp`, `test_b`, `tearDown`, then `tearDownClass`.
+
+## A more realistic example
+
+```python title="setupclass_db.py" showLineNumbers{1}
+import sqlite3
+import unittest
+
+
+class TestOrders(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.conn = sqlite3.connect(":memory:")
+        cls.conn.execute("CREATE TABLE orders (id INTEGER PRIMARY KEY, total REAL)")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.conn.close()
+
+    def setUp(self):
+        self.conn.execute("DELETE FROM orders")
+
+    def test_insert(self):
+        self.conn.execute("INSERT INTO orders (total) VALUES (9.5)")
+        count = self.conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+        self.assertEqual(count, 1)
+
+    def test_starts_empty(self):
+        count = self.conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+        self.assertEqual(count, 0)
+```
+
+The expensive part, the connection and schema, is created once. The cheap part, clearing the table, still runs in `setUp` before every test, so the two tests cannot affect each other.
+
+## Rules that keep it safe
+
+- The methods must be decorated with `@classmethod`, and they receive `cls`. Attributes set here are shared by all tests in the class.
+- Only share things that are read-only or that you reset in `setUp`, as above.
+- If `setUpClass` raises, none of the tests in the class run, and `tearDownClass` is not called. Use `cls.addClassCleanup(...)` when a resource must be released even if setup fails partway.
+- Module-level equivalents exist: `setUpModule` and `tearDownModule`.
+
+## What goes wrong
+
+The common failure is shared mutable state. One test appends to a list created in `setUpClass`, and another test reads it and passes or fails depending on run order. Random ordering and running a single test on its own expose it. If a test only works when run after another, the state is leaking.
+
+## Connections
+
+pytest offers the same idea through fixtures with `scope="class"` or `scope="module"`, covered in Phase 4. The test lifecycle lesson explains `setUp` and `tearDown`, which this lesson builds on.
+
+## Check your understanding
+
+<Quiz
+  questions={[
+    {
+      q: "Which sequence is correct for two tests in one class?",
+      options: [
+        "setUp, setUpClass, test, tearDown",
+        "setUpClass, setUp, test_a, tearDown, setUp, test_b, tearDown, tearDownClass",
+        "setUpClass, test_a, test_b, tearDownClass only",
+        "setUp once, tests, tearDown once",
+      ],
+      answer: 1,
+      explain: "Class-level hooks wrap the whole class. Per-test hooks wrap each test.",
+    },
+    {
+      q: "A test passes alone but fails when run after another test in the same class. What is the likely cause?",
+      options: [
+        "A syntax error",
+        "Shared mutable state created in setUpClass and changed by the earlier test",
+        "A slow computer",
+        "A missing import",
+      ],
+      answer: 1,
+      explain: "Class-level state is shared. Tests must not depend on order, so reset it in setUp or keep it read-only.",
+    },
+    {
+      q: "Which must be true of setUpClass?",
+      options: [
+        "It is an ordinary method taking self",
+        "It is decorated with @classmethod and takes cls",
+        "It runs before every test",
+        "It must return a value",
+      ],
+      answer: 1,
+      explain: "It runs once and receives the class, so use @classmethod.",
+    },
+  ]}
+/>

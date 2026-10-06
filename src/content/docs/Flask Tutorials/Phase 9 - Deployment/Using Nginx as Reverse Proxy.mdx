@@ -55,3 +55,88 @@ That reduces load on Gunicorn.
 If you build absolute URLs, make sure Flask knows it’s behind HTTPS.
 
 Forwarded headers (X-Forwarded-Proto) and proper proxy settings matter.
+
+## What a reverse proxy does
+
+A reverse proxy sits in front of your app and forwards requests to it. The visitor talks to Nginx. Nginx talks to Gunicorn on a private local port and passes the answer back. The visitor never connects to Gunicorn directly.
+
+This split gives each program the job it is good at. Nginx is very good at handling many slow connections, terminating TLS, and serving files from disk. Gunicorn is good at running Python. Slow clients, such as someone on a bad mobile connection, would otherwise tie up a Gunicorn worker for the whole time they take to send or receive data. Nginx buffers the request, hands it to Gunicorn in one quick piece, and then feeds the response back to the slow client.
+
+## Reading the config
+
+In the config above, each `proxy_set_header` line matters. When Nginx forwards a request, Gunicorn sees a connection from `127.0.0.1`, not from the visitor. The headers carry the original details: `Host` is the domain the visitor used, `X-Forwarded-For` is their IP address, and `X-Forwarded-Proto` says whether they used `http` or `https`.
+
+Flask ignores those headers unless you tell it to trust them. Add Werkzeug's `ProxyFix` in the app factory:
+
+```python title="proxyfix.py" showLineNumbers{1}
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+```
+
+Now `request.remote_addr` is the real client, `request.scheme` is `https` when the visitor used HTTPS, and `url_for(..., _external=True)` builds correct absolute links. Use `x_for=1` only when exactly one proxy is in front of the app. Trusting more hops than exist lets a visitor forge their IP address.
+
+## Serving static files directly
+
+Add a second location so Nginx serves `/static/` from disk without involving Python:
+
+```nginx
+location /static/ {
+    alias /srv/myapp/myapp/static/;
+    expires 7d;
+}
+```
+
+Reload after any change with `sudo nginx -t && sudo systemctl reload nginx`. The `-t` flag checks the syntax first, so a typo does not take the site down.
+
+## Common mistakes
+
+- **Missing `proxy_set_header` lines.** Flask then thinks every visitor is `127.0.0.1` and every request is plain HTTP.
+- **Redirect loops after enabling HTTPS.** Flask does not know the original request was HTTPS. Fix with `ProxyFix` and `X-Forwarded-Proto`.
+- **A wrong `alias` path.** Static files return 404, and the error log shows the path Nginx tried.
+- **Reloading without testing.** Always run `nginx -t` first.
+- **Trusting forwarded headers when the app is reachable directly.** Only accept them from your own proxy.
+
+## How it connects
+
+Gunicorn, from the previous lesson, listens on a private port. Nginx is the public face of that port. The last lesson of the phase puts both onto an EC2 machine.
+
+## Check yourself
+
+<Quiz
+  questions={[
+    {
+      q: "Behind Nginx, request.remote_addr always shows 127.0.0.1. Why, and what fixes it?",
+      options: [
+        "Flask is broken; reinstall it",
+        "Gunicorn only sees Nginx's connection; forward X-Forwarded-For and add ProxyFix so Flask reads the real client address",
+        "Nginx hides all IPs permanently",
+        "You must run Flask on port 80",
+      ],
+      answer: 1,
+      explain: "The TCP connection to your app comes from the proxy. The original address travels in a header, which Flask uses only when told to trust it.",
+    },
+    {
+      q: "Why does serving /static/ from Nginx reduce load on the app?",
+      options: [
+        "Nginx compresses Python",
+        "Files are sent straight from disk by Nginx, so no Gunicorn worker or Python code is used for them",
+        "Static files do not exist in production",
+        "It disables logging",
+      ],
+      answer: 1,
+      explain: "Workers are expensive and few. Letting Nginx answer file requests frees them for dynamic pages.",
+    },
+    {
+      q: "What does X-Forwarded-Proto tell your app, and why does it matter?",
+      options: [
+        "The Python version",
+        "Whether the visitor connected with http or https, which affects redirects and absolute URLs built behind the proxy",
+        "The size of the request",
+        "The name of the server",
+      ],
+      answer: 1,
+      explain: "TLS ends at Nginx, so the app sees plain HTTP. Without this header it would build http:// links and may redirect in a loop.",
+    },
+  ]}
+/>

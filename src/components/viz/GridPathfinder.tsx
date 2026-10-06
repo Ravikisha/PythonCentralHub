@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * GridPathfinder — step-through visualization of grid traversals.
  *

@@ -116,5 +116,7 @@ export function levelFor(xp: number): { level: number; into: number; span: numbe
     cost = 100 * (level + 1);
   }
 
-  return { level, into: xp - spent, span: cost };
+  // Levels count from 1: a new learner is at level 1 on their way to 2, not
+  // "Level 0", which read as having nothing at all.
+  return { level: level + 1, into: xp - spent, span: cost };
 }

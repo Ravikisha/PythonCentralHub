@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * ElimStepper — Gaussian elimination, one row operation per frame.
  *

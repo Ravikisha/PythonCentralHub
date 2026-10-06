@@ -5,8 +5,6 @@ sidebar:
   order: 133
 ---
 
-import Quiz from "../../../../components/Quiz.astro";
-
 ```mermaid title="an asyncio.Queue is how producers and consumers hand work over" desc="The queue is what lets the two sides run at their own pace without either polling the other. A consumer awaiting get is suspended, costing nothing, until an item exists. A bounded queue also pushes back: once it is full, put suspends the producer, which is what stops a fast producer from exhausting memory."
 flowchart LR
   A["producer"] --> B["await q.put(item)"]
@@ -73,7 +71,6 @@ asyncio.run(main())
 - Use a sentinel to stop consumers.
 - Use `maxsize` for backpressure.
 
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
 
 ```p5 title="An asyncio.Queue suspends instead of blocking" desc="Same producer-consumer shape as the threading version, but nothing blocks a thread. A consumer awaiting get is suspended and the loop runs other tasks; a full bounded queue suspends the producer instead. That back-pressure is the whole reason to give the queue a maxsize -- without it a fast producer will happily exhaust memory." height="400"
 const CAP = 3;
@@ -130,6 +127,64 @@ function draw() {
   text("Consumers are stopped with a sentinel, one per consumer, or by cancelling their tasks.", 20, 358);
 }
 ```
+
+## How the pieces fit together
+
+Think of the queue as a conveyor belt between two workers. The producer places items on it with `await q.put(item)`, and the consumer takes them off with `await q.get()`. Neither side needs to know how fast the other is working. If the belt is empty, the consumer is suspended and costs nothing. If the belt is full (because you passed `maxsize`), the producer is suspended until there is room. That second behaviour is called **backpressure**, and it stops a fast producer from filling your memory with unprocessed work.
+
+Three calls work as a team:
+
+- `put` and `get` move items in and out.
+- `task_done()` tells the queue that one item you took out has been fully processed.
+- `join()` waits until every item that was ever put has had `task_done()` called.
+
+In the example above, `main` awaits the producer, then `q.join()`, then the consumer. The `finally: q.task_done()` matters: even when the sentinel arrives and the loop breaks, the sentinel itself was taken off the queue and must be marked done, otherwise `join()` would wait forever.
+
+## Scaling to several consumers
+
+You can add consumers without changing the producer. Start three consumer tasks and they share the work, each taking the next available item. With several consumers you need **one sentinel per consumer**, because each consumer stops when it sees one:
+
+```python title="many_consumers.py" showLineNumbers{1}
+import asyncio
+
+
+async def consumer(name: str, q: asyncio.Queue) -> None:
+    while True:
+        item = await q.get()
+        try:
+            if item is None:
+                return
+            await asyncio.sleep(0.1)
+            print(name, "handled", item)
+        finally:
+            q.task_done()
+
+
+async def main() -> None:
+    q = asyncio.Queue(maxsize=5)
+    workers = [asyncio.create_task(consumer(f"w{i}", q)) for i in range(3)]
+    for i in range(9):
+        await q.put(i)
+    for _ in workers:
+        await q.put(None)  # one stop signal per worker
+    await asyncio.gather(*workers)
+
+
+asyncio.run(main())
+```
+
+The order in which workers print may vary, but all nine items are handled exactly once.
+
+## Common mistakes
+
+- **Using `queue.Queue` in async code.** Its `get()` blocks the whole thread and freezes the event loop. Use `asyncio.Queue`.
+- **Forgetting `task_done()`.** Then `join()` never returns and the program hangs.
+- **Too few sentinels.** With N consumers and one `None`, the other consumers wait forever.
+- **An unbounded queue.** Without `maxsize`, a fast producer can grow memory without limit.
+
+## When to use it
+
+Reach for an `asyncio.Queue` whenever work is produced in one place and handled in another: a crawler that finds links and fetches pages, a service that receives requests and writes to a database, or any pipeline whose stages run at different speeds.
 
 ## Check yourself
 

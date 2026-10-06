@@ -6,23 +6,106 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
-    name: Build & type-check
+  checks:
+    name: Types, tests, content and routes
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
 
-      # Runs `astro check && astro build` (see package.json "build" script).
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: UI strings in every locale
+        run: npm run i18n:check
+
+      # Compiles every lesson on its own and reports each failure with its
+      # file, which is far easier to act on than a failed `next build`.
+      - name: Lessons compile
+        run: npm run content:check
+
+      # The lesson URLs search engines have indexed must not move.
+      - name: Lesson URLs unchanged
+        run: npm run routes:verify
+
+  rules:
+    name: Firestore rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # The Firestore emulator is a Java program.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - run: npm ci
+
+      - name: Rules tests (emulator)
+        run: npm run test:rules
+
+  build:
+    name: Build, smoke and end-to-end
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: lesson "last updated" dates come from git log.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
       - name: Build
         run: npm run build
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+
+      - name: Start the production server
+        run: |
+          npx next start -p 3000 &
+          npx --yes wait-on@8 http://localhost:3000/ --timeout 120000
+
+      - name: Smoke test (sample of lessons, every app route)
+        run: npm run smoke -- --base http://localhost:3000 --n 60
+
+      - name: Install Playwright's Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end (guest flows)
+        run: npm run test:e2e
+        env:
+          E2E_BASE_URL: http://localhost:3000
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7

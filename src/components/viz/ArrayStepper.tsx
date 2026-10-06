@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * ArrayStepper — step-through visualization for any single-sequence algorithm.
  *

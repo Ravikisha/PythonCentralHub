@@ -198,30 +198,6 @@ console.log(`  pages skipped     : ${skipped} (no \`patterns:\` — orientation 
 console.log(`  phase rows        : ${phaseRows.length} (every phase, incl. non-syllabus)`);
 console.log(`  written to        : ${OUT}`);
 
-/**
- * Guard against the sidebar's page-count badges going stale.
- *
- * `astro.config.mjs` groups the phases into stages by hand — that grouping is editorial and
- * belongs there — but the per-stage counts are hardcoded numbers, and they silently drifted
- * once already: two pages were added to Phase-14 and the badge still read 75.
- *
- * The stage grouping is not knowable here, but the *total* is, so compare that. It catches
- * exactly the case that went wrong without duplicating the grouping in two places.
- */
-const totalPages = phaseRows.reduce((a, p) => a + p.pages, 0);
-const config = readFileSync("astro.config.mjs", "utf8");
-const badgeTotal = [...config.matchAll(/badge: \{ text: "(\d+)", variant: "note" \}/g)].reduce(
-  (a, m) => a + Number(m[1]),
-  0,
-);
-
-if (badgeTotal !== totalPages) {
-  console.error(
-    `\n  ! sidebar badges are stale: they sum to ${badgeTotal}, but there are ${totalPages} pages.\n` +
-      `    Fix the per-stage badge counts in astro.config.mjs.`,
-  );
-  process.exitCode = 1;
-} else {
-  console.log(`  sidebar badges    : ${badgeTotal} — matches the ${totalPages} pages on disk`);
-}
+// The Astro sidebar's hand-written page-count badges are gone: the Next
+// sidebar (components/docs/Sidebar.tsx) counts pages from the content itself.
 console.log("");

@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * AutodiffGraph — the computation graph of §5.6, forward then reverse, one node
  * per frame.

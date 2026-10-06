@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * GraphTraversal — step-through visualization for graph algorithms.
  *

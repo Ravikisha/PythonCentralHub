@@ -5,10 +5,6 @@ sidebar:
   order: 473
 ---
 
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
-import Figure from "../../../../components/Figure.astro";
-import Quiz from "../../../../components/Quiz.astro";
-
 Data parallelism is a three-line change: wrap the model construction in a strategy scope and keep
 everything else the same. What that change does to your **batch size**, your **number of updates**
 and therefore your **effective learning rate** is where the difficulty lives, and none of it
@@ -420,6 +416,14 @@ Training is finished. The remaining question is how anything else reaches the mo
 <DataCampExercise
   lang="python"
   hint={`Divide the dataset by the global batch size, and remember the global batch is the per-replica batch times the replica count.`}
+  expectedOutput={` replicas   batch scaled   batch fixed
+        1            282           282
+        2            141           282
+        4             72           282
+        8             36           282
+
+measured on this page: 282 updates at one replica, 141 at two
+with the batch scaled - exactly half, as the arithmetic predicts`}
   code={`# Task: Exercise 1 - What the replica count does to your step count
 import math
 
@@ -461,14 +465,10 @@ for replicas in (1, 2, 4, 8):
 
 print("\\nmeasured on this page: 282 updates at one replica, 141 at two")
 print("with the batch scaled - exactly half, as the arithmetic predicts")`}
-  expectedOutput={` replicas   batch scaled   batch fixed
-        1            282           282
-        2            141           282
-        4             72           282
-        8             36           282
-
-measured on this page: 282 updates at one replica, 141 at two
-with the batch scaled - exactly half, as the arithmetic predicts`}
+  sct={`test_output_contains("141", pattern=False)
+test_output_contains("replicas   batch scaled", pattern=False)
+success_msg("Scaling the batch with the replica count halves the number of updates for two replicas, exactly as the arithmetic predicts.")`}
+  height={400}
 />
 
 <DataCampExercise
@@ -535,6 +535,10 @@ print(f"uneven shards, weighted: {weighted(uneven):+.8f}  "
       f"error {abs(weighted(uneven) - truth):.2e}")
 print("\\nequal shards make the naive version correct by accident; the")
 print("weighted version is correct either way")`}
+  sct={`test_output_contains("uneven shards, weighted: +0.00189366", pattern=False)
+test_output_contains("uneven shards, naive:    -0.01529567", pattern=False)
+success_msg("Weighting each shard by its sample count is correct for any split; the naive average is only right when the shards are equal.")`}
+  height={400}
 />
 
 <DataCampExercise
@@ -593,6 +597,10 @@ for replicas in (1, 2):
 
 print("\\nthe overhead is a fixed cost per step; it only disappears into the")
 print("noise when the step itself is expensive")`}
+  sct={`test_output_contains("2 replica(s): 14.56s", pattern=False)
+test_output_contains("2 replica(s): 0.66s", pattern=False)
+success_msg("The per-step overhead is a fixed cost: it dominates a small model and disappears when the step itself is expensive.")`}
+  height={400}
 />
 
 <DataCampExercise
@@ -641,74 +649,73 @@ for epoch in range(8):
 
 print("\\nwithout the warm-up, a 32x learning rate on the first step of an")
 print("untrained network usually diverges immediately")`}
+  sct={`test_output_contains("0.03200", pattern=False)
+test_output_contains("0.00720", pattern=False)
+success_msg("Linear scaling multiplies the learning rate by the replica count, and a warm-up ramps to it so the first steps do not diverge.")`}
+  height={400}
 />
 
 <DataCampExercise
   lang="python"
-  hint={`Build the model inside strategy.scope() and check num_replicas_in_sync to see how the batch is divided.`}
-  code={`# Task: Exercise 5 - Run a strategy yourself
+  hint={`Split the global batch into one shard per replica, compute each shard's gradient, and average them: the result should equal the gradient of the whole batch.`}
+  code={`# Task: Exercise 5 - Run data parallelism yourself
 import numpy as np
-import tensorflow as tf
-from tensorflow import keras
 
-# Split the CPU so there is something to mirror onto. This must happen before
-# any TensorFlow operation runs.
-physical = tf.config.list_physical_devices("CPU")
-try:
-    tf.config.set_logical_device_configuration(
-        physical[0], [tf.config.LogicalDeviceConfiguration() for _ in range(2)])
-except RuntimeError:
-    pass
-logical = [d.name for d in tf.config.list_logical_devices("CPU")]
-print(f"logical devices: {logical}")
+rng = np.random.default_rng(0)
+x = rng.normal(size=(2048, 16))
+true_w = rng.normal(size=16)
+y = x @ true_w + 0.1 * rng.normal(size=2048)
+w = np.zeros(16)
 
-x = np.random.default_rng(0).random((2048, 784)).astype("float32")
-y = np.random.default_rng(1).integers(0, 10, 2048)
 
-for replicas in (1, 2):
-    strategy = tf.distribute.MirroredStrategy(devices=logical[:replicas])
-    with strategy.___():                         # replace ___ with scope
-        model = keras.Sequential([keras.layers.Input((784,)),
-                                  keras.layers.Dense(32, activation="relu"),
-                                  keras.layers.Dense(10, activation="softmax")])
-        model.compile("adam", "sparse_categorical_crossentropy")
-    global_batch = 64 * strategy.num_replicas_in_sync
-    history = model.fit(x, y, epochs=1, batch_size=global_batch, verbose=0)
+def gradient(xs, ys, weights):
+    """Gradient of the mean squared error on one shard."""
+    return 2 * xs.T @ (xs @ weights - ys) / len(xs)
+
+
+full = gradient(x, y, w)                         # the single-device answer
+for replicas in (1, 2, 4):
+    global_batch = 64 * replicas
+    xs = np.array_split(x[:global_batch], ___)   # one shard per replica
+    ys = np.array_split(y[:global_batch], replicas)
+    shard_grads = [gradient(a, b, w) for a, b in zip(xs, ys)]
+    averaged = np.mean(shard_grads, axis=0)      # the all-reduce
+    reference = gradient(x[:global_batch], y[:global_batch], w)
     steps = int(np.ceil(len(x) / global_batch))
-    print(f"{replicas} replica(s): in_sync={strategy.num_replicas_in_sync}, "
-          f"global batch={global_batch}, per replica="
-          f"{global_batch // strategy.num_replicas_in_sync}, steps={steps}")`}
-  solution={`import numpy as np
-import tensorflow as tf
-from tensorflow import keras
+    print(f"{replicas} replica(s): global batch={global_batch}, per replica={global_batch // replicas}, steps={steps}")
+    print("  averaged shard gradients match the single-device gradient:",
+          bool(np.allclose(averaged, reference)))`}
+  solution={`# Task: Exercise 5 - Run data parallelism yourself
+import numpy as np
 
-# Split the CPU so there is something to mirror onto. This must happen before
-# any TensorFlow operation runs.
-physical = tf.config.list_physical_devices("CPU")
-try:
-    tf.config.set_logical_device_configuration(
-        physical[0], [tf.config.LogicalDeviceConfiguration() for _ in range(2)])
-except RuntimeError:
-    pass
-logical = [d.name for d in tf.config.list_logical_devices("CPU")]
-print(f"logical devices: {logical}")
+rng = np.random.default_rng(0)
+x = rng.normal(size=(2048, 16))
+true_w = rng.normal(size=16)
+y = x @ true_w + 0.1 * rng.normal(size=2048)
+w = np.zeros(16)
 
-x = np.random.default_rng(0).random((2048, 784)).astype("float32")
-y = np.random.default_rng(1).integers(0, 10, 2048)
 
-for replicas in (1, 2):
-    strategy = tf.distribute.MirroredStrategy(devices=logical[:replicas])
-    with strategy.scope():
-        model = keras.Sequential([keras.layers.Input((784,)),
-                                  keras.layers.Dense(32, activation="relu"),
-                                  keras.layers.Dense(10, activation="softmax")])
-        model.compile("adam", "sparse_categorical_crossentropy")
-    global_batch = 64 * strategy.num_replicas_in_sync
-    history = model.fit(x, y, epochs=1, batch_size=global_batch, verbose=0)
+def gradient(xs, ys, weights):
+    """Gradient of the mean squared error on one shard."""
+    return 2 * xs.T @ (xs @ weights - ys) / len(xs)
+
+
+full = gradient(x, y, w)                         # the single-device answer
+for replicas in (1, 2, 4):
+    global_batch = 64 * replicas
+    xs = np.array_split(x[:global_batch], replicas)   # one shard per replica
+    ys = np.array_split(y[:global_batch], replicas)
+    shard_grads = [gradient(a, b, w) for a, b in zip(xs, ys)]
+    averaged = np.mean(shard_grads, axis=0)      # the all-reduce
+    reference = gradient(x[:global_batch], y[:global_batch], w)
     steps = int(np.ceil(len(x) / global_batch))
-    print(f"{replicas} replica(s): in_sync={strategy.num_replicas_in_sync}, "
-          f"global batch={global_batch}, per replica="
-          f"{global_batch // strategy.num_replicas_in_sync}, steps={steps}")`}
+    print(f"{replicas} replica(s): global batch={global_batch}, per replica={global_batch // replicas}, steps={steps}")
+    print("  averaged shard gradients match the single-device gradient:",
+          bool(np.allclose(averaged, reference)))`}
+  sct={`test_output_contains("4 replica(s): global batch=256, per replica=64, steps=8", pattern=False)
+test_output_contains("averaged shard gradients match the single-device gradient: True", pattern=False)
+success_msg("Each replica computes a gradient on its own shard and the average across replicas equals the gradient of the whole batch, so the update is the same.")`}
+  height={400}
 />
 
 <DataCampExercise
@@ -775,4 +782,8 @@ for name, shards in (("equal shards", equal), ("uneven shards", uneven)):
 
 print(f"\\ntrue mean loss: {truth:.8f}")
 print("compute_average_loss is correct for both, which is why it exists")`}
+  sct={`test_output_contains("compute_average_loss 1.07925934 (error 0.00e+00)", pattern=False)
+test_output_contains("true mean loss: 1.07925934", pattern=False)
+success_msg("Dividing each shard's summed loss by the global batch size is correct for any split, which is why compute_average_loss exists.")`}
+  height={400}
 />

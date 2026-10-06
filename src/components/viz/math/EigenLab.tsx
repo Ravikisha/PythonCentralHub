@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * EigenLab — §4.2 stepped: characteristic polynomial, eigenvalues, eigenspaces,
  * the det/trace theorems, and the defectiveness verdict.

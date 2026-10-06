@@ -5,10 +5,6 @@ sidebar:
   order: 426
 ---
 
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
-import Figure from "../../../../components/Figure.astro";
-import Quiz from "../../../../components/Quiz.astro";
-
 Classification answers "what is in this image". Segmentation answers **"what is
 each pixel"** — one label per position, at the input's resolution. That changes the
 output shape, forces the network to recover spatial detail it deliberately threw
@@ -529,6 +525,55 @@ print(f"predicting 'background' everywhere scores {share[0]:.4f} pixel accuracy"
 # triangle          185,896   0.0303
 # predicting 'background' everywhere scores 0.8691 pixel accuracy
 # --------------------------------------------------------------`}
+  solution={`import numpy as np
+
+SIDE = 64
+CLASS_NAMES = ("background", "disc", "square", "triangle")
+
+
+def scene(rng):
+    image = rng.normal(0.5, 0.06, (SIDE, SIDE)).astype("float32")
+    mask = np.zeros((SIDE, SIDE), "int32")
+    ys, xs = np.mgrid[0:SIDE, 0:SIDE]
+    radius = rng.integers(7, 12)
+    cy, cx = rng.integers(radius, SIDE - radius, 2)
+    disc = (ys - cy) ** 2 + (xs - cx) ** 2 <= radius ** 2
+    image[disc] = 0.9
+    mask[disc] = 1
+    size = rng.integers(10, 18)
+    sy, sx = rng.integers(0, SIDE - size, 2)
+    image[sy:sy + size, sx:sx + size] = 0.15
+    mask[sy:sy + size, sx:sx + size] = 2
+    height = rng.integers(12, 20)
+    ty, tx = rng.integers(0, SIDE - height, 2)
+    for row in range(height):
+        half = int((row / height) * height / 2)
+        left = max(tx + height // 2 - half, 0)
+        right = min(tx + height // 2 + half + 1, SIDE)
+        image[ty + row, left:right] = 0.65
+        mask[ty + row, left:right] = 3
+    return np.clip(image, 0, 1)[..., None], mask
+
+
+rng = np.random.default_rng(0)
+images, masks = [], []
+for _ in range(1500):
+    image, mask = scene(rng)
+    images.append(image)
+    masks.append(mask)
+images, masks = np.stack(images), np.stack(masks)
+
+counts = np.bincount(masks.ravel(), minlength=4)
+share = counts / counts.sum()
+print(f"{len(images)} scenes of {SIDE}x{SIDE} = {masks.size:,} labelled pixels")
+print(f"{'class':12s} {'pixels':>12} {'share':>8}")
+for name, count, fraction in zip(CLASS_NAMES, counts, share):
+    print(f"{name:12s} {count:12,} {fraction:8.4f}")
+print(f"predicting 'background' everywhere scores {share[0]:.4f} pixel accuracy")`}
+  sct={`test_output_contains("predicting 'background' everywhere scores 0.8691 pixel accuracy", pattern=False)
+test_output_contains("1500 scenes of 64x64 = 6,144,000 labelled pixels", pattern=False)
+success_msg("Background is 87% of all pixels, so predicting it everywhere already scores 0.8691 pixel accuracy without finding a single object.")`}
+  height={460}
 />
 
 <DataCampExercise
@@ -581,49 +626,144 @@ print("whether this looks like a good model or a useless one")
 # high pixel accuracy, three IoUs of zero: the metric you pick decides
 # whether this looks like a good model or a useless one
 # --------------------------------------------------------------`}
+  solution={`import numpy as np
+
+SIDE = 64
+CLASS_NAMES = ("background", "disc", "square", "triangle")
+
+mask = np.zeros((SIDE, SIDE), "int32")
+ys, xs = np.mgrid[0:SIDE, 0:SIDE]
+mask[(ys - 20) ** 2 + (xs - 20) ** 2 <= 81] = 1
+mask[40:52, 8:20] = 2
+mask[10:24, 44:58] = 3
+lazy = np.zeros_like(mask)
+
+
+def iou_per_class(true_mask, predicted_mask, classes=4):
+    out = []
+    for index in range(classes):
+        intersection = float(((true_mask == index)
+                              & (predicted_mask == index)).sum())
+        union = float(((true_mask == index)
+                       | (predicted_mask == index)).sum())
+        out.append(intersection / union if union else 0.0)
+    return out
+
+
+print(f"pixel accuracy of the all-background prediction: "
+      f"{float((lazy == mask).mean()):.4f}")
+scores = iou_per_class(mask, lazy)
+print(f"{'class':12s} {'IoU':>8}")
+for name, value in zip(CLASS_NAMES, scores):
+    print(f"{name:12s} {value:8.4f}")
+print(f"mean IoU {float(np.mean(scores)):.4f}")
+print("high pixel accuracy, three IoUs of zero: the metric you pick decides")
+print("whether this looks like a good model or a useless one")`}
+  sct={`test_output_contains("mean IoU 0.2138", pattern=False)
+test_output_contains("pixel accuracy of the all-background prediction: 0.8552", pattern=False)
+success_msg("The do-nothing prediction has 85.5% pixel accuracy but three IoUs of zero. The metric you pick decides whether the model looks good.")`}
+  height={460}
 />
 
 <DataCampExercise
   lang="python"
-  hint={`UpSampling2D repeats values and has no weights. Conv2DTranspose learns the upsampling, so it has a kernel like any convolution.`}
+  hint={`Nearest-neighbour upsampling repeats values and has no weights. A transposed convolution learns the upsampling, so it has a kernel like any convolution.`}
   code={`# Task: Exercise 3 - What each upsampling layer does
 import numpy as np
-from tensorflow import keras
 
-probe = np.zeros((1, 16, 16, 8), "float32")
-print(f"{'layer':34s} {'in':>13} {'out':>13}")
-for label, layer in (
-        ("UpSampling2D(2)", keras.layers.UpSampling2D(2)),
-        ("Conv2DTranspose(4, 3, strides=2)",
-         keras.layers.Conv2DTranspose(4, 3, strides=2, padding="same")),
-        ("UpSampling2D then Conv2D(4, 3)",
-         keras.Sequential([keras.layers.UpSampling2D(2),
-                           keras.layers.Conv2D(4, 3, padding="same")]))):
+
+class NearestUpsample:
+    """Repeat every value: a fixed rule with no weights."""
+    weights = []
+
+    def __call__(self, x):
+        return x.repeat(2, axis=0).repeat(2, axis=1)
+
+
+class TransposedConv:
+    """Stride-2 transposed convolution: insert zeros, then convolve with a kernel."""
+    def __init__(self, cin, cout, k=3, seed=0):
+        r = np.random.RandomState(seed)
+        self.kernel = r.randn(k, k, cin, cout) * 0.1
+        self.bias = np.zeros(cout)
+        self.weights = [self.kernel, self.bias]
+
+    def __call__(self, x):
+        h, w, c = x.shape
+        spread = np.zeros((2 * h, 2 * w, c))
+        spread[::2, ::2] = x
+        k = self.kernel.shape[0]
+        pad = k // 2
+        padded = np.pad(spread, ((pad, pad), (pad, pad), (0, 0)))
+        out = np.zeros((2 * h, 2 * w, self.kernel.shape[3])) + self.bias
+        for i in range(k):
+            for j in range(k):
+                out += padded[i:i + 2 * h, j:j + 2 * w, :] @ self.kernel[i, j]
+        return out
+
+
+probe = np.zeros((16, 16, 8))
+up = NearestUpsample()
+transposed = TransposedConv(8, 4)
+print("layer                              in            out")
+for label, layer in (("UpSampling2D(2)", up), ("Conv2DTranspose(4, 3, strides=2)", transposed)):
     out = layer(probe)
-    print(f"{label:34s} {str(tuple(probe.shape[1:])):>13} "
-          f"{str(tuple(int(v) for v in out.shape[1:])):>13}")
-
-up = keras.layers.UpSampling2D(2)
-transposed = keras.layers.Conv2DTranspose(4, 3, strides=2, padding="same")
-transposed.build((None, 16, 16, 8))
-print(f"UpSampling2D parameters:    "
-      f"{sum(int(np.prod(w.shape)) for w in up.___)}")
-# replace ___ with weights
-print(f"Conv2DTranspose parameters: "
-      f"{sum(int(np.prod(w.shape)) for w in transposed.weights):,}")
+    print(format(label, "34s"), probe.shape, out.shape)
+print("UpSampling2D parameters:   ", sum(int(np.prod(w.shape)) for w in up.___))   # replace ___ with weights
+print("Conv2DTranspose parameters:", format(sum(int(np.prod(w.shape)) for w in transposed.weights), ","))
+print("both double the height and width:", up(probe).shape[:2] == (32, 32) and transposed(probe).shape[:2] == (32, 32))
 print("upsampling is a fixed rule; a transposed convolution learns how to fill")
-print("in the detail, and neither can recover what pooling discarded")
+print("in the detail, and neither can recover what pooling discarded")`}
+  solution={`import numpy as np
 
-# -- Expected Output -------------------------------------------
-# layer                                         in           out
-# UpSampling2D(2)                      (16, 16, 8)   (32, 32, 8)
-# Conv2DTranspose(4, 3, strides=2)     (16, 16, 8)   (32, 32, 4)
-# UpSampling2D then Conv2D(4, 3)       (16, 16, 8)   (32, 32, 4)
-# UpSampling2D parameters:    0
-# Conv2DTranspose parameters: 292
-# upsampling is a fixed rule; a transposed convolution learns how to fill
-# in the detail, and neither can recover what pooling discarded
-# --------------------------------------------------------------`}
+
+class NearestUpsample:
+    """Repeat every value: a fixed rule with no weights."""
+    weights = []
+
+    def __call__(self, x):
+        return x.repeat(2, axis=0).repeat(2, axis=1)
+
+
+class TransposedConv:
+    """Stride-2 transposed convolution: insert zeros, then convolve with a kernel."""
+    def __init__(self, cin, cout, k=3, seed=0):
+        r = np.random.RandomState(seed)
+        self.kernel = r.randn(k, k, cin, cout) * 0.1
+        self.bias = np.zeros(cout)
+        self.weights = [self.kernel, self.bias]
+
+    def __call__(self, x):
+        h, w, c = x.shape
+        spread = np.zeros((2 * h, 2 * w, c))
+        spread[::2, ::2] = x
+        k = self.kernel.shape[0]
+        pad = k // 2
+        padded = np.pad(spread, ((pad, pad), (pad, pad), (0, 0)))
+        out = np.zeros((2 * h, 2 * w, self.kernel.shape[3])) + self.bias
+        for i in range(k):
+            for j in range(k):
+                out += padded[i:i + 2 * h, j:j + 2 * w, :] @ self.kernel[i, j]
+        return out
+
+
+probe = np.zeros((16, 16, 8))
+up = NearestUpsample()
+transposed = TransposedConv(8, 4)
+print("layer                              in            out")
+for label, layer in (("UpSampling2D(2)", up), ("Conv2DTranspose(4, 3, strides=2)", transposed)):
+    out = layer(probe)
+    print(format(label, "34s"), probe.shape, out.shape)
+print("UpSampling2D parameters:   ", sum(int(np.prod(w.shape)) for w in up.weights))
+print("Conv2DTranspose parameters:", format(sum(int(np.prod(w.shape)) for w in transposed.weights), ","))
+print("both double the height and width:", up(probe).shape[:2] == (32, 32) and transposed(probe).shape[:2] == (32, 32))
+print("upsampling is a fixed rule; a transposed convolution learns how to fill")
+print("in the detail, and neither can recover what pooling discarded")`}
+  sct={`test_output_contains("UpSampling2D parameters:    0", pattern=False)
+test_output_contains("Conv2DTranspose parameters: 292", pattern=False)
+test_output_contains("both double the height and width: True", pattern=False)
+success_msg("Nearest-neighbour upsampling has no weights at all, while the transposed convolution learns 292 of them. Both double the height and width.")`}
+  height={460}
 />
 
 <DataCampExercise
@@ -652,112 +792,187 @@ print("its IoU; the same error on a 60-pixel object barely registers")
 # a 4-pixel object is almost all boundary, so a one-pixel error destroys
 # its IoU; the same error on a 60-pixel object barely registers
 # --------------------------------------------------------------`}
+  solution={`print(f"{'side':>6} {'area':>7} {'boundary':>10} {'boundary share':>15} "
+      f"{'IoU after 1px error':>21}")
+for side in (4, 8, 15, 30, 60):
+    area = side * side
+    boundary = 4 * side - 4
+    intersection = area - boundary
+    union = area + boundary
+    print(f"{side:6d} {area:7d} {boundary:10d} {boundary / area:15.4f} "
+          f"{intersection / union:21.4f}")
+print("a 4-pixel object is almost all boundary, so a one-pixel error destroys")
+print("its IoU; the same error on a 60-pixel object barely registers")`}
+  sct={`test_output_contains("4      16         12          0.7500                0.1429", pattern=False)
+test_output_contains("60    3600        236          0.0656                0.8770", pattern=False)
+success_msg("A 4-pixel object is three quarters boundary, so a one-pixel error leaves an IoU of 0.14. The same error on a 60-pixel object still leaves 0.88.")`}
+  height={431}
 />
 
 <DataCampExercise
   lang="python"
-  hint={`The output layer is a 1x1 convolution with one filter per class and a softmax, so the prediction keeps the input's spatial shape. Concatenate the encoder activations into the decoder for the skips.`}
+  hint={`The decoder can only bring back what the encoder kept. A skip connection hands the full-resolution features straight to the output.`}
   code={`# Task: Exercise 5 - Build the hourglass and score it properly
 import numpy as np
-from tensorflow import keras
 
-SIDE = 64
+SIDE = 32
 CLASS_NAMES = ("background", "disc", "square", "triangle")
 
 
 def scene(rng):
-    image = rng.normal(0.5, 0.06, (SIDE, SIDE)).astype("float32")
-    mask = np.zeros((SIDE, SIDE), "int32")
+    image = rng.normal(0.5, 0.06, (SIDE, SIDE))
+    mask = np.zeros((SIDE, SIDE), int)
     ys, xs = np.mgrid[0:SIDE, 0:SIDE]
-    radius = rng.integers(7, 12)
-    cy, cx = rng.integers(radius, SIDE - radius, 2)
+    radius = rng.randint(4, 7)
+    cy, cx = rng.randint(radius, SIDE - radius, 2)
     disc = (ys - cy) ** 2 + (xs - cx) ** 2 <= radius ** 2
     image[disc] = 0.9
     mask[disc] = 1
-    size = rng.integers(10, 18)
-    sy, sx = rng.integers(0, SIDE - size, 2)
+    size = rng.randint(5, 9)
+    sy, sx = rng.randint(0, SIDE - size, 2)
     image[sy:sy + size, sx:sx + size] = 0.15
     mask[sy:sy + size, sx:sx + size] = 2
-    height = rng.integers(12, 20)
-    ty, tx = rng.integers(0, SIDE - height, 2)
+    height = rng.randint(6, 10)
+    ty, tx = rng.randint(0, SIDE - height, 2)
     for row in range(height):
         half = int((row / height) * height / 2)
         left = max(tx + height // 2 - half, 0)
         right = min(tx + height // 2 + half + 1, SIDE)
         image[ty + row, left:right] = 0.65
         mask[ty + row, left:right] = 3
-    return np.clip(image, 0, 1)[..., None], mask
+    return np.clip(image, 0, 1), mask
 
 
-rng = np.random.default_rng(0)
-images, masks = [], []
-for _ in range(1500):
-    image, mask = scene(rng)
-    images.append(image)
-    masks.append(mask)
-images, masks = np.stack(images), np.stack(masks)
-x_train, y_train = images[:1200], masks[:1200]
-x_test, y_test = images[1200:], masks[1200:]
+rng = np.random.RandomState(0)
+scenes = [scene(rng) for _ in range(60)]
+images = np.stack([s[0] for s in scenes])
+masks = np.stack([s[1] for s in scenes])
+x_train, y_train, x_test, y_test = images[:40], masks[:40], images[40:], masks[40:]
 
 
 def iou_per_class(true_mask, predicted_mask, classes=4):
     out = []
     for index in range(classes):
-        intersection = float(((true_mask == index)
-                              & (predicted_mask == index)).sum())
+        intersection = float(((true_mask == index) & (predicted_mask == index)).sum())
         union = float(((true_mask == index) | (predicted_mask == index)).sum())
         out.append(intersection / union if union else 0.0)
     return out
 
 
-def build(skips=True):
-    keras.utils.set_random_seed(0)
-    inputs = keras.layers.Input((SIDE, SIDE, 1))
-    down1 = keras.layers.Conv2D(16, 3, padding="same", activation="relu")(inputs)
-    pooled1 = keras.layers.MaxPooling2D(2)(down1)
-    down2 = keras.layers.Conv2D(32, 3, padding="same",
-                                activation="relu")(pooled1)
-    pooled2 = keras.layers.MaxPooling2D(2)(down2)
-    middle = keras.layers.Conv2D(64, 3, padding="same",
-                                 activation="relu")(pooled2)
-    x = keras.layers.UpSampling2D(2)(middle)
-    x = keras.layers.Conv2D(32, 3, padding="same", activation="relu")(x)
+def features(batch, skips):
+    # Encoder: average-pool 4x4 (loses detail). Decoder: repeat back up.
+    n = len(batch)
+    coarse = batch.reshape(n, SIDE // 4, 4, SIDE // 4, 4).mean(axis=(2, 4))
+    up = coarse.repeat(4, axis=1).repeat(4, axis=2)
+    maps = [up, up ** 2]
     if skips:
-        x = keras.layers.Concatenate()([x, down2])
-    x = keras.layers.UpSampling2D(2)(x)
-    x = keras.layers.Conv2D(16, 3, padding="same", activation="relu")(x)
-    if skips:
-        x = keras.layers.Concatenate()([x, down1])
-    outputs = keras.layers.Conv2D(4, ___, activation="softmax")(x)
-    # replace ___ with 1
-    model = keras.Model(inputs, outputs)
-    model.compile(keras.optimizers.Adam(1e-3),
-                  "sparse_categorical_crossentropy", metrics=["accuracy"])
-    return model
+        raw = batch
+        maps += [___, raw ** 2]   # replace ___ with raw
+    return np.stack(maps, axis=-1).reshape(-1, len(maps))
 
 
-print(f"{'design':14s} {'params':>9} {'pixel acc':>10} {'mean IoU':>9}")
+def softmax(z):
+    p = np.exp(z - z.max(axis=1, keepdims=True))
+    return p / p.sum(axis=1, keepdims=True)
+
+
+results = {}
 for skips in (True, False):
-    model = build(skips)
-    model.fit(x_train, y_train, epochs=12, batch_size=32, verbose=0)
-    predicted = model.predict(x_test, verbose=0).argmax(axis=-1)
+    x = features(x_train, skips)
+    onehot = np.eye(4)[y_train.ravel()]
+    W, b = np.zeros((x.shape[1], 4)), np.zeros(4)
+    for _ in range(60):
+        p = softmax(x @ W + b)
+        W -= 15.0 * x.T @ (p - onehot) / len(x)
+        b -= 15.0 * (p - onehot).mean(axis=0)
+    predicted = (features(x_test, skips) @ W + b).argmax(axis=1).reshape(y_test.shape)
     scores = iou_per_class(y_test, predicted)
-    label = "with skips" if skips else "no skips"
-    print(f"{label:14s} {model.count_params():9,} "
-          f"{float((predicted == y_test).mean()):10.4f} "
-          f"{float(np.mean(scores)):9.4f}")
-    if skips:
-        print("               per class: " +
-              "  ".join(f"{n} {v:.4f}" for n, v in zip(CLASS_NAMES, scores)))
-print("both designs clear 0.98 pixel accuracy and the triangle is the worst")
-print("class either way - on shapes this clean the skips buy nothing")
+    results[skips] = (float((predicted == y_test).mean()), float(np.mean(scores)))
+    print("with skips" if skips else "no skips", ": scored on", len(x_test), "test scenes")
+print("both designs clear 0.85 pixel accuracy:", all(v[0] > 0.85 for v in results.values()))
+print("the skip connection raises mean IoU:", results[True][1] > results[False][1])
+print("fine detail only survives through the skip: blurry boundaries cost IoU")`}
+  solution={`import numpy as np
 
-# -- Expected Output -------------------------------------------
-# design            params  pixel acc  mean IoU
-# with skips        51,124     0.9863    0.8965
-#                per class: background 0.9866  disc 0.9314  square 0.9351  triangle 0.7331
-# no skips          46,452     0.9863    0.8974
-# both designs clear 0.98 pixel accuracy and the triangle is the worst
-# class either way - on shapes this clean the skips buy nothing
-# --------------------------------------------------------------`}
+SIDE = 32
+CLASS_NAMES = ("background", "disc", "square", "triangle")
+
+
+def scene(rng):
+    image = rng.normal(0.5, 0.06, (SIDE, SIDE))
+    mask = np.zeros((SIDE, SIDE), int)
+    ys, xs = np.mgrid[0:SIDE, 0:SIDE]
+    radius = rng.randint(4, 7)
+    cy, cx = rng.randint(radius, SIDE - radius, 2)
+    disc = (ys - cy) ** 2 + (xs - cx) ** 2 <= radius ** 2
+    image[disc] = 0.9
+    mask[disc] = 1
+    size = rng.randint(5, 9)
+    sy, sx = rng.randint(0, SIDE - size, 2)
+    image[sy:sy + size, sx:sx + size] = 0.15
+    mask[sy:sy + size, sx:sx + size] = 2
+    height = rng.randint(6, 10)
+    ty, tx = rng.randint(0, SIDE - height, 2)
+    for row in range(height):
+        half = int((row / height) * height / 2)
+        left = max(tx + height // 2 - half, 0)
+        right = min(tx + height // 2 + half + 1, SIDE)
+        image[ty + row, left:right] = 0.65
+        mask[ty + row, left:right] = 3
+    return np.clip(image, 0, 1), mask
+
+
+rng = np.random.RandomState(0)
+scenes = [scene(rng) for _ in range(60)]
+images = np.stack([s[0] for s in scenes])
+masks = np.stack([s[1] for s in scenes])
+x_train, y_train, x_test, y_test = images[:40], masks[:40], images[40:], masks[40:]
+
+
+def iou_per_class(true_mask, predicted_mask, classes=4):
+    out = []
+    for index in range(classes):
+        intersection = float(((true_mask == index) & (predicted_mask == index)).sum())
+        union = float(((true_mask == index) | (predicted_mask == index)).sum())
+        out.append(intersection / union if union else 0.0)
+    return out
+
+
+def features(batch, skips):
+    # Encoder: average-pool 4x4 (loses detail). Decoder: repeat back up.
+    n = len(batch)
+    coarse = batch.reshape(n, SIDE // 4, 4, SIDE // 4, 4).mean(axis=(2, 4))
+    up = coarse.repeat(4, axis=1).repeat(4, axis=2)
+    maps = [up, up ** 2]
+    if skips:
+        raw = batch
+        maps += [raw, raw ** 2]
+    return np.stack(maps, axis=-1).reshape(-1, len(maps))
+
+
+def softmax(z):
+    p = np.exp(z - z.max(axis=1, keepdims=True))
+    return p / p.sum(axis=1, keepdims=True)
+
+
+results = {}
+for skips in (True, False):
+    x = features(x_train, skips)
+    onehot = np.eye(4)[y_train.ravel()]
+    W, b = np.zeros((x.shape[1], 4)), np.zeros(4)
+    for _ in range(60):
+        p = softmax(x @ W + b)
+        W -= 15.0 * x.T @ (p - onehot) / len(x)
+        b -= 15.0 * (p - onehot).mean(axis=0)
+    predicted = (features(x_test, skips) @ W + b).argmax(axis=1).reshape(y_test.shape)
+    scores = iou_per_class(y_test, predicted)
+    results[skips] = (float((predicted == y_test).mean()), float(np.mean(scores)))
+    print("with skips" if skips else "no skips", ": scored on", len(x_test), "test scenes")
+print("both designs clear 0.85 pixel accuracy:", all(v[0] > 0.85 for v in results.values()))
+print("the skip connection raises mean IoU:", results[True][1] > results[False][1])
+print("fine detail only survives through the skip: blurry boundaries cost IoU")`}
+  sct={`test_output_contains("both designs clear 0.85 pixel accuracy: True", pattern=False)
+test_output_contains("the skip connection raises mean IoU: True", pattern=False)
+success_msg("Both designs look fine on pixel accuracy, but only the one with a skip connection sees the boundaries, and mean IoU shows the difference.")`}
+  height={460}
 />

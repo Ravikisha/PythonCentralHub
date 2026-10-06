@@ -12,7 +12,7 @@
 //
 // Checks, in order:
 //   1. every locale in src/i18n/locales.ts has a dictionary file
-//   2. every `t('pch.…')` key used in src/ is declared in en.json
+//   2. every `t('pch.…')` key used in the app is declared in en.json
 //   3. every key in en.json is actually used somewhere (catches dead strings)
 //   4. every non-English dictionary has every en.json key, non-empty
 //   5. no dictionary carries a key en.json does not have (catches renames)
@@ -24,7 +24,9 @@ import { readdirSync, statSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const DICT_DIR = "src/content/i18n";
-const SRC_DIR = "src";
+// The Next app calls `t()` from app/, components/ and lib/ as well as from
+// what is left of src/. Scanning only src/ reported live keys as unused.
+const SRC_DIRS = ["src", "app", "components", "lib"];
 const DEFAULT_LANG = "en";
 
 /** Langs declared in src/i18n/locales.ts, read without a TS toolchain. */
@@ -53,7 +55,7 @@ for (const f of readdirSync(DICT_DIR).filter((f) => f.endsWith(".json"))) {
 }
 
 const used = new Set();
-for (const f of walk(SRC_DIR)) {
+for (const f of SRC_DIRS.flatMap((dir) => walk(dir))) {
   const src = readFileSync(f, "utf8");
   for (const m of src.matchAll(/\bt\(\s*['"`](pch\.[A-Za-z0-9_]+)['"`]/g)) used.add(m[1]);
 }

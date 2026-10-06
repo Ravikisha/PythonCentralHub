@@ -17,8 +17,16 @@
 //
 // Output: public/progress-manifest.json (served as a static asset, fetched
 // once by the dashboard).
-import { readdirSync, statSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import {
+  readdirSync,
+  statSync,
+  writeFileSync,
+  mkdirSync,
+  existsSync,
+} from "node:fs";
+import { join, relative } from "node:path";
+import { routeFor, slugify as segmentSlug } from "../lib/slug.mjs";
+import { courseInfo } from "../lib/courses.data.mjs";
 
 const DOCS = "src/content/docs";
 const EXAMS = "src/data/exams";
@@ -33,11 +41,40 @@ const SKIP_DIRS = new Set(["src"]);
 const PAGE_RE = /\.mdx?$/;
 
 /**
- * Starlight's directory -> URL segment rule, for the shapes this repo uses:
- * lowercase, spaces to dashes. "DSA with Python" -> "dsa-with-python".
+ * A module folder's URL segment -- "DSA with Python" -> "dsa-with-python".
+ * The shared rule in lib/slug.mjs, not a local copy: a second copy of the
+ * slug rule is exactly what verify-routes exists to stop drifting.
  */
 function slugify(name) {
-  return name.toLowerCase().replace(/\s+/g, "-");
+  return segmentSlug(name);
+}
+
+/**
+ * Where a module opens.
+ *
+ * A module is a folder of phases, so `/dsa-with-python/` is not a page: every
+ * surface that offered it as a link -- the landing page, the dashboard -- was
+ * sending readers to a 404. The first page in walk order is the honest
+ * default, and three modules name their own opening page because the file that
+ * sorts first is not where anyone should begin.
+ */
+const OPENS_AT = {
+  tutorials: "/tutorials/introduction/",
+  projects: "/projects/beginners/asciiartgenerator/",
+  guides: "/guides/home/",
+};
+
+function firstPage(dir) {
+  for (const entry of readdirSync(dir).sort()) {
+    const p = join(dir, entry);
+    if (statSync(p).isDirectory()) {
+      const found = firstPage(p);
+      if (found) return found;
+    } else if (PAGE_RE.test(entry)) {
+      return p;
+    }
+  }
+  return null;
 }
 
 /** Count .md/.mdx files under a directory, recursively. */
@@ -66,25 +103,78 @@ for (const entry of readdirSync(DOCS)) {
   // "sit the assessment" link would mean testing twelve URLs to find the one
   // or two that exist.
   const hasExam =
-    existsSync(join(EXAMS, `${slug}.yaml`)) || existsSync(join(EXAMS, `${slug}.yml`));
+    existsSync(join(EXAMS, `${slug}.yaml`)) ||
+    existsSync(join(EXAMS, `${slug}.yml`));
 
-  modules.push({ slug, label: entry, count, hasExam });
+  // The directory name is the label, except that two of them ("tutorials",
+  // "projects") are lowercase on disk while the sidebar shows them capitalised.
+  // The dashboard sits beside that sidebar, so they match there too.
+  const label =
+    /^[a-z]/.test(entry) && !entry.includes(" ")
+      ? entry.charAt(0).toUpperCase() + entry.slice(1)
+      : entry;
+
+  const opening = firstPage(p);
+  const entryUrl =
+    OPENS_AT[slug] ??
+    (opening
+      ? routeFor(relative(DOCS, opening).split("\\").join("/"))
+      : `/${slug}/`);
+
+  // A catalogued course is labelled by its course title everywhere the
+  // manifest reaches -- the dashboard, certificates, the verifier -- and its
+  // home is its course page rather than its first lesson.
+  const course = courseInfo(slug);
+  modules.push({
+    slug,
+    label: course?.title ?? label,
+    count,
+    hasExam,
+    entry: entryUrl,
+    ...(course ? { course: true, href: `/courses/${slug}/`, code: course.code } : {}),
+  });
 }
 
-modules.sort((a, b) => b.count - a.count);
+/**
+ * The learning path, mirroring MODULE_ORDER in lib/order.ts.
+ *
+ * The manifest used to be sorted by page count, which put Projects first on
+ * the landing page and the dashboard while the sidebar opened with Guides.
+ * Three surfaces, three different answers to "where do I start".
+ */
+const PATH = [
+  "guides",
+  "tutorials",
+  "flask-tutorials",
+  "python-automation-and-scripting",
+  "data-analytics",
+  "mathematics-for-machine-learning",
+  "machine-learning",
+  "deep-learning",
+  "dsa-with-python",
+  "software-testing-and-quality",
+  "projects",
+  "reference",
+];
+
+const rank = (slug) => {
+  const i = PATH.indexOf(slug);
+  return i === -1 ? PATH.length : i;
+};
+
+modules.sort((a, b) => rank(a.slug) - rank(b.slug) || b.count - a.count);
 
 mkdirSync("public", { recursive: true });
 writeFileSync(
   OUT,
-  JSON.stringify(
-    { generatedAt: new Date().toISOString(), modules },
-    null,
-    2
-  ) + "\n"
+  JSON.stringify({ generatedAt: new Date().toISOString(), modules }, null, 2) +
+    "\n",
 );
 
 const total = modules.reduce((sum, m) => sum + m.count, 0);
 console.log(`${OUT}: ${modules.length} module(s), ${total} page(s)`);
 for (const m of modules) {
-  console.log(`  ${String(m.count).padStart(5)}  ${m.slug}${m.hasExam ? "  (exam)" : ""}`);
+  console.log(
+    `  ${String(m.count).padStart(5)}  ${m.slug}${m.hasExam ? "  (exam)" : ""}`,
+  );
 }

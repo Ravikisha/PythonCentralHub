@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * IntervalTimeline — step-through visualization for interval algorithms.
  *

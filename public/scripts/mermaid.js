@@ -13,7 +13,7 @@ const text = '#d7dde5';
 const line = 'rgba(139, 148, 158, 0.5)';
 
 mermaid.initialize({
-  startOnLoad: true,
+  startOnLoad: false,
   theme: 'base',
   fontFamily: "'Atkinson Hyperlegible', 'Poppins', sans-serif",
   themeVariables: {
@@ -58,3 +58,43 @@ mermaid.initialize({
     pie4: '#a5d6a4',
   },
 });
+
+/* `startOnLoad` rendered once, at load. The site navigates between pages on the
+   client, so a diagram reached by clicking a link in the contents never got
+   rendered and the reader saw the diagram's source instead. `run()` is
+   idempotent -- mermaid marks what it has drawn with `data-processed` -- so the
+   shell can call it after every navigation. */
+/* Each diagram is drawn as it comes within a screen or so of the viewport,
+   not all at once at load: a lesson can hold a dozen, and laying them all out
+   up front blocked the main thread for seconds on a phone. */
+let observer = null;
+
+function draw(nodes) {
+  if (nodes.length) mermaid.run({ nodes });
+}
+
+export function run() {
+  const nodes = Array.from(
+    document.querySelectorAll("pre.mermaid:not([data-processed]):not([data-queued])"),
+  );
+  if (!nodes.length) return;
+  if (!("IntersectionObserver" in window)) {
+    draw(nodes);
+    return;
+  }
+  observer ??= new IntersectionObserver(
+    (entries) => {
+      const ready = entries.filter((e) => e.isIntersecting).map((e) => e.target);
+      for (const el of ready) observer.unobserve(el);
+      draw(ready);
+    },
+    { rootMargin: "800px 0px" },
+  );
+  for (const el of nodes) {
+    el.dataset.queued = "true";
+    observer.observe(el);
+  }
+}
+
+window.__pchMermaid = { run };
+run();

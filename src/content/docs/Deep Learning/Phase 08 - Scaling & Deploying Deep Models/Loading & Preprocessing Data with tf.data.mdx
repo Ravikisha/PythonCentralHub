@@ -5,10 +5,6 @@ sidebar:
   order: 471
 ---
 
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
-import Figure from "../../../../components/Figure.astro";
-import Quiz from "../../../../components/Quiz.astro";
-
 Input-pipeline advice usually arrives as a list of methods to chain in a particular order:
 `map`, `cache`, `shuffle`, `batch`, `prefetch`. Every item on that list is a throughput claim,
 and throughput is measurable, so this page times each one instead of repeating the list.
@@ -416,6 +412,12 @@ With data arriving fast enough, the next bottleneck is the training step itself 
 <DataCampExercise
   lang="python"
   hint={`Serial time is the sum of the per-stage times; a perfectly overlapped pipeline runs at the speed of its slowest stage.`}
+  expectedOutput={`serial:     1.400s
+overlapped: 0.803s
+speed-up:   1.74x
+
+the best possible saving is the SMALLER of the two stages -
+overlapping cannot beat 4.0 ms per batch`}
   code={`# Task: Exercise 1 - Why overlapping beats speeding up
 LOAD_MS = 4.0
 STEP_MS = 3.0
@@ -459,17 +461,23 @@ print(f"overlapped: {overlapped(BATCHES):.3f}s")
 print(f"speed-up:   {serial(BATCHES) / overlapped(BATCHES):.2f}x")
 print(f"\\nthe best possible saving is the SMALLER of the two stages -")
 print(f"overlapping cannot beat {max(LOAD_MS, STEP_MS)} ms per batch")`}
-  expectedOutput={`serial:     1.400s
-overlapped: 0.803s
-speed-up:   1.74x
-
-the best possible saving is the SMALLER of the two stages -
-overlapping cannot beat 4.0 ms per batch`}
+  sct={`test_output_contains("overlapped: 0.803s", pattern=False)
+test_output_contains("speed-up:   1.74x", pattern=False)
+success_msg("Overlapping loading with training hides the smaller stage, so the cost per batch becomes the slower of the two.")`}
+  height={400}
 />
 
 <DataCampExercise
   lang="python"
   hint={`Amdahl's law: if a fraction p of the work is parallelisable across n workers, the speed-up is 1 / ((1 - p) + p / n).`}
+  expectedOutput={` workers   samples/s   measured   perfect  efficiency
+       1       4,511      1.00x     1.00x      100.0%
+       2       8,050      1.78x     2.00x       89.2%
+       4      11,933      2.65x     4.00x       66.1%
+       8      16,701      3.70x     8.00x       46.3%
+
+efficiency falls with worker count because the main thread and
+TensorFlow's own pools are competing for the same 8 cores`}
   code={`# Task: Exercise 2 - Compare measured scaling against the ideal
 MEASURED = {1: 4511, 2: 8050, 4: 11933, 8: 16701}
 BASELINE = MEASURED[1]
@@ -509,19 +517,22 @@ for workers, rate in MEASURED.items():
 
 print("\\nefficiency falls with worker count because the main thread and")
 print("TensorFlow's own pools are competing for the same 8 cores")`}
-  expectedOutput={` workers   samples/s   measured   perfect  efficiency
-       1       4,511      1.00x     1.00x      100.0%
-       2       8,050      1.78x     2.00x       89.2%
-       4      11,933      2.65x     4.00x       66.1%
-       8      16,701      3.70x     8.00x       46.3%
-
-efficiency falls with worker count because the main thread and
-TensorFlow's own pools are competing for the same 8 cores`}
+  sct={`test_output_contains("8.00x", pattern=False)
+test_output_contains("46.3%", pattern=False)
+success_msg("Measured scaling falls short of the ideal because the workers compete for the same cores.")`}
+  height={400}
 />
 
 <DataCampExercise
   lang="python"
   hint={`Put cache after the deterministic work and before anything that must differ each epoch.`}
+  expectedOutput={`decode, cache, augment, batch    correct: deterministic work cached
+decode, augment, cache, batch    BROKEN: augment frozen on epoch 1
+decode, augment, batch, cache    BROKEN: augment frozen on epoch 1
+decode, augment, batch (none)    no caching: full cost every epoch
+
+the second and third pipelines still run, still look faster, and
+silently drop the augmentation after the first epoch`}
   code={`# Task: Exercise 3 - Where does cache belong?
 PIPELINES = {
     "decode, cache, augment, batch": ["decode", "cache", "augment", "batch"],
@@ -573,90 +584,75 @@ for name, stages in PIPELINES.items():
 
 print("\\nthe second and third pipelines still run, still look faster, and")
 print("silently drop the augmentation after the first epoch")`}
-  expectedOutput={`decode, cache, augment, batch    correct: deterministic work cached
-decode, augment, cache, batch    BROKEN: augment frozen on epoch 1
-decode, augment, batch, cache    BROKEN: augment frozen on epoch 1
-decode, augment, batch (none)    no caching: full cost every epoch`}
+  sct={`test_output_contains("decode, augment, cache, batch    BROKEN: augment frozen on epoch 1", pattern=False)
+test_output_contains("correct: deterministic work cached", pattern=False)
+success_msg("Cache only deterministic work: anything random placed before the cache is frozen after the first epoch.")`}
+  height={400}
 />
 
 <DataCampExercise
   lang="python"
   hint={`Time a full pass over the dataset and divide the row count by the elapsed seconds.`}
-  code={`# Task: Exercise 4 - Time a pipeline yourself
-import time
-import numpy as np
-import tensorflow as tf
+  code={`# Task: Exercise 4 - Model a pipeline and time it
+import math
 
-rows = np.random.default_rng(0).random((3000, 28, 28, 1)).astype("float32")
-labels = np.zeros(3000, "int32")
-
-
-def slow_map(image, label):
-    """Stand-in for real preprocessing: expensive enough to be the bottleneck."""
-    value = image
-    for _ in range(4):
-        value = tf.nn.avg_pool2d(value[None, ...], 3, 1, "SAME")[0]
-    return value, label
+SAMPLES, BATCH = 3000, 64
+MAP_MS = 1.0                 # preprocessing cost per sample
+STEP_MS = 4.0                # training cost per batch
 
 
-def timed(pipeline):
-    started = time.perf_counter()
-    seen = 0
-    for images, _ in pipeline:
-        seen += int(images.shape[0])
-    elapsed = time.perf_counter() - started
-    return seen / ___                            # replace ___ with elapsed
+def epoch_seconds(workers=1, prefetch=False, cached=False):
+    batches = math.ceil(SAMPLES / BATCH)
+    load = 0.0 if cached else SAMPLES * MAP_MS / workers / 1000.0
+    train = batches * STEP_MS / 1000.0
+    return max(load, train) if prefetch else load + train
 
 
-base = tf.data.Dataset.from_tensor_slices((rows, labels))
-AUTOTUNE = tf.data.AUTOTUNE
-
-serial = base.map(slow_map).batch(64)
-parallel = base.map(slow_map, num_parallel_calls=AUTOTUNE).batch(64)
-prefetched = parallel.prefetch(AUTOTUNE)
-cached = base.map(slow_map, num_parallel_calls=AUTOTUNE).cache().batch(64)
-timed(cached)                                    # fill the cache first
-
-for name, pipeline in (("map, batch", serial), ("parallel map", parallel),
-                       ("+ prefetch", prefetched), ("cached (2nd pass)", cached)):
-    print(f"{name:20s} {timed(pipeline):10,.0f} samples/s")`}
-  solution={`import time
-import numpy as np
-import tensorflow as tf
-
-rows = np.random.default_rng(0).random((3000, 28, 28, 1)).astype("float32")
-labels = np.zeros(3000, "int32")
+def throughput(seconds):
+    return SAMPLES / ___                          # samples per second
 
 
-def slow_map(image, label):
-    """Stand-in for real preprocessing: expensive enough to be the bottleneck."""
-    value = image
-    for _ in range(4):
-        value = tf.nn.avg_pool2d(value[None, ...], 3, 1, "SAME")[0]
-    return value, label
+rates = {}
+for name, settings in (("map, batch", {}),
+                       ("parallel map", {"workers": 4}),
+                       ("+ prefetch", {"workers": 4, "prefetch": True}),
+                       ("cached (2nd pass)", {"cached": True, "prefetch": True})):
+    rates[name] = throughput(epoch_seconds(**settings))
+    print(f"{name:20s} {rates[name]:10,.0f} samples/s")
+print("each optimisation is faster than the last:",
+      rates["map, batch"] < rates["parallel map"] < rates["+ prefetch"] < rates["cached (2nd pass)"])`}
+  solution={`# Task: Exercise 4 - Model a pipeline and time it
+import math
+
+SAMPLES, BATCH = 3000, 64
+MAP_MS = 1.0                 # preprocessing cost per sample
+STEP_MS = 4.0                # training cost per batch
 
 
-def timed(pipeline):
-    started = time.perf_counter()
-    seen = 0
-    for images, _ in pipeline:
-        seen += int(images.shape[0])
-    elapsed = time.perf_counter() - started
-    return seen / elapsed
+def epoch_seconds(workers=1, prefetch=False, cached=False):
+    batches = math.ceil(SAMPLES / BATCH)
+    load = 0.0 if cached else SAMPLES * MAP_MS / workers / 1000.0
+    train = batches * STEP_MS / 1000.0
+    return max(load, train) if prefetch else load + train
 
 
-base = tf.data.Dataset.from_tensor_slices((rows, labels))
-AUTOTUNE = tf.data.AUTOTUNE
+def throughput(seconds):
+    return SAMPLES / seconds                          # samples per second
 
-serial = base.map(slow_map).batch(64)
-parallel = base.map(slow_map, num_parallel_calls=AUTOTUNE).batch(64)
-prefetched = parallel.prefetch(AUTOTUNE)
-cached = base.map(slow_map, num_parallel_calls=AUTOTUNE).cache().batch(64)
-timed(cached)                                    # fill the cache first
 
-for name, pipeline in (("map, batch", serial), ("parallel map", parallel),
-                       ("+ prefetch", prefetched), ("cached (2nd pass)", cached)):
-    print(f"{name:20s} {timed(pipeline):10,.0f} samples/s")`}
+rates = {}
+for name, settings in (("map, batch", {}),
+                       ("parallel map", {"workers": 4}),
+                       ("+ prefetch", {"workers": 4, "prefetch": True}),
+                       ("cached (2nd pass)", {"cached": True, "prefetch": True})):
+    rates[name] = throughput(epoch_seconds(**settings))
+    print(f"{name:20s} {rates[name]:10,.0f} samples/s")
+print("each optimisation is faster than the last:",
+      rates["map, batch"] < rates["parallel map"] < rates["+ prefetch"] < rates["cached (2nd pass)"])`}
+  sct={`test_output_contains("each optimisation is faster than the last: True", pattern=False)
+test_output_contains("samples/s", pattern=False)
+success_msg("Parallel maps, prefetching and caching each remove a different cost, and measuring samples per second shows what each one buys.")`}
+  height={400}
 />
 
 <DataCampExercise
@@ -725,100 +721,67 @@ for buffer_size in (1, 32, 500, 2000):
 
 print("\\na buffer smaller than the run length leaves the data in class order,")
 print("and every batch contains one or two classes")`}
+  sct={`test_output_contains("buffer  2000: mean distinct classes per batch of 32:  9.69 / 10", pattern=False)
+test_output_contains("buffer     1: mean distinct classes per batch of 32:  1.11 / 10", pattern=False)
+success_msg("A shuffle buffer smaller than the run length leaves class-ordered data in class order, so every batch holds only one or two classes.")`}
+  height={400}
 />
 
 <DataCampExercise
   lang="python"
   hint={`Measure the consumer's waiting time separately from its compute time, and use a busy-wait so the step cannot overlap by accident.`}
   code={`# Task: Exercise 6 - Measure starvation, not throughput
-import time
-import numpy as np
-import tensorflow as tf
+import math
 
-STEP_MS = 3.0
-rows = np.random.default_rng(0).random((2000, 28, 28, 1)).astype("float32")
-labels = np.zeros(2000, "int32")
+STEP_MS = 3.0            # training time per batch
+LOAD_MS = 5.0            # time to produce one batch
+BATCHES = 40
 
 
-def slow_map(image, label):
-    value = image
-    for _ in range(4):
-        value = tf.nn.avg_pool2d(value[None, ...], 3, 1, "SAME")[0]
-    return value, label
-
-
-def run(pipeline):
-    """Split the epoch into time spent waiting and time spent 'training'."""
-    waiting = computing = 0.0
-    iterator = iter(pipeline)
-    while True:
-        start = time.perf_counter()
-        try:
-            next(iterator)
-        except StopIteration:
-            break
-        waiting += time.perf_counter() - start
-        start = time.perf_counter()
-        target = start + STEP_MS / 1000.0
-        while time.perf_counter() < target:      # busy-wait, not sleep
-            pass
-        computing += time.perf_counter() - start
+def run(prefetch):
+    """Split an epoch into time spent waiting and time spent training."""
+    if prefetch:
+        # the next batch is prepared while the current one trains
+        waiting = LOAD_MS + (BATCHES - 1) * max(0.0, LOAD_MS - ___)   # the training time
+    else:
+        waiting = BATCHES * LOAD_MS
+    computing = BATCHES * STEP_MS
     return waiting, computing
 
 
-AUTOTUNE = tf.data.AUTOTUNE
-base = tf.data.Dataset.from_tensor_slices((rows, labels))
-plain = base.map(slow_map, num_parallel_calls=AUTOTUNE).batch(64)
-prefetched = plain.prefetch(___)                 # replace ___ with AUTOTUNE
+shares = {}
+for name, prefetch in (("no prefetch", False), ("prefetch", True)):
+    waiting, computing = run(prefetch)
+    shares[name] = waiting / (waiting + computing)
+    print(f"{name:14s} waiting {waiting:6.1f} ms  training {computing:6.1f} ms  ({shares[name]:.1%} waiting)")
+print("prefetching cuts the waiting share:", shares["prefetch"] < shares["no prefetch"])`}
+  solution={`# Task: Exercise 6 - Measure starvation, not throughput
+import math
 
-for name, pipeline in (("no prefetch", plain), ("prefetch", prefetched)):
-    waiting, computing = run(pipeline)
-    total = waiting + computing
-    print(f"{name:14s} waiting {waiting:.3f}s  computing {computing:.3f}s  "
-          f"({waiting / total:.1%} waiting)")`}
-  solution={`import time
-import numpy as np
-import tensorflow as tf
-
-STEP_MS = 3.0
-rows = np.random.default_rng(0).random((2000, 28, 28, 1)).astype("float32")
-labels = np.zeros(2000, "int32")
+STEP_MS = 3.0            # training time per batch
+LOAD_MS = 5.0            # time to produce one batch
+BATCHES = 40
 
 
-def slow_map(image, label):
-    value = image
-    for _ in range(4):
-        value = tf.nn.avg_pool2d(value[None, ...], 3, 1, "SAME")[0]
-    return value, label
-
-
-def run(pipeline):
-    """Split the epoch into time spent waiting and time spent 'training'."""
-    waiting = computing = 0.0
-    iterator = iter(pipeline)
-    while True:
-        start = time.perf_counter()
-        try:
-            next(iterator)
-        except StopIteration:
-            break
-        waiting += time.perf_counter() - start
-        start = time.perf_counter()
-        target = start + STEP_MS / 1000.0
-        while time.perf_counter() < target:      # busy-wait, not sleep
-            pass
-        computing += time.perf_counter() - start
+def run(prefetch):
+    """Split an epoch into time spent waiting and time spent training."""
+    if prefetch:
+        # the next batch is prepared while the current one trains
+        waiting = LOAD_MS + (BATCHES - 1) * max(0.0, LOAD_MS - STEP_MS)   # the training time
+    else:
+        waiting = BATCHES * LOAD_MS
+    computing = BATCHES * STEP_MS
     return waiting, computing
 
 
-AUTOTUNE = tf.data.AUTOTUNE
-base = tf.data.Dataset.from_tensor_slices((rows, labels))
-plain = base.map(slow_map, num_parallel_calls=AUTOTUNE).batch(64)
-prefetched = plain.prefetch(AUTOTUNE)
-
-for name, pipeline in (("no prefetch", plain), ("prefetch", prefetched)):
-    waiting, computing = run(pipeline)
-    total = waiting + computing
-    print(f"{name:14s} waiting {waiting:.3f}s  computing {computing:.3f}s  "
-          f"({waiting / total:.1%} waiting)")`}
+shares = {}
+for name, prefetch in (("no prefetch", False), ("prefetch", True)):
+    waiting, computing = run(prefetch)
+    shares[name] = waiting / (waiting + computing)
+    print(f"{name:14s} waiting {waiting:6.1f} ms  training {computing:6.1f} ms  ({shares[name]:.1%} waiting)")
+print("prefetching cuts the waiting share:", shares["prefetch"] < shares["no prefetch"])`}
+  sct={`test_output_contains("no prefetch    waiting  200.0 ms  training  120.0 ms  (62.5% waiting)", pattern=False)
+test_output_contains("prefetching cuts the waiting share: True", pattern=False)
+success_msg("Prefetching overlaps loading with training, so the accelerator spends a much smaller share of the epoch waiting for data.")`}
+  height={400}
 />

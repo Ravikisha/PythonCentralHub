@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * ComplexityChart — growth-rate comparison on a log axis, with a live table.
  *

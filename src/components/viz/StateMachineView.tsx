@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * StateMachineView — step-through visualization of a DP state machine.
  *

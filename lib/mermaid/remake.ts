@@ -23,8 +23,8 @@ import { visit } from "unist-util-visit";
 import renderDiagram from "./render-diagram";
 
 function getTitle(meta: string) {
-  if(!meta) return false;
-  if(meta.length === 0) return false;
+  if (!meta) return false;
+  if (meta.length === 0) return false;
 
   // Use a regular expression to extract the title value
   const match = meta.match(/title="([^"]*)"/);
@@ -41,8 +41,8 @@ function getTitle(meta: string) {
 }
 
 function getDesc(meta: string) {
-  if(!meta) return false;
-  if(meta.length === 0) return false;
+  if (!meta) return false;
+  if (meta.length === 0) return false;
 
   // Use a regular expression to extract the title value
   const match = meta.match(/desc="([^"]*)"/);
@@ -119,7 +119,7 @@ function plugin() {
 
           position: node.position,
         });
-      })
+      }),
     );
 
     return ast;

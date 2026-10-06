@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * ProblemTable — the one interactive table behind every practice list on the site.
  *

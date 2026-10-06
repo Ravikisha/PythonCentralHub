@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * LinkedListRewire — step-through visualization of pointer surgery.
  *

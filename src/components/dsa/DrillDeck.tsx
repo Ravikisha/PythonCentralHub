@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * DrillDeck — spaced repetition over the course's Recall cards.
  *

@@ -16,8 +16,17 @@
  * would touch the DSA deck for no gain.
  */
 import yaml from "js-yaml";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
-import recallRaw from "./recall.yaml?raw";
+/**
+ * Read from disk rather than importing.
+ *
+ * Vite's `?raw` suffix inlined this for Astro; Turbopack has no equivalent and
+ * fails with "Unknown module type". Evaluated once on the server, at build
+ * time for the statically generated pages that use it.
+ */
+const recallRaw = readFileSync(join(process.cwd(), "src", "data", "mml", "recall.yaml"), "utf8");
 
 /** One prompt: `label` is the face shown, `text` is what the reader recalls. */
 export interface RecallPrompt {

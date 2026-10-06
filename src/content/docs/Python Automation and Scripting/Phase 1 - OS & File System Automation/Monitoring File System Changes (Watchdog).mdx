@@ -66,6 +66,103 @@ if __name__ == "__main__":
     observer.join()
 ```
 
+## How watchdog works
+
+The operating system can tell a program when something in a folder changes. On Linux this is inotify, on macOS FSEvents, on Windows `ReadDirectoryChangesW`. `watchdog` wraps all three behind one interface, so the same script runs on each system.
+
+There are two objects to know:
+
+- An **observer** runs in a background thread. You tell it which folder to watch with `schedule(handler, path, recursive=True)`.
+- A **handler** is your class. The observer calls its methods (`on_created`, `on_modified`, `on_deleted`, `on_moved`) with an event object. The event has `src_path` and `is_directory`.
+
+The main thread only needs to stay alive, which is why the example loops on `time.sleep(1)`. Press Ctrl+C, catch `KeyboardInterrupt`, and call `observer.stop()` followed by `observer.join()` to shut down cleanly.
+
+## Waiting until the file is finished
+
+The diagram above shows the main trap. `on_created` fires when the file first appears, not when it has been fully written. If you open a large download immediately, you may read half of it. A simple fix is to wait until the size stops changing.
+
+```python title="watch_new_files.py" showLineNumbers{1}
+import time
+from pathlib import Path
+from watchdog.events import FileSystemEventHandler
+
+
+def wait_until_stable(path: Path, checks: int = 3, delay: float = 0.5) -> bool:
+    last = -1
+    stable = 0
+    while stable < checks:
+        try:
+            size = path.stat().st_size
+        except FileNotFoundError:
+            return False  # removed while we waited
+        stable = stable + 1 if size == last else 0
+        last = size
+        time.sleep(delay)
+    return True
+
+
+class NewFileHandler(FileSystemEventHandler):
+    def on_created(self, event):
+        if event.is_directory:
+            return
+        path = Path(event.src_path)
+        if wait_until_stable(path):
+            print("ready:", path.name, path.stat().st_size, "bytes")
+```
+
+Use `NewFileHandler` in place of `Handler` in the example above. Because it sleeps, it blocks the observer thread for that file. For heavy work, hand the path to a queue or a worker thread.
+
+## Common mistakes
+
+- **Writing into the folder you are watching.** If your handler creates files in the watched folder, each one triggers another event and you get an endless loop. Write results somewhere else.
+- **Acting on every `on_modified`.** One save can raise several. Debounce, or track which files you already handled.
+- **Ignoring directories.** Directory events arrive too. Check `event.is_directory`.
+- **Not stopping the observer.** Always call `stop()` and `join()`, or the thread keeps the process alive.
+
+## Adapting it
+
+Point the observer at a Downloads folder and move each finished PDF into a `PDFs` folder. Or watch a drop folder and run a CSV cleanup on every new file. Add a dry-run flag that only prints the move, as you would for any script that touches files.
+
+## Check your understanding
+
+<Quiz
+  questions={[
+    {
+      q: "Why can reading a file inside on_created give you incomplete data?",
+      options: [
+        "watchdog only reports events after a five-minute delay",
+        "The event fires when the file appears, which may be before the writer has finished",
+        "on_created only fires for empty files",
+        "Python cannot open files that another program created",
+      ],
+      answer: 1,
+      explain: "Creation and completion are different moments. A large copy or download creates the file first and fills it later, so wait until the size is stable or retry on errors.",
+    },
+    {
+      q: "Your handler saves a processed copy of each new file into the watched folder. What happens?",
+      options: [
+        "Nothing, watchdog ignores files created by your own script",
+        "Each saved copy raises a new event, so the handler can loop forever",
+        "The observer stops automatically",
+        "Python raises a RecursionError immediately",
+      ],
+      answer: 1,
+      explain: "watchdog reports every change in the folder, whoever made it. Write output to a different folder, or skip files that match your output naming.",
+    },
+    {
+      q: "What should the main thread do after observer.start()?",
+      options: [
+        "Nothing, and exit, because the observer runs by itself",
+        "Stay alive, for example with a sleep loop, and call stop() and join() on exit",
+        "Call observer.join() before start()",
+        "Restart the observer every second",
+      ],
+      answer: 1,
+      explain: "The observer is a background thread. If the main thread exits, the program ends. On Ctrl+C you stop the observer and join it so it shuts down cleanly.",
+    },
+  ]}
+/>
+
 ## Notes
 
 - Install dependency: `watchdog`

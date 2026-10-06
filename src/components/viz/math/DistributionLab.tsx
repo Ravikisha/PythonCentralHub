@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * DistributionLab — densities, mass functions, and Gaussian conditioning.
  *

@@ -12,6 +12,7 @@
  *   stats/bookmarks         { pages: string[] }
  *   stats/quizzes           { [encodedKey]: { correct, total, at } }
  *   stats/notes             { [encodedPageId]: string }
+ *   stats/exercises         { [encodedKey]: epoch millis of first pass }
  *
  * One document per module rather than one per page: a reader can finish
  * hundreds of pages, and a document each would turn the dashboard into
@@ -83,6 +84,7 @@ export async function pushOps(ops: PendingOp[], state: ProgressState): Promise<v
   const bookmarksRemoved: string[] = [];
   const quizzes: Record<string, QuizResult> = {};
   const notes: Record<string, unknown> = {};
+  const exercises: Record<string, number> = {};
 
   for (const op of ops) {
     switch (op.kind) {
@@ -100,6 +102,12 @@ export async function pushOps(ops: PendingOp[], state: ProgressState): Promise<v
         break;
       case "quiz":
         quizzes[encodeId(op.key)] = { correct: op.correct, total: op.total, at: Date.now() };
+        break;
+      case "exercise":
+        exercises[encodeId(op.key)] = op.at;
+        break;
+      case "enrol":
+        // Carried by the summary document written below on every flush.
         break;
       case "note":
         // An emptied note is deleted rather than stored blank, so the cloud
@@ -154,12 +162,31 @@ export async function pushOps(ops: PendingOp[], state: ProgressState): Promise<v
       longest: state.streak.longest,
       lastActive: state.streak.last,
       totalCompleted: Object.values(state.modules).reduce((n, l) => n + l.length, 0),
+      enrolled: state.enrolled ?? [],
       updatedAt: fs.serverTimestamp(),
     },
     { merge: true }
   );
 
   await batch.commit();
+  if (Object.keys(exercises).length) await pushExercises(id, exercises);
+}
+
+/**
+ * Exercise passes, written on their own after the main batch.
+ *
+ * stats/exercises is newer than the rest. Until the Firestore rules that allow
+ * it are deployed the write is refused, and inside the main batch that refusal
+ * would take every other progress write down with it.
+ */
+async function pushExercises(id: string, exercises: Record<string, number>): Promise<void> {
+  try {
+    const fs = await import("firebase/firestore");
+    const db = await getDb();
+    await fs.setDoc(fs.doc(db, "users", id, "stats", "exercises"), exercises, { merge: true });
+  } catch (err) {
+    console.warn("[progress] exercise passes not synced:", err);
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -171,13 +198,19 @@ async function fetchCloud(id: string): Promise<Partial<ProgressState>> {
   const fs = await import("firebase/firestore");
   const db = await getDb();
 
-  const [progressSnap, bookmarksSnap, quizSnap, summarySnap, notesSnap] = await Promise.all([
-    fs.getDocs(fs.collection(db, "users", id, "progress")),
-    fs.getDoc(fs.doc(db, "users", id, "stats", "bookmarks")),
-    fs.getDoc(fs.doc(db, "users", id, "stats", "quizzes")),
-    fs.getDoc(fs.doc(db, "users", id, "stats", "summary")),
-    fs.getDoc(fs.doc(db, "users", id, "stats", "notes")),
-  ]);
+  const [progressSnap, bookmarksSnap, quizSnap, summarySnap, notesSnap, exerciseData] =
+    await Promise.all([
+      fs.getDocs(fs.collection(db, "users", id, "progress")),
+      fs.getDoc(fs.doc(db, "users", id, "stats", "bookmarks")),
+      fs.getDoc(fs.doc(db, "users", id, "stats", "quizzes")),
+      fs.getDoc(fs.doc(db, "users", id, "stats", "summary")),
+      fs.getDoc(fs.doc(db, "users", id, "stats", "notes")),
+      // Refused until the rules allowing it are deployed; see pushExercises.
+      fs
+        .getDoc(fs.doc(db, "users", id, "stats", "exercises"))
+        .then((d) => (d.data() ?? {}) as Record<string, number>)
+        .catch(() => ({}) as Record<string, number>),
+    ]);
 
   const modules: Record<string, string[]> = {};
   progressSnap.forEach((d) => {
@@ -190,7 +223,16 @@ async function fetchCloud(id: string): Promise<Partial<ProgressState>> {
   return {
     modules,
     bookmarks: (bookmarksSnap.data()?.pages ?? []) as string[],
-    quizzes: (quizSnap.data() ?? {}) as Record<string, QuizResult>,
+    // Stored with "/" encoded (Firestore keys), used locally in the raw
+    // "page/id#0" form recordQuiz() looks up. Decoded here, like notes.
+    quizzes: Object.fromEntries(
+      Object.entries((quizSnap.data() ?? {}) as Record<string, QuizResult>).map(
+        ([k, v]) => [decodeId(k), v],
+      ),
+    ),
+    exercises: Object.fromEntries(
+      Object.entries(exerciseData).map(([k, v]) => [decodeId(k), v]),
+    ),
     notes: Object.fromEntries(
       Object.entries((notesSnap.data() ?? {}) as Record<string, string>).map(([k, v]) => [
         decodeId(k),
@@ -202,6 +244,7 @@ async function fetchCloud(id: string): Promise<Partial<ProgressState>> {
       count: (summary.streak as number) ?? 0,
       longest: (summary.longest as number) ?? 0,
     },
+    enrolled: Array.isArray(summary.enrolled) ? (summary.enrolled as string[]) : [],
   };
 }
 
@@ -229,11 +272,16 @@ export async function mergeWithCloud(): Promise<ProgressState> {
     modules[mod] = union(modules[mod], pages);
   }
 
+  // Raw keys throughout. The merge used to write encoded keys into local
+  // storage, where recordQuiz() looks up raw ones: a retake then missed the
+  // stored best, saved a duplicate, and the push overwrote the cloud best
+  // with the lower score. decodeId() on local keys also heals stores that
+  // already hold encoded duplicates (it leaves raw keys unchanged).
   const quizzes = { ...(cloud.quizzes ?? {}) };
   for (const [key, result] of Object.entries(local.quizzes)) {
-    const encoded = encodeId(key);
-    const existing = quizzes[encoded];
-    if (!existing || existing.correct < result.correct) quizzes[encoded] = result;
+    const raw = decodeId(key);
+    const existing = quizzes[raw];
+    if (!existing || existing.correct < result.correct) quizzes[raw] = result;
   }
 
   // Notes merge by recency of edit is not available (no per-note timestamp),
@@ -241,11 +289,19 @@ export async function mergeWithCloud(): Promise<ProgressState> {
   // fills in the rest. Losing a note would be worse than keeping a stale one.
   const notes = { ...(cloud.notes ?? {}), ...local.notes };
 
+  // A union keyed by exercise, keeping the earlier pass.
+  const exercises = { ...(cloud.exercises ?? {}) };
+  for (const [key, at] of Object.entries(local.exercises ?? {})) {
+    exercises[key] = Math.min(at, exercises[key] ?? at);
+  }
+
   const merged: ProgressState = {
     v: 1,
     modules,
     bookmarks: union(local.bookmarks, cloud.bookmarks),
+    enrolled: union(local.enrolled, cloud.enrolled),
     quizzes,
+    exercises,
     notes,
     streak: {
       last: local.streak.last > (cloud.streak?.last ?? "") ? local.streak.last : cloud.streak!.last,
@@ -278,7 +334,11 @@ async function pushMerged(id: string, state: ProgressState): Promise<void> {
     { pages: state.bookmarks, updatedAt: fs.serverTimestamp() },
     { merge: true }
   );
-  batch.set(fs.doc(db, "users", id, "stats", "quizzes"), state.quizzes, { merge: true });
+  batch.set(
+    fs.doc(db, "users", id, "stats", "quizzes"),
+    Object.fromEntries(Object.entries(state.quizzes).map(([k, v]) => [encodeId(k), v])),
+    { merge: true },
+  );
   batch.set(
     fs.doc(db, "users", id, "stats", "notes"),
     Object.fromEntries(Object.entries(state.notes).map(([k, v]) => [encodeId(k), v])),
@@ -291,12 +351,17 @@ async function pushMerged(id: string, state: ProgressState): Promise<void> {
       longest: state.streak.longest,
       lastActive: state.streak.last,
       totalCompleted: Object.values(state.modules).reduce((n, l) => n + l.length, 0),
+      enrolled: state.enrolled ?? [],
       updatedAt: fs.serverTimestamp(),
     },
     { merge: true }
   );
 
   await batch.commit();
+  await pushExercises(
+    id,
+    Object.fromEntries(Object.entries(state.exercises ?? {}).map(([k, v]) => [encodeId(k), v])),
+  );
 }
 
 /**

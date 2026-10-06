@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * MatrixLab — what a 2×2 matrix does to the plane, built one column at a time.
  *

@@ -32,9 +32,25 @@ export function syncHint(user: User | null): void {
     uid: user.uid,
     name: user.displayName ?? "",
     email: user.email ?? "",
-    photo: user.photoURL ?? "",
+    photo: photoOf(user),
     anon: user.isAnonymous,
   });
+}
+
+/**
+ * The account's picture, wherever the provider put it.
+ *
+ * `user.photoURL` is only filled from the provider the account was *created*
+ * with. An email-and-password account that later links Google keeps an empty
+ * photoURL, and the Google picture sits in `providerData` -- so the header
+ * showed an initial for someone who had signed in with Google.
+ */
+export function photoOf(user: User): string {
+  return (
+    user.photoURL ||
+    user.providerData.find((p) => p.photoURL)?.photoURL ||
+    ""
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -75,6 +91,12 @@ export async function signOutUser(): Promise<void> {
   const auth = await getAuthClient();
   await signOut(auth);
   clearHint();
+  // The signed-in learner's progress and private notes were mirrored into this
+  // browser. Left behind, the next person to sign in here had them merged into
+  // their own account on first sync -- and, flagged as already hydrated,
+  // never pulled their own. Signed out, the device starts clean.
+  const { clearLocal } = await import("../progress/local");
+  clearLocal();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -179,7 +201,13 @@ export async function signUpWithEmail(
   }
 
   if (displayName) await mod.updateProfile(cred.user, { displayName });
-  await sendVerification();
+  // The account exists by now. A failed verification email (rate limit,
+  // network) must not turn that into an error -- the learner would retry and
+  // be told the address is already in use. They can resend from the
+  // verify-email page.
+  await sendVerification().catch((err) =>
+    console.warn("[auth] verification email not sent:", err),
+  );
   await ensureProfile(cred.user);
   syncHint(cred.user);
   return cred;
@@ -267,7 +295,7 @@ export async function ensureProfile(user: User): Promise<void> {
       uid: user.uid,
       email: user.email ?? "",
       displayName: user.displayName ?? "",
-      photoURL: user.photoURL ?? "",
+      photoURL: photoOf(user),
       locale: currentLocale(),
       providers: user.providerData.map((p) => p.providerId),
       ...(snap.exists() ? {} : { createdAt: serverTimestamp(), settings: {} }),
@@ -293,23 +321,80 @@ export async function updateDisplayName(displayName: string): Promise<void> {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Delete the account and its profile document.
+ * Delete the account and everything that belongs to it.
  *
- * Firestore has no cascade, so the per-user subcollections added in later
- * phases will need a Cloud Function (or the "Delete User Data" extension) to
- * be cleaned up. The profile doc goes first: once the Auth user is gone the
- * rules no longer grant the client access to it.
+ * The work happens on the server (app/api/delete-account), which can reach
+ * what the browser cannot: the public leaderboard row and graded attempts.
+ * Issued certificates are kept -- they are public credentials others may
+ * already have checked -- and the profile copy says so.
+ *
+ * Until the server is configured (no service account on the deployment) it
+ * answers "server/not-configured", and this falls back to deleting what the
+ * rules let the owner delete, then the Auth user. The fallback cannot remove
+ * a leaderboard row, which is why the server path is the real one.
  */
+
+/** Per-user stats documents the owner may delete. `certificates` is
+    server-written and read-only to its owner, so it is not in this list. */
+const USER_STATS_DOCS = ["bookmarks", "quizzes", "notes", "summary"];
+
+/**
+ * Firebase refuses to delete an account unless the sign-in is recent (about
+ * five minutes). Checked before anything is removed, so a stale session is
+ * told to sign in again instead of losing its data and keeping its account.
+ */
+const RECENT_SIGN_IN_MS = 5 * 60 * 1000;
+
 export async function deleteAccount(): Promise<void> {
   const auth = await getAuthClient();
   const user = auth.currentUser;
   if (!user) throw new Error("not signed in");
 
-  const { doc, deleteDoc } = await import("firebase/firestore");
-  const db = await getDb();
-  await deleteDoc(doc(db, "users", user.uid));
-  await user.delete(); // throws auth/requires-recent-login on a stale session
+  const signedInAt = Date.parse(user.metadata.lastSignInTime ?? "");
+  if (!Number.isFinite(signedInAt) || Date.now() - signedInAt > RECENT_SIGN_IN_MS) {
+    throw Object.assign(new Error("sign in again before deleting"), {
+      code: "auth/requires-recent-login",
+    });
+  }
+
+  const { callApi } = await import("./client");
+  try {
+    await callApi("delete-account");
+  } catch (err) {
+    if ((err as { code?: string }).code !== "server/not-configured") throw err;
+    await deleteFromClient(user);
+  }
+
+  // The browser's own copy goes too. Leaving it would mean the next account
+  // created here inherits a deleted one's reading history on first sync.
+  const { clearLocal } = await import("../progress/local");
+  clearLocal();
   clearHint();
+  // The server removed the Auth user; drop the local session that pointed
+  // at it. Harmless if the fallback already did.
+  const { signOut } = await import("firebase/auth");
+  await signOut(auth).catch(() => {});
+}
+
+async function deleteFromClient(user: User): Promise<void> {
+  const { doc, deleteDoc, collection, getDocs, writeBatch } = await import(
+    "firebase/firestore"
+  );
+  const db = await getDb();
+  const uid = user.uid;
+
+  // One batch for the lot: a half-deleted account is worse than a failed one.
+  const batch = writeBatch(db);
+  const progress = await getDocs(collection(db, "users", uid, "progress"));
+  progress.forEach((entry) => batch.delete(entry.ref));
+  for (const name of USER_STATS_DOCS) {
+    batch.delete(doc(db, "users", uid, "stats", name));
+  }
+  await batch.commit();
+  // Outside the batch: refused where the rules for it are not deployed yet.
+  await deleteDoc(doc(db, "users", uid, "stats", "exercises")).catch(() => {});
+  await deleteDoc(doc(db, "users", uid));
+  await user.delete();
 }
 
 /** Everything the site stores about the signed-in user, as a JSON blob. */
@@ -318,9 +403,21 @@ export async function exportUserData(): Promise<Record<string, unknown>> {
   const user = auth.currentUser;
   if (!user) throw new Error("not signed in");
 
-  const { doc, getDoc } = await import("firebase/firestore");
+  const { doc, getDoc, collection, getDocs } = await import("firebase/firestore");
   const db = await getDb();
   const snap = await getDoc(doc(db, "users", user.uid));
+
+  // The profile says the export holds progress, quiz results, bookmarks and
+  // notes; it used to hold the profile document alone.
+  const stats: Record<string, unknown> = {};
+  for (const name of [...USER_STATS_DOCS, "exercises", "certificates"]) {
+    // Per document: one the rules do not (yet) allow should not sink the
+    // whole export.
+    const entry = await getDoc(doc(db, "users", user.uid, "stats", name)).catch(() => null);
+    if (entry?.exists()) stats[name] = entry.data();
+  }
+  const cloudProgress = await getDocs(collection(db, "users", user.uid, "progress"));
+  const { read } = await import("../progress/local");
 
   return {
     exportedAt: new Date().toISOString(),
@@ -334,6 +431,10 @@ export async function exportUserData(): Promise<Record<string, unknown>> {
       lastSignInAt: user.metadata.lastSignInTime,
     },
     profile: snap.exists() ? snap.data() : null,
+    stats,
+    progress: Object.fromEntries(cloudProgress.docs.map((d) => [d.id, d.data()])),
+    /** What this browser holds, which includes anything not yet synced. */
+    thisDevice: read(),
   };
 }
 

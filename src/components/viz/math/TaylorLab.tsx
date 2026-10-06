@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * TaylorLab — one Taylor polynomial per frame, drawn against the function it is
  * approximating, with the error measured twice.

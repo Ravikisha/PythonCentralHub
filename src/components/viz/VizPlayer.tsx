@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * VizPlayer — the transport shell every DSA visualization mounts inside.
  *

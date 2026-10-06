@@ -38,19 +38,20 @@ everywhere and why the header does not ask Firebase who is signed in.
 | `src/components/progress/MarkComplete.astro` | Per-page complete + bookmark buttons, quiz listener |
 | `src/pages/dashboard.astro` | Streaks, per-module bars, bookmarks |
 | `scripts/gen-progress-manifest.mjs` | Build-time module page counts → `public/progress-manifest.json` |
-| `api/_lib/admin.js` | Admin SDK init, ID-token verification, error handling |
-| `api/grade-exam.js` | Marks an assessment against the hidden key |
-| `api/issue-certificate.js` | Issues a certificate from server-side records |
-| `api/publish-leaderboard.js` | Recomputes a public leaderboard entry |
-| `api/send-digest.js` | Weekly digest, run by Vercel Cron |
-| `firebase/functions/index.js` | Superseded Firebase-flavoured copy, not deployed |
+| `lib/server/admin.ts` | Admin SDK init, ID-token verification (revocation checked), real-lesson counting, error handling |
+| `app/api/grade-exam/route.ts` | Marks an assessment against the hidden key; score only on a fail; cooldown in a transaction |
+| `app/api/issue-certificate/route.ts` | Issues a certificate, counting only real lessons of the course |
+| `app/api/publish-leaderboard/route.ts` | Recomputes a public leaderboard entry from real lessons and issued certificates |
+| `app/api/send-digest/route.ts` | Weekly digest, run by Vercel Cron, to the verified Auth address only |
+| `app/api/delete-account/route.ts` | Deletes an account, its data, attempts and leaderboard row (needs a recent sign-in) |
+| `app/api/submit-form/route.ts` | Contact and feedback forms, reCAPTCHA verified server-side |
 | `src/data/exams/*.yaml` | Question banks, one file per module |
 | `scripts/seed-exams.mjs` | Splits each bank into `exams/` + `examKeys/` and uploads |
-| `src/pages/exam/[module].astro` | Sits the assessment |
-| `src/pages/certificates.astro` | The learner's own certificates |
-| `src/pages/verify.astro` | Public certificate check |
+| `app/(app)/exam/[module]/` | Sits the assessment |
+| `app/(app)/certificates/` | The learner's own certificates (assessment and completion) |
+| `app/(app)/verify/` | Public certificate check |
 | `src/lib/progress/awards.ts` | XP, levels and badge thresholds — all derived |
-| `src/pages/leaderboard.astro` | Opt-in public standings |
+| `app/(app)/leaderboard/` | Opt-in public standings |
 
 ## Engagement layer (Phase 4)
 
@@ -132,7 +133,6 @@ retyped.
 npm run exams:check    # validate the YAML, no credentials needed
 npm run exams:seed     # upload (needs GOOGLE_APPLICATION_CREDENTIALS)
 npm run firebase:rules
-npm run firebase:functions
 ```
 
 Seeding needs a service account key: Firebase console → Project settings →
@@ -141,7 +141,7 @@ Service accounts → Generate new private key. Keep it outside the repo.
 ### The server runs on Vercel, not Firebase
 
 Cloud Functions need the Blaze plan. This project is on Spark, so the four
-endpoints live in `api/` as **Vercel Functions**, which the site's existing
+endpoints live in `app/api/*/route.ts` as **Vercel Functions**, which the site's existing
 free hosting runs at no cost. The trust boundary is unchanged: exam keys,
 graded attempts and certificates are still only touched by code the browser
 cannot run.
@@ -155,13 +155,12 @@ What moved:
 - The weekly digest is a Vercel Cron entry in `vercel.json` rather than a
   scheduled function. It is guarded by `CRON_SECRET`; without that check the
   endpoint would be an open trigger for anyone who found the URL.
-- `firebase.json` no longer deploys functions. `firebase/functions/index.js`
-  is kept as the Firebase-flavoured reference, clearly marked superseded.
+- `firebase.json` no longer deploys functions, and the superseded
+  `firebase/functions/` copy has been removed.
 
-**Deploying is different now.** `deploy-static.sh` (the old fast prebuilt
-path) ships only `dist/`, which would silently *remove* the API from
-production, so it now refuses to run while `api/` exists. `npm run deploy`
-does a normal Vercel build that includes the functions.
+**Deploying.** Vercel builds from git on every push. `npm run deploy` runs
+`vercel deploy --prod` by hand, and `npm run deploy:preview` makes a preview.
+There is no static-only path any more: the site needs its route handlers.
 
 Environment variables on the Vercel project:
 

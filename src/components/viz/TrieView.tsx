@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * TrieView — step-through visualization of trie insertion and search.
  *

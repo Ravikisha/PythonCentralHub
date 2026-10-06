@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * SVDLab — §4.5 construction and §4.6 low-rank approximation, stepped.
  *

@@ -12,7 +12,11 @@
 // - Pyodide is lazy-loaded only if a python playground exists on the page.
 
 (() => {
-  const PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v0.25.1/full/";
+  const PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v0.29.5/full/";
+  // Package loads report progress ("Loading numpy", "Loaded numpy") through
+  // the same stdout the output panel captures, so they printed into the
+  // learner's results. Loading is shown on the Run button instead.
+  const QUIET_LOAD = { messageCallback: () => {}, errorCallback: () => {} };
 
   /** @type {Promise<any> | null} */
   let pyodidePromise = null;
@@ -136,7 +140,17 @@
           const pyodide = await loadPyodide({ indexURL: PYODIDE_URL });
 
           // Capture stdout/stderr into JS
-          pyodide.setStdout({ batched: (s) => window.__py_playground_stdout?.(s) });
+          // Pyodide 0.29 writes its own package-loader lines ("Loading numpy",
+          // "Loaded numpy, pandas") to stdout from internal loads that take no
+          // callback. They are not the learner's output, so they never reach
+          // the panel.
+          const LOADER_LINE = /^(Loading|Loaded) [\w.\-]+(, [\w.\-]+)*$/;
+          pyodide.setStdout({
+            batched: (s) => {
+              if (LOADER_LINE.test(s.trim())) return;
+              window.__py_playground_stdout?.(s);
+            },
+          });
           pyodide.setStderr({ batched: (s) => window.__py_playground_stderr?.(s) });
 
           resolve(pyodide);
@@ -144,8 +158,18 @@
           reject(e);
         }
       };
-      s.onerror = () => reject(new Error('Failed to load Pyodide'));
+      s.onerror = () => {
+        s.remove();
+        reject(new Error('Failed to load Pyodide'));
+      };
       document.head.appendChild(s);
+    });
+
+    // A failed load is not cached. It used to be, so one blip on the CDN (or
+    // an idle prewarm while offline) broke every Run button until a reload.
+    const attempt = pyodidePromise;
+    attempt.catch(() => {
+      if (pyodidePromise === attempt) pyodidePromise = null;
     });
 
     return pyodidePromise;
@@ -164,12 +188,12 @@
     if (!pkgs.length) return;
     try {
       setStatus(statusEl, `Loading packages: ${pkgs.join(', ')}…`, 'info');
-      await pyodide.loadPackage(pkgs);
+      await pyodide.loadPackage(pkgs, QUIET_LOAD);
       setStatus(statusEl, 'Packages loaded', 'success');
     } catch (e) {
       // If a package doesn't exist in Pyodide, provide a friendly error.
       const msg = (e && e.message) ? e.message : String(e);
-      setStatus(statusEl, `Package load failed: ${msg}`, 'error');
+      setStatus(statusEl, `Package load failed: ${msg}`, 'error', { toast: true });
       throw e;
     }
   }
@@ -184,19 +208,24 @@
   const runBtn = document.createElement('button');
   runBtn.type = 'button';
   runBtn.className = 'py-playground__icon-btn py-playground__icon-btn--primary';
-  runBtn.setAttribute('aria-label', 'Run');
-  runBtn.innerHTML = ICONS.play;
+  // The one control on the bar a learner looks for, so it says what it does
+  // rather than relying on a triangle. The others keep icons with tooltips.
+  runBtn.className += ' py-playground__icon-btn--labelled';
+  runBtn.title = 'Run this code';
+  runBtn.innerHTML = ICONS.play + '<span>Run</span>';
 
   const resetBtn = document.createElement('button');
   resetBtn.type = 'button';
   resetBtn.className = 'py-playground__icon-btn';
   resetBtn.setAttribute('aria-label', 'Reset');
+  resetBtn.title = 'Reset to the original code';
   resetBtn.innerHTML = ICONS.refresh;
 
   const copyBtn = document.createElement('button');
   copyBtn.type = 'button';
   copyBtn.className = 'py-playground__icon-btn';
   copyBtn.setAttribute('aria-label', 'Copy');
+  copyBtn.title = 'Copy code';
   copyBtn.innerHTML = ICONS.copy;
 
   const expandBtn = document.createElement('button');
@@ -220,9 +249,23 @@
   outputWrap.className = 'py-playground__output-wrap';
   outputWrap.hidden = true;
 
+    // The panel says what state it is in -- idle, running, finished, raised --
+    // in words as well as colour, and offers the one action that belongs to
+    // output: clearing it.
     const outputLabel = document.createElement('div');
     outputLabel.className = 'py-playground__output-label';
-    outputLabel.textContent = 'Output';
+
+    const outputState = document.createElement('span');
+    outputState.className = 'py-playground__state';
+    outputState.textContent = 'Output';
+
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'py-playground__clear';
+    clearBtn.textContent = 'Clear';
+
+    outputLabel.appendChild(outputState);
+    outputLabel.appendChild(clearBtn);
 
     const output = document.createElement('pre');
     output.className = 'py-playground__output';
@@ -235,15 +278,33 @@
     root.appendChild(editor);
     root.appendChild(outputWrap);
 
-  return { root, toolbar, runBtn, resetBtn, copyBtn, expandBtn, status: null, editor, output, initialCode };
+  clearBtn.addEventListener('click', () => {
+    output.textContent = '';
+    outputWrap.hidden = true;
+    outputWrap.dataset.state = 'idle';
+  });
+
+  return { root, toolbar, runBtn, resetBtn, copyBtn, expandBtn, status: null, editor, output, outputWrap, outputState, initialCode };
   }
 
-  function setStatus(statusEl, text, kind = 'info') {
-    // Keep status element for accessibility / fallback but surface messages via toast.
+  /**
+   * Report progress.
+   *
+   * The run's own states -- starting, running, finished, raised -- are shown
+   * in the output panel, beside the code they belong to. Toasting them as
+   * well put three notifications in the corner for every click, describing
+   * something the reader was already looking at. Only things that happen
+   * away from the panel (a copy, a package failure) toast now.
+   */
+  function setStatus(statusEl, text, kind = 'info', { toast = false } = {}) {
     try {
-      if (window.toast && typeof window.toast.show === 'function' && text) {
-        const title = kind === 'error' ? 'Error' : kind === 'success' ? 'Success' : '';
-        window.toast.show({ title: title || '', description: text, variant: kind === 'error' ? 'error' : kind === 'success' ? 'success' : 'info' });
+      if (toast && window.toast && typeof window.toast.show === 'function' && text) {
+        const title = kind === 'error' ? 'Error' : kind === 'success' ? 'Done' : '';
+        window.toast.show({
+          title: title || '',
+          description: text,
+          variant: kind === 'error' ? 'error' : kind === 'success' ? 'success' : 'info',
+        });
       }
     } catch (e) {
       // ignore
@@ -254,7 +315,37 @@
     }
   }
 
-  async function runPython(code, outputEl, statusEl) {
+  /** Paint the output panel's state: the label, and the rail beside it. */
+  function setPanel(outputEl, state, label) {
+    const wrap = outputEl.closest('.py-playground__output-wrap');
+    if (!wrap) return;
+    wrap.dataset.state = state;
+    const said = wrap.querySelector('.py-playground__state');
+    if (said) said.textContent = label;
+  }
+
+  /**
+   * Runs go one at a time. stdout and stderr reach JS through one pair of
+   * global hooks, so two blocks running together -- Run on A while Python is
+   * still loading, then Run on B -- wrote A's output into B, and A's cleanup
+   * then cut B off mid-run. Queued, each run owns the hooks until it ends.
+   */
+  let runQueue = Promise.resolve();
+  let inFlight = 0;
+
+  function runPython(code, outputEl, statusEl) {
+    if (inFlight > 0) setPanel(outputEl, 'running', 'Waiting for the other run…');
+    inFlight += 1;
+    const job = runQueue
+      .then(() => runPythonNow(code, outputEl, statusEl))
+      .finally(() => {
+        inFlight -= 1;
+      });
+    runQueue = job.catch(() => {});
+    return job;
+  }
+
+  async function runPythonNow(code, outputEl, statusEl) {
     outputEl.textContent = '';
 
     let stdout = '';
@@ -265,12 +356,19 @@
     window.__py_playground_stderr = (s) => { stderr += s; };
 
     try {
+      setPanel(outputEl, 'running', 'Starting Python…');
+      const wrapEarly = outputEl.closest('.py-playground__output-wrap');
+      if (wrapEarly) wrapEarly.hidden = false;
+
       setStatus(statusEl, 'Loading Python…', 'info');
       const pyodide = await ensurePyodide();
 
   // Optional explicit package loading (via ```python packages="..." meta).
   const pkgList = outputEl.closest('.py-playground')?.dataset?.pyodidePackages;
   const packages = pkgList ? pkgList.split(',') : [];
+  if (packages.length) {
+    setPanel(outputEl, 'running', `Installing ${packages.join(', ')}…`);
+  }
   await ensurePackages(pyodide, packages, statusEl);
 
   // Auto-load any Pyodide-provided packages the code imports (numpy,
@@ -279,7 +377,12 @@
   // declare them per block. Non-fatal: pure-stdlib code loads nothing.
   try {
     setStatus(statusEl, 'Loading libraries…', 'info');
-    await pyodide.loadPackagesFromImports(code);
+    // numpy and pandas are tens of megabytes on a cold run; the panel says so
+    // rather than sitting on "Starting Python…" for twenty seconds.
+    if (/^\s*(import|from)\s+/m.test(code)) {
+      setPanel(outputEl, 'running', 'Fetching libraries…');
+    }
+    await pyodide.loadPackagesFromImports(code, QUIET_LOAD);
   } catch (e) {
     // A missing/unknown import here isn't necessarily fatal — let the actual
     // run surface a precise error. Just note it.
@@ -287,9 +390,29 @@
     setStatus(statusEl, `Some imports could not be preloaded: ${msg}`, 'info');
   }
 
+      setPanel(outputEl, 'running', 'Running…');
       setStatus(statusEl, 'Running…', 'info');
-      // Use runPythonAsync to allow top-level await in the future if needed.
-      await pyodide.runPythonAsync(code);
+      // runPythonAsync returns the value of the final expression, and allows
+      // top-level await. The value is what makes a snippet that ends in
+      // `fruits` or `df.head()` -- and there are hundreds of those -- print
+      // something instead of "(no output)", the way a REPL would.
+      const value = await pyodide.runPythonAsync(code);
+      let echo = '';
+
+      if (value !== undefined && value !== null) {
+        try {
+          // repr(), not str(): a string should come back quoted, so the
+          // reader can tell '3' from 3.
+          const pyRepr = pyodide.globals.get('repr');
+          echo = pyRepr(value).toString();
+          pyRepr.destroy();
+        } catch {
+          echo = String(value);
+        }
+      }
+
+      // PyProxies hold a reference into the WASM heap until released.
+      if (value && typeof value.destroy === 'function') value.destroy();
 
   // Preserve multiline output exactly as produced.
   // Normalize \r\n → \n and simulate \r (carriage-return) line-overwrite
@@ -329,14 +452,48 @@
       if (err) {
         outputEl.textContent = (out ? out : "") + (out && err ? "\n" : "") + err;
         setStatus(statusEl, 'Error', 'error');
+      } else if (out) {
+        // Anything printed wins: the echo is a fallback, not an addition, or
+        // a snippet that both prints and ends in an expression says it twice.
+        outputEl.textContent = out;
+        setPanel(outputEl, 'done', 'Output');
+        setStatus(statusEl, 'Done', 'success');
+      } else if (echo) {
+        outputEl.textContent = echo;
+        setPanel(outputEl, 'done', 'Value');
+        setStatus(statusEl, 'Done', 'success');
       } else {
-        // If program prints nothing, show a helpful placeholder.
-        outputEl.textContent = out ? out : '(no output)';
+        // Ran, changed something, printed nothing -- an assignment or a
+        // definition. Say that rather than looking broken.
+        outputEl.textContent = 'Ran without printing anything.';
+        setPanel(outputEl, 'done', 'Output');
         setStatus(statusEl, 'Done', 'success');
       }
     } catch (e) {
-      const msg = (e && e.message) ? e.message : String(e);
+      const raw = (e && e.message) ? e.message : String(e);
+
+      // Pyodide's traceback opens with its own frames -- eval_code_async in
+      // _pyodide/_base.py -- before it reaches the reader's line. Those frames
+      // are noise to someone learning Python, so the visible traceback starts
+      // at their own code.
+      const NEWLINE = String.fromCharCode(10);
+      const lines = raw.split(NEWLINE);
+      const mine = [];
+      let skipping = false;
+      for (const line of lines) {
+        const isInternal = line.indexOf('_pyodide/_base.py') !== -1 || line.indexOf('_pyodide\_base.py') !== -1;
+        if (isInternal) {
+          skipping = true; // also drop the source line printed under it
+          continue;
+        }
+        if (skipping && /^\s/.test(line) && !/^\s*File /.test(line)) continue;
+        skipping = false;
+        mine.push(line);
+      }
+
+      const msg = mine.join(NEWLINE).trim() || raw;
       outputEl.textContent = msg;
+      setPanel(outputEl, 'error', 'Error');
   const wrap = outputEl.closest('.py-playground__output-wrap');
   if (wrap) wrap.hidden = false;
       setStatus(statusEl, 'Error', 'error');
@@ -385,7 +542,7 @@
   toggleBtn.type = 'button';
   toggleBtn.className = 'py-playground__icon-btn';
   toggleBtn.setAttribute('aria-label', 'Edit');
-  toggleBtn.style.marginTop = '1.5rem';
+  toggleBtn.title = 'Edit this code';
   toggleBtn.innerHTML = ICONS.edit;
   ui.toolbar.insertBefore(toggleBtn, ui.runBtn);
 
@@ -435,6 +592,17 @@
             setTimeout(doLayout, 200);
           });
           x.focus();
+        }).catch((err) => {
+          // Silence here is how "Edit opens an empty box" went unnoticed: the
+          // editor failed to mount and nothing said so.
+          console.error('[py-playground] editor failed to mount:', err);
+          if (window.toast) {
+            window.toast.show({
+              title: 'Editor unavailable',
+              description: 'The code editor could not load. The snippet still runs as written.',
+              variant: 'error',
+            });
+          }
         });
       } else {
         ui.root.dataset.mode = 'view';
@@ -460,12 +628,25 @@
 
     // Hook buttons
     ui.runBtn.addEventListener('click', async () => {
+      if (ui.runBtn.dataset.busy === 'true') return;
+
       const cmInstance = await ensureEditor().catch(() => null);
       const codeToRun = cmInstance ? cmInstance.getValue() : ui.initialCode;
       // Ensure the playground root is visible so output can be seen.
       // (User may click Run without ever opening the editor.)
       ui.root.hidden = false;
-      runPython(codeToRun, ui.output, ui.status);
+
+      // Pyodide takes ten to twenty seconds on a cold first run, and the
+      // button gave no sign it had heard the click. It spins, and refuses a
+      // second run until the first finishes.
+      ui.runBtn.dataset.busy = 'true';
+      ui.runBtn.disabled = true;
+      try {
+        await runPython(codeToRun, ui.output, ui.status);
+      } finally {
+        delete ui.runBtn.dataset.busy;
+        ui.runBtn.disabled = false;
+      }
     });
 
     ui.resetBtn.addEventListener('click', () => {
@@ -489,9 +670,9 @@
         const cmInstance = cm;
         const text = cmInstance ? cmInstance.getValue() : ui.initialCode;
         await navigator.clipboard.writeText(text);
-        setStatus(ui.status, 'Copied', 'success');
+        setStatus(ui.status, 'Copied', 'success', { toast: true });
       } catch {
-        setStatus(ui.status, 'Copy failed', 'error');
+        setStatus(ui.status, 'Copy failed', 'error', { toast: true });
       }
     });
 
@@ -535,9 +716,9 @@
 
             const fsRunBtn = document.createElement('button');
             fsRunBtn.type = 'button';
-            fsRunBtn.className = 'py-playground__icon-btn py-playground__icon-btn--primary';
-            fsRunBtn.setAttribute('aria-label', 'Run');
-            fsRunBtn.innerHTML = ICONS.play;
+            fsRunBtn.className = 'py-playground__icon-btn py-playground__icon-btn--primary py-playground__icon-btn--labelled';
+            fsRunBtn.title = 'Run this code';
+            fsRunBtn.innerHTML = ICONS.play + '<span>Run</span>';
 
             const fsResetBtn = document.createElement('button');
             fsResetBtn.type = 'button';
@@ -609,9 +790,9 @@
               try {
                 const text = modalCm ? modalCm.getValue() : currentCode;
                 await navigator.clipboard.writeText(text);
-                setStatus(null, 'Copied', 'success');
+                setStatus(null, 'Copied', 'success', { toast: true });
               } catch {
-                setStatus(null, 'Copy failed', 'error');
+                setStatus(null, 'Copy failed', 'error', { toast: true });
               }
             });
           },
@@ -636,11 +817,22 @@
       }
     });
 
-    // Place toolbar in the top-right of the code block title bar.
-    if (title) {
-      title.classList.add('py-playground__title');
+    // Place the toolbar in the top-right of the code block's header.
+    //
+    // Titled blocks have rehype-pretty-code's <figcaption>; untitled ones have
+    // the header this site adds in lib/rehype/code-chrome.ts. Only the first
+    // was handled, so every fenced ```python block without a filename lost its
+    // Run, Reset, Copy and fullscreen buttons.
+    const bar = title || block.querySelector('.code__bar');
+    if (bar) {
+      bar.classList.add('py-playground__title');
       ui.toolbar.classList.add('py-playground__toolbar--in-title');
-      title.appendChild(ui.toolbar);
+
+      // The header's own copy button would sit beside the toolbar's, doing the
+      // same job on the same code.
+      bar.querySelector('[data-copy]')?.remove();
+
+      bar.appendChild(ui.toolbar);
     }
 
   // Insert the playground *after* the highlighted <pre>.
@@ -654,9 +846,14 @@
 
   if (!pythonBlocks.length) return;
 
-    // Pre-warm the engine AND the packages this page needs, during browser
-    // idle time, so the first "Run" click is near-instant instead of waiting
-    // ~10-20s for Pyodide + numpy/matplotlib/… to download.
+    // Pre-warm the engine and the packages this page needs as soon as the
+    // reader shows intent -- a pointer over, or focus on, a playground's
+    // controls -- so the click that follows is near-instant.
+    //
+    // It used to run at idle on every page with a Python block. That fetched
+    // and compiled Pyodide plus numpy/pandas (tens of MB) on the main thread
+    // for every reader, including the many who never press Run: 10+ s of
+    // blocked main thread on a mid-range phone, and the data plan to match.
     const prewarm = () => {
       ensurePyodide()
         .then(async (pyodide) => {
@@ -668,19 +865,30 @@
             })
             .join('\n');
           if (allCode.trim()) {
-            try { await pyodide.loadPackagesFromImports(allCode); } catch {/* surfaced on run */}
+            try { await pyodide.loadPackagesFromImports(allCode, QUIET_LOAD); } catch {/* surfaced on run */}
           }
         })
         .catch(() => {/* ignore until run */});
     };
-    if ('requestIdleCallback' in window) {
-      requestIdleCallback(prewarm, { timeout: 4000 });
-    } else {
-      setTimeout(prewarm, 1200);
-    }
+    let warmed = false;
+    const onIntent = (event) => {
+      if (warmed) return;
+      const el = event.target;
+      if (!(el instanceof Element) || !el.closest('.py-playground__toolbar, .py-playground')) return;
+      warmed = true;
+      document.removeEventListener('pointerover', onIntent, true);
+      document.removeEventListener('focusin', onIntent, true);
+      prewarm();
+    };
+    document.addEventListener('pointerover', onIntent, true);
+    document.addEventListener('focusin', onIntent, true);
 
   pythonBlocks.forEach(upgradeBlock);
   }
+
+  // Re-entrant: upgradeBlock marks each block it has taken over, so calling
+  // this after a client-side navigation only picks up the new page's blocks.
+  window.__pchPlayground = { init: init };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);

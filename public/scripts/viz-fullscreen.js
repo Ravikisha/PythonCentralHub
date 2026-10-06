@@ -180,7 +180,12 @@ function enhanceViz(panel) {
 function enhanceCode(frag) {
   if (frag.querySelector(".pch-fs-btn")) return;
   const pre = frag.querySelector("pre");
-  const title = frag.querySelector(":scope > [data-rehype-pretty-code-title]");
+  // Titled blocks carry rehype-pretty-code's caption; untitled ones carry the
+  // header added by lib/rehype/code-chrome.ts. Requiring the caption meant a
+  // plain fence had no way to be opened full screen.
+  const title =
+    frag.querySelector(":scope > [data-rehype-pretty-code-title]") ||
+    frag.querySelector(":scope > .code__bar");
   if (!pre || !title) return;
 
   const lang = (pre.getAttribute("data-language") || "").toLowerCase();
@@ -191,8 +196,14 @@ function enhanceCode(frag) {
   title.appendChild(btn);
 
   btn.addEventListener("click", function () {
+    // The header also holds the copy button and this one, so take the label
+    // from the language chip (or the filename) rather than the whole row --
+    // the window was coming up titled "cmdCopy".
+    const label = title.querySelector(".code__lang, [data-rehype-pretty-code-title]");
+    const heading = (label ? label.textContent : title.childNodes[0]?.textContent) || "";
+
     openFullscreen({
-      title: title.textContent.trim() || lang || "Code",
+      title: heading.trim() || lang || "Code",
       trigger: btn,
       buildContent: function (stage) {
         const wrap = document.createElement("div");
@@ -215,6 +226,10 @@ function init() {
     frags.forEach(enhanceCode);
   }, 0);
 }
+
+// Called again after each client-side navigation; enhanceViz and enhanceCode
+// both return early on a panel that already carries a fullscreen button.
+window.__pchVizFullscreen = { init: init };
 
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", init);

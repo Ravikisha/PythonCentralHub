@@ -24,13 +24,21 @@ const RESERVED = new Set([
   "signup",
   "profile",
   "dashboard",
+  "saved",
+  "welcome",
+  "u",
+  "admin",
   "reset-password",
   "verify-email",
   "certificates",
+  "leaderboard",
+  "verify",
+  "exam",
   "policy",
   "not-found",
   "404",
   "rss.xml",
+  "courses",
 ]);
 
 /** Locale segment of a path, or "en" for the unprefixed root locale. */

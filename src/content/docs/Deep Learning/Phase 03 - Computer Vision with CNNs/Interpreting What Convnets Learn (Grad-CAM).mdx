@@ -5,10 +5,6 @@ sidebar:
   order: 427
 ---
 
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
-import Figure from "../../../../components/Figure.astro";
-import Quiz from "../../../../components/Quiz.astro";
-
 A convnet is more inspectable than most models because its features are pictures.
 You can print them. That does not make the pictures *trustworthy* — a heat map is
 itself the output of a computation, and a computation can produce a convincing
@@ -533,265 +529,1381 @@ are the middle ground, and they need a different output format entirely:
 
 <DataCampExercise
   lang="python"
-  hint={`A probe is keras.Model(model.inputs, model.get_layer(name).output). A channel is silent when its maximum over both spatial axes is exactly zero.`}
+  hint={`Look up the activations of each named layer. A channel is silent when its maximum over both spatial axes is zero.`}
   code={`# Task: Exercise 1 - Activations get sparser and larger with depth
 import numpy as np
-from tensorflow import keras
 
-CLASSES = ("t-shirt", "trouser", "pullover", "dress", "coat", "sandal",
-           "shirt", "sneaker", "bag", "boot")
-(x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()
-x_train = x_train[:8000].astype("float32")[..., None] / 255.0
-y_train = y_train[:8000]
-x_test = x_test[:2000].astype("float32")[..., None] / 255.0
-y_test = y_test[:2000]
+K, S = 3, 12
+glyph_rng = np.random.RandomState(7)
+GLYPHS = (glyph_rng.rand(K, 5, 5) > 0.45).astype(float)
 
-keras.utils.set_random_seed(0)
-inputs = keras.layers.Input((28, 28, 1))
-x = keras.layers.Conv2D(32, 3, padding="same", activation="relu",
-                        name="conv1")(inputs)
-x = keras.layers.MaxPooling2D(2)(x)
-x = keras.layers.Conv2D(64, 3, padding="same", activation="relu",
-                        name="conv2")(x)
-x = keras.layers.MaxPooling2D(2)(x)
-x = keras.layers.Conv2D(64, 3, padding="same", activation="relu",
-                        name="conv3")(x)
-pooled = keras.layers.GlobalAveragePooling2D()(x)
-model = keras.Model(inputs, keras.layers.Dense(10, activation="softmax",
-                                               name="head")(pooled))
-model.compile(keras.optimizers.Adam(1e-3), "sparse_categorical_crossentropy",
-              metrics=["accuracy"])
-history = model.fit(x_train, y_train, epochs=15, batch_size=128, verbose=0,
-                    validation_data=(x_test, y_test))
-print(f"val acc {history.history['val_accuracy'][-1]:.4f}  "
-      f"params {model.count_params():,}")
+
+def make_images(n, seed, shift=0):
+    r = np.random.RandomState(seed)
+    y = r.randint(0, K, n)
+    x = np.zeros((n, S, S))
+    for i in range(n):
+        top = 3 + r.randint(-shift, shift + 1) if shift else 3
+        left = 3 + r.randint(-shift, shift + 1) if shift else 3
+        x[i, top:top + 5, left:left + 5] = GLYPHS[y[i]]
+    return x + 0.15 * r.randn(n, S, S), y
+
+
+def softmax(z):
+    p = np.exp(z - z.max(axis=1, keepdims=True))
+    return p / p.sum(axis=1, keepdims=True)
+
+
+def augment(batch, training, r, max_shift=2):
+    """Random shifts, applied only while training."""
+    if not training:
+        return batch
+    out = np.empty_like(batch)
+    for i, img in enumerate(batch):
+        dy, dx = r.randint(-max_shift, max_shift + 1, 2)
+        out[i] = np.roll(np.roll(img, dy, axis=0), dx, axis=1)
+    return out
+
+
+def train_model(x, y, epochs, strength=0, seed=0, val=None, lr=0.1, units=32):
+    r = np.random.RandomState(seed)
+    W1 = r.randn(S * S, units) * 0.1
+    W2 = r.randn(units, K) * 0.1
+    onehot = np.eye(K)[y]
+    curve = []
+    for epoch in range(epochs):
+        xb = augment(x, strength > 0, r, strength).reshape(len(x), -1)
+        pre = xb @ W1
+        h = np.maximum(pre, 0)
+        dz = (softmax(h @ W2) - onehot) / len(y)
+        W2 -= lr * h.T @ dz
+        W1 -= lr * xb.T @ ((dz @ W2.T) * (pre > 0))
+        if val is not None:
+            curve.append(score((W1, W2), *val))
+    return (W1, W2), curve
+
+
+def score(model, x, y):
+    W1, W2 = model
+    h = np.maximum(x.reshape(len(x), -1) @ W1, 0)
+    return float((softmax(h @ W2).argmax(axis=1) == y).mean())
+
+
+def conv_same(x, kernel, bias):
+    """x: (n, H, W, cin), kernel: (k, k, cin, cout), stride 1, same padding, relu."""
+    n, H, W, _ = x.shape
+    k = kernel.shape[0]
+    pad = k // 2
+    padded = np.pad(x, ((0, 0), (pad, pad), (pad, pad), (0, 0)))
+    out = np.zeros((n, H, W, kernel.shape[3])) + bias
+    for i in range(k):
+        for j in range(k):
+            out += padded[:, i:i + H, j:j + W, :] @ kernel[i, j]
+    return np.maximum(out, 0)
+
+
+def max_pool(x):
+    n, H, W, c = x.shape
+    return x.reshape(n, H // 2, 2, W // 2, 2, c).max(axis=(2, 4))
+
+
+filter_rng = np.random.RandomState(0)
+K1 = filter_rng.randn(3, 3, 1, 8) * np.sqrt(2.0 / 9)
+K2 = filter_rng.randn(3, 3, 8, 16) * np.sqrt(2.0 / 72)
+
+
+def feature_maps(images):
+    x = images[..., None]
+    conv1 = conv_same(x, K1, np.zeros(8))
+    conv2 = conv_same(max_pool(conv1), K2, np.zeros(16))
+    return {"conv1": conv1, "conv2": conv2}
+
+
+def train_head(images, labels, steps=400, lr=1.0):
+    pooled = feature_maps(images)["conv2"].mean(axis=(1, 2))
+    W, b = np.zeros((pooled.shape[1], K)), np.zeros(K)
+    onehot = np.eye(K)[labels]
+    for _ in range(steps):
+        p = softmax(pooled @ W + b)
+        W -= lr * pooled.T @ (p - onehot) / len(labels)
+        b -= lr * (p - onehot).mean(axis=0)
+    return W, b
+
+
+def predict(images, head):
+    W, b = head
+    return softmax(feature_maps(images)["conv2"].mean(axis=(1, 2)) @ W + b)
+
+
+x_train, y_train = make_images(300, seed=1)
+x_test, y_test = make_images(200, seed=2, shift=1)
+head = train_head(x_train, y_train)
+probabilities = predict(x_test, head)
+print("test accuracy is well above chance:", float((probabilities.argmax(axis=1) == y_test).mean()) > 0.5)
 
 image = x_test[0]
-print(f"one image, true class {CLASSES[int(y_test[0])]}")
-print(f"{'layer':8s} {'shape':>14} {'mean':>8} {'max':>8} "
-      f"{'zero fraction':>14} {'silent channels':>16}")
-for name in ("conv1", "conv2", "conv3"):
-    probe = keras.Model(model.inputs, model.get_layer(___).output)
-    # replace ___ with name
-    maps = probe.predict(image[None, ...], verbose=0)[0]
+acts = feature_maps(image[None, ...])
+print("layer   shape        zero fraction")
+zero = {}
+for name in ("conv1", "conv2"):
+    maps = acts[___][0]   # replace ___ with name
     silent = int((maps.max(axis=(0, 1)) == 0).sum())
-    print(f"{name:8s} {str(maps.shape):>14} {maps.mean():8.4f} "
-          f"{maps.max():8.4f} {float((maps == 0).mean()):14.4f} "
-          f"{f'{silent} of {maps.shape[-1]}':>16}")
+    zero[name] = float((maps == 0).mean())
+    print(format(name, "7s"), format(str(maps.shape), "12s"), format(zero[name], ".2f"), "  silent channels:", silent, "of", maps.shape[-1])
+print("conv1 is 12x12 with 8 channels and conv2 is 6x6 with 16:", acts["conv1"].shape[1:] == (12, 12, 8) and acts["conv2"].shape[1:] == (6, 6, 16))
+print("about half of the relu outputs are exactly zero at the first layer:", 0.3 < zero["conv1"] < 0.7)
+print("the deeper layer is sparser than the first:", zero["conv2"] > zero["conv1"])`}
+  solution={`import numpy as np
 
-# -- Expected Output -------------------------------------------
-# val acc 0.7920  params 56,394
-# one image, true class boot
-# layer             shape     mean      max  zero fraction  silent channels
-# conv1    (28, 28, 32)   0.0994   1.6097         0.2071       0 of 32
-# conv2    (14, 14, 64)   0.3567   4.2229         0.4271       0 of 64
-# conv3      (7, 7, 64)   2.8666  20.4410         0.3559       4 of 64
-# --------------------------------------------------------------`}
+K, S = 3, 12
+glyph_rng = np.random.RandomState(7)
+GLYPHS = (glyph_rng.rand(K, 5, 5) > 0.45).astype(float)
+
+
+def make_images(n, seed, shift=0):
+    r = np.random.RandomState(seed)
+    y = r.randint(0, K, n)
+    x = np.zeros((n, S, S))
+    for i in range(n):
+        top = 3 + r.randint(-shift, shift + 1) if shift else 3
+        left = 3 + r.randint(-shift, shift + 1) if shift else 3
+        x[i, top:top + 5, left:left + 5] = GLYPHS[y[i]]
+    return x + 0.15 * r.randn(n, S, S), y
+
+
+def softmax(z):
+    p = np.exp(z - z.max(axis=1, keepdims=True))
+    return p / p.sum(axis=1, keepdims=True)
+
+
+def augment(batch, training, r, max_shift=2):
+    """Random shifts, applied only while training."""
+    if not training:
+        return batch
+    out = np.empty_like(batch)
+    for i, img in enumerate(batch):
+        dy, dx = r.randint(-max_shift, max_shift + 1, 2)
+        out[i] = np.roll(np.roll(img, dy, axis=0), dx, axis=1)
+    return out
+
+
+def train_model(x, y, epochs, strength=0, seed=0, val=None, lr=0.1, units=32):
+    r = np.random.RandomState(seed)
+    W1 = r.randn(S * S, units) * 0.1
+    W2 = r.randn(units, K) * 0.1
+    onehot = np.eye(K)[y]
+    curve = []
+    for epoch in range(epochs):
+        xb = augment(x, strength > 0, r, strength).reshape(len(x), -1)
+        pre = xb @ W1
+        h = np.maximum(pre, 0)
+        dz = (softmax(h @ W2) - onehot) / len(y)
+        W2 -= lr * h.T @ dz
+        W1 -= lr * xb.T @ ((dz @ W2.T) * (pre > 0))
+        if val is not None:
+            curve.append(score((W1, W2), *val))
+    return (W1, W2), curve
+
+
+def score(model, x, y):
+    W1, W2 = model
+    h = np.maximum(x.reshape(len(x), -1) @ W1, 0)
+    return float((softmax(h @ W2).argmax(axis=1) == y).mean())
+
+
+def conv_same(x, kernel, bias):
+    """x: (n, H, W, cin), kernel: (k, k, cin, cout), stride 1, same padding, relu."""
+    n, H, W, _ = x.shape
+    k = kernel.shape[0]
+    pad = k // 2
+    padded = np.pad(x, ((0, 0), (pad, pad), (pad, pad), (0, 0)))
+    out = np.zeros((n, H, W, kernel.shape[3])) + bias
+    for i in range(k):
+        for j in range(k):
+            out += padded[:, i:i + H, j:j + W, :] @ kernel[i, j]
+    return np.maximum(out, 0)
+
+
+def max_pool(x):
+    n, H, W, c = x.shape
+    return x.reshape(n, H // 2, 2, W // 2, 2, c).max(axis=(2, 4))
+
+
+filter_rng = np.random.RandomState(0)
+K1 = filter_rng.randn(3, 3, 1, 8) * np.sqrt(2.0 / 9)
+K2 = filter_rng.randn(3, 3, 8, 16) * np.sqrt(2.0 / 72)
+
+
+def feature_maps(images):
+    x = images[..., None]
+    conv1 = conv_same(x, K1, np.zeros(8))
+    conv2 = conv_same(max_pool(conv1), K2, np.zeros(16))
+    return {"conv1": conv1, "conv2": conv2}
+
+
+def train_head(images, labels, steps=400, lr=1.0):
+    pooled = feature_maps(images)["conv2"].mean(axis=(1, 2))
+    W, b = np.zeros((pooled.shape[1], K)), np.zeros(K)
+    onehot = np.eye(K)[labels]
+    for _ in range(steps):
+        p = softmax(pooled @ W + b)
+        W -= lr * pooled.T @ (p - onehot) / len(labels)
+        b -= lr * (p - onehot).mean(axis=0)
+    return W, b
+
+
+def predict(images, head):
+    W, b = head
+    return softmax(feature_maps(images)["conv2"].mean(axis=(1, 2)) @ W + b)
+
+
+x_train, y_train = make_images(300, seed=1)
+x_test, y_test = make_images(200, seed=2, shift=1)
+head = train_head(x_train, y_train)
+probabilities = predict(x_test, head)
+print("test accuracy is well above chance:", float((probabilities.argmax(axis=1) == y_test).mean()) > 0.5)
+
+image = x_test[0]
+acts = feature_maps(image[None, ...])
+print("layer   shape        zero fraction")
+zero = {}
+for name in ("conv1", "conv2"):
+    maps = acts[name][0]
+    silent = int((maps.max(axis=(0, 1)) == 0).sum())
+    zero[name] = float((maps == 0).mean())
+    print(format(name, "7s"), format(str(maps.shape), "12s"), format(zero[name], ".2f"), "  silent channels:", silent, "of", maps.shape[-1])
+print("conv1 is 12x12 with 8 channels and conv2 is 6x6 with 16:", acts["conv1"].shape[1:] == (12, 12, 8) and acts["conv2"].shape[1:] == (6, 6, 16))
+print("about half of the relu outputs are exactly zero at the first layer:", 0.3 < zero["conv1"] < 0.7)
+print("the deeper layer is sparser than the first:", zero["conv2"] > zero["conv1"])`}
+  sct={`test_output_contains("conv1 is 12x12 with 8 channels and conv2 is 6x6 with 16: True", pattern=False)
+test_output_contains("about half of the relu outputs are exactly zero at the first layer: True", pattern=False)
+test_output_contains("the deeper layer is sparser than the first: True", pattern=False)
+success_msg("A relu layer leaves roughly half its outputs at exactly zero, and the deeper layer is sparser still.")`}
+  height={460}
 />
 
 <DataCampExercise
   lang="python"
-  hint={`The alpha for a channel is the mean of the gradient of the class score with respect to that channel. Average over the two spatial axes only.`}
+  hint={`The alpha for a channel is the mean of the gradient of the class score with respect to that channel. Average over the two spatial axes, 0 and 1.`}
   code={`# Task: Exercise 2 - Grad-CAM from scratch
 import numpy as np
-import tensorflow as tf
-from tensorflow import keras
 
-# (build and train the model exactly as in Exercise 1, then:)
+K, S = 3, 12
+glyph_rng = np.random.RandomState(7)
+GLYPHS = (glyph_rng.rand(K, 5, 5) > 0.45).astype(float)
 
 
-def gradcam(model, image, class_index, layer_name="conv3"):
-    probe = keras.Model(model.inputs, [model.get_layer(layer_name).output,
-                                       model.output])
-    with tf.GradientTape() as tape:
-        maps, predictions = probe(image[None, ...], training=False)
-        score = predictions[:, class_index]
-    gradient = tape.gradient(score, maps)[0].numpy()
-    weights = gradient.mean(axis=(___))          # replace ___ with 0, 1
-    heat = np.maximum((maps[0].numpy() * weights).sum(axis=-1), 0)
+def make_images(n, seed, shift=0):
+    r = np.random.RandomState(seed)
+    y = r.randint(0, K, n)
+    x = np.zeros((n, S, S))
+    for i in range(n):
+        top = 3 + r.randint(-shift, shift + 1) if shift else 3
+        left = 3 + r.randint(-shift, shift + 1) if shift else 3
+        x[i, top:top + 5, left:left + 5] = GLYPHS[y[i]]
+    return x + 0.15 * r.randn(n, S, S), y
+
+
+def softmax(z):
+    p = np.exp(z - z.max(axis=1, keepdims=True))
+    return p / p.sum(axis=1, keepdims=True)
+
+
+def augment(batch, training, r, max_shift=2):
+    """Random shifts, applied only while training."""
+    if not training:
+        return batch
+    out = np.empty_like(batch)
+    for i, img in enumerate(batch):
+        dy, dx = r.randint(-max_shift, max_shift + 1, 2)
+        out[i] = np.roll(np.roll(img, dy, axis=0), dx, axis=1)
+    return out
+
+
+def train_model(x, y, epochs, strength=0, seed=0, val=None, lr=0.1, units=32):
+    r = np.random.RandomState(seed)
+    W1 = r.randn(S * S, units) * 0.1
+    W2 = r.randn(units, K) * 0.1
+    onehot = np.eye(K)[y]
+    curve = []
+    for epoch in range(epochs):
+        xb = augment(x, strength > 0, r, strength).reshape(len(x), -1)
+        pre = xb @ W1
+        h = np.maximum(pre, 0)
+        dz = (softmax(h @ W2) - onehot) / len(y)
+        W2 -= lr * h.T @ dz
+        W1 -= lr * xb.T @ ((dz @ W2.T) * (pre > 0))
+        if val is not None:
+            curve.append(score((W1, W2), *val))
+    return (W1, W2), curve
+
+
+def score(model, x, y):
+    W1, W2 = model
+    h = np.maximum(x.reshape(len(x), -1) @ W1, 0)
+    return float((softmax(h @ W2).argmax(axis=1) == y).mean())
+
+
+def conv_same(x, kernel, bias):
+    """x: (n, H, W, cin), kernel: (k, k, cin, cout), stride 1, same padding, relu."""
+    n, H, W, _ = x.shape
+    k = kernel.shape[0]
+    pad = k // 2
+    padded = np.pad(x, ((0, 0), (pad, pad), (pad, pad), (0, 0)))
+    out = np.zeros((n, H, W, kernel.shape[3])) + bias
+    for i in range(k):
+        for j in range(k):
+            out += padded[:, i:i + H, j:j + W, :] @ kernel[i, j]
+    return np.maximum(out, 0)
+
+
+def max_pool(x):
+    n, H, W, c = x.shape
+    return x.reshape(n, H // 2, 2, W // 2, 2, c).max(axis=(2, 4))
+
+
+filter_rng = np.random.RandomState(0)
+K1 = filter_rng.randn(3, 3, 1, 8) * np.sqrt(2.0 / 9)
+K2 = filter_rng.randn(3, 3, 8, 16) * np.sqrt(2.0 / 72)
+
+
+def feature_maps(images):
+    x = images[..., None]
+    conv1 = conv_same(x, K1, np.zeros(8))
+    conv2 = conv_same(max_pool(conv1), K2, np.zeros(16))
+    return {"conv1": conv1, "conv2": conv2}
+
+
+def train_head(images, labels, steps=400, lr=1.0):
+    pooled = feature_maps(images)["conv2"].mean(axis=(1, 2))
+    W, b = np.zeros((pooled.shape[1], K)), np.zeros(K)
+    onehot = np.eye(K)[labels]
+    for _ in range(steps):
+        p = softmax(pooled @ W + b)
+        W -= lr * pooled.T @ (p - onehot) / len(labels)
+        b -= lr * (p - onehot).mean(axis=0)
+    return W, b
+
+
+def predict(images, head):
+    W, b = head
+    return softmax(feature_maps(images)["conv2"].mean(axis=(1, 2)) @ W + b)
+
+
+x_train, y_train = make_images(300, seed=1)
+x_test, y_test = make_images(200, seed=2, shift=1)
+head = train_head(x_train, y_train)
+probabilities = predict(x_test, head)
+print("test accuracy is well above chance:", float((probabilities.argmax(axis=1) == y_test).mean()) > 0.5)
+
+
+def gradcam(head, image, class_index):
+    W, b = head
+    maps = feature_maps(image[None, ...])["conv2"][0]
+    # With global average pooling the score's gradient w.r.t. every cell of
+    # channel c is the same number: W[c, class] / (cells in the map).
+    gradient = np.ones(maps.shape) * W[:, class_index] / (maps.shape[0] * maps.shape[1])
+    weights = gradient.mean(axis=(___))   # replace ___ with 0, 1
+    heat = np.maximum((maps * weights).sum(axis=-1), 0)
     return heat / (heat.max() + 1e-8)
 
 
-probabilities = model.predict(x_test, verbose=0)
-predicted = probabilities.argmax(axis=1)
 image = x_test[0]
-guess = int(predicted[0])
-heat = gradcam(model, image, guess)
-print(f"conv3 is 7x7, so the map is {heat.shape} — "
-      f"{28 // heat.shape[0]}x coarser than the input")
-print(f"said {CLASSES[guess]} with confidence {probabilities[0, guess]:.4f}")
-print(f"heat map: min {heat.min():.4f}  max {heat.max():.4f}  "
-      f"mean {heat.mean():.4f}")
+guess = int(probabilities[0].argmax())
+heat = gradcam(head, image, guess)
+print("conv2 is 6x6, so the map is", heat.shape, "-", 12 // heat.shape[0], "x coarser than the input")
+print("heat map maximum is 1.0000:", format(heat.max(), ".4f") == "1.0000")
+print("heat map minimum is 0.0:", bool(heat.min() >= 0))
+inside = heat[1:4, 1:4].mean()
+outside = np.r_[heat[0, :], heat[5, :]].mean()
+print("the map is hotter on the glyph than along the edges:", bool(inside > outside))
 runner_up = int(np.argsort(-probabilities[0])[1])
-other = gradcam(model, image, runner_up)
-print(f"explained as {CLASSES[runner_up]} instead: correlation "
-      f"{np.corrcoef(heat.ravel(), other.ravel())[0, 1]:.4f}")
+other = gradcam(head, image, runner_up)
+print("explained as another class, the map is anti-correlated:", bool(np.corrcoef(heat.ravel(), other.ravel())[0, 1] < 0))
 print("a negative correlation means the two classes are argued from different")
 print("regions - which is the most useful thing Grad-CAM can tell you about a")
-print("low-confidence prediction")
+print("low-confidence prediction")`}
+  solution={`import numpy as np
 
-# -- Expected Output -------------------------------------------
-# conv3 is 7x7, so the map is (7, 7) — 4x coarser than the input
-# said boot with confidence 0.6820
-# heat map: min 0.0000  max 1.0000  mean 0.2145
-# explained as sneaker instead: correlation -0.5960
-# the two explanations are anti-correlated: the evidence for 'sneaker' sits
-# where the evidence for 'boot' does not
-# --------------------------------------------------------------`}
+K, S = 3, 12
+glyph_rng = np.random.RandomState(7)
+GLYPHS = (glyph_rng.rand(K, 5, 5) > 0.45).astype(float)
+
+
+def make_images(n, seed, shift=0):
+    r = np.random.RandomState(seed)
+    y = r.randint(0, K, n)
+    x = np.zeros((n, S, S))
+    for i in range(n):
+        top = 3 + r.randint(-shift, shift + 1) if shift else 3
+        left = 3 + r.randint(-shift, shift + 1) if shift else 3
+        x[i, top:top + 5, left:left + 5] = GLYPHS[y[i]]
+    return x + 0.15 * r.randn(n, S, S), y
+
+
+def softmax(z):
+    p = np.exp(z - z.max(axis=1, keepdims=True))
+    return p / p.sum(axis=1, keepdims=True)
+
+
+def augment(batch, training, r, max_shift=2):
+    """Random shifts, applied only while training."""
+    if not training:
+        return batch
+    out = np.empty_like(batch)
+    for i, img in enumerate(batch):
+        dy, dx = r.randint(-max_shift, max_shift + 1, 2)
+        out[i] = np.roll(np.roll(img, dy, axis=0), dx, axis=1)
+    return out
+
+
+def train_model(x, y, epochs, strength=0, seed=0, val=None, lr=0.1, units=32):
+    r = np.random.RandomState(seed)
+    W1 = r.randn(S * S, units) * 0.1
+    W2 = r.randn(units, K) * 0.1
+    onehot = np.eye(K)[y]
+    curve = []
+    for epoch in range(epochs):
+        xb = augment(x, strength > 0, r, strength).reshape(len(x), -1)
+        pre = xb @ W1
+        h = np.maximum(pre, 0)
+        dz = (softmax(h @ W2) - onehot) / len(y)
+        W2 -= lr * h.T @ dz
+        W1 -= lr * xb.T @ ((dz @ W2.T) * (pre > 0))
+        if val is not None:
+            curve.append(score((W1, W2), *val))
+    return (W1, W2), curve
+
+
+def score(model, x, y):
+    W1, W2 = model
+    h = np.maximum(x.reshape(len(x), -1) @ W1, 0)
+    return float((softmax(h @ W2).argmax(axis=1) == y).mean())
+
+
+def conv_same(x, kernel, bias):
+    """x: (n, H, W, cin), kernel: (k, k, cin, cout), stride 1, same padding, relu."""
+    n, H, W, _ = x.shape
+    k = kernel.shape[0]
+    pad = k // 2
+    padded = np.pad(x, ((0, 0), (pad, pad), (pad, pad), (0, 0)))
+    out = np.zeros((n, H, W, kernel.shape[3])) + bias
+    for i in range(k):
+        for j in range(k):
+            out += padded[:, i:i + H, j:j + W, :] @ kernel[i, j]
+    return np.maximum(out, 0)
+
+
+def max_pool(x):
+    n, H, W, c = x.shape
+    return x.reshape(n, H // 2, 2, W // 2, 2, c).max(axis=(2, 4))
+
+
+filter_rng = np.random.RandomState(0)
+K1 = filter_rng.randn(3, 3, 1, 8) * np.sqrt(2.0 / 9)
+K2 = filter_rng.randn(3, 3, 8, 16) * np.sqrt(2.0 / 72)
+
+
+def feature_maps(images):
+    x = images[..., None]
+    conv1 = conv_same(x, K1, np.zeros(8))
+    conv2 = conv_same(max_pool(conv1), K2, np.zeros(16))
+    return {"conv1": conv1, "conv2": conv2}
+
+
+def train_head(images, labels, steps=400, lr=1.0):
+    pooled = feature_maps(images)["conv2"].mean(axis=(1, 2))
+    W, b = np.zeros((pooled.shape[1], K)), np.zeros(K)
+    onehot = np.eye(K)[labels]
+    for _ in range(steps):
+        p = softmax(pooled @ W + b)
+        W -= lr * pooled.T @ (p - onehot) / len(labels)
+        b -= lr * (p - onehot).mean(axis=0)
+    return W, b
+
+
+def predict(images, head):
+    W, b = head
+    return softmax(feature_maps(images)["conv2"].mean(axis=(1, 2)) @ W + b)
+
+
+x_train, y_train = make_images(300, seed=1)
+x_test, y_test = make_images(200, seed=2, shift=1)
+head = train_head(x_train, y_train)
+probabilities = predict(x_test, head)
+print("test accuracy is well above chance:", float((probabilities.argmax(axis=1) == y_test).mean()) > 0.5)
+
+
+def gradcam(head, image, class_index):
+    W, b = head
+    maps = feature_maps(image[None, ...])["conv2"][0]
+    # With global average pooling the score's gradient w.r.t. every cell of
+    # channel c is the same number: W[c, class] / (cells in the map).
+    gradient = np.ones(maps.shape) * W[:, class_index] / (maps.shape[0] * maps.shape[1])
+    weights = gradient.mean(axis=(0, 1))
+    heat = np.maximum((maps * weights).sum(axis=-1), 0)
+    return heat / (heat.max() + 1e-8)
+
+
+image = x_test[0]
+guess = int(probabilities[0].argmax())
+heat = gradcam(head, image, guess)
+print("conv2 is 6x6, so the map is", heat.shape, "-", 12 // heat.shape[0], "x coarser than the input")
+print("heat map maximum is 1.0000:", format(heat.max(), ".4f") == "1.0000")
+print("heat map minimum is 0.0:", bool(heat.min() >= 0))
+inside = heat[1:4, 1:4].mean()
+outside = np.r_[heat[0, :], heat[5, :]].mean()
+print("the map is hotter on the glyph than along the edges:", bool(inside > outside))
+runner_up = int(np.argsort(-probabilities[0])[1])
+other = gradcam(head, image, runner_up)
+print("explained as another class, the map is anti-correlated:", bool(np.corrcoef(heat.ravel(), other.ravel())[0, 1] < 0))
+print("a negative correlation means the two classes are argued from different")
+print("regions - which is the most useful thing Grad-CAM can tell you about a")
+print("low-confidence prediction")`}
+  sct={`test_output_contains("heat map maximum is 1.0000: True", pattern=False)
+test_output_contains("the map is hotter on the glyph than along the edges: True", pattern=False)
+test_output_contains("explained as another class, the map is anti-correlated: True", pattern=False)
+success_msg("Weighting each channel by its average gradient highlights the region the class score relies on, and the runner-up class is explained from a different region.")`}
+  height={460}
 />
 
 <DataCampExercise
   lang="python"
-  hint={`Build one occluded copy of the image per patch position, predict them all in a single batch, and subtract from the unoccluded confidence.`}
+  hint={`Build one occluded copy per patch position, predict them all in one batch, and subtract from the unoccluded confidence. The grid has grid x grid positions.`}
   code={`# Task: Exercise 3 - Occlusion sensitivity, the gradient-free check
 import numpy as np
 
-# (model, x_test, probabilities and gradcam from the previous exercises)
+K, S = 3, 12
+glyph_rng = np.random.RandomState(7)
+GLYPHS = (glyph_rng.rand(K, 5, 5) > 0.45).astype(float)
 
-PATCH = 8
+
+def make_images(n, seed, shift=0):
+    r = np.random.RandomState(seed)
+    y = r.randint(0, K, n)
+    x = np.zeros((n, S, S))
+    for i in range(n):
+        top = 3 + r.randint(-shift, shift + 1) if shift else 3
+        left = 3 + r.randint(-shift, shift + 1) if shift else 3
+        x[i, top:top + 5, left:left + 5] = GLYPHS[y[i]]
+    return x + 0.15 * r.randn(n, S, S), y
+
+
+def softmax(z):
+    p = np.exp(z - z.max(axis=1, keepdims=True))
+    return p / p.sum(axis=1, keepdims=True)
+
+
+def augment(batch, training, r, max_shift=2):
+    """Random shifts, applied only while training."""
+    if not training:
+        return batch
+    out = np.empty_like(batch)
+    for i, img in enumerate(batch):
+        dy, dx = r.randint(-max_shift, max_shift + 1, 2)
+        out[i] = np.roll(np.roll(img, dy, axis=0), dx, axis=1)
+    return out
+
+
+def train_model(x, y, epochs, strength=0, seed=0, val=None, lr=0.1, units=32):
+    r = np.random.RandomState(seed)
+    W1 = r.randn(S * S, units) * 0.1
+    W2 = r.randn(units, K) * 0.1
+    onehot = np.eye(K)[y]
+    curve = []
+    for epoch in range(epochs):
+        xb = augment(x, strength > 0, r, strength).reshape(len(x), -1)
+        pre = xb @ W1
+        h = np.maximum(pre, 0)
+        dz = (softmax(h @ W2) - onehot) / len(y)
+        W2 -= lr * h.T @ dz
+        W1 -= lr * xb.T @ ((dz @ W2.T) * (pre > 0))
+        if val is not None:
+            curve.append(score((W1, W2), *val))
+    return (W1, W2), curve
+
+
+def score(model, x, y):
+    W1, W2 = model
+    h = np.maximum(x.reshape(len(x), -1) @ W1, 0)
+    return float((softmax(h @ W2).argmax(axis=1) == y).mean())
+
+
+def conv_same(x, kernel, bias):
+    """x: (n, H, W, cin), kernel: (k, k, cin, cout), stride 1, same padding, relu."""
+    n, H, W, _ = x.shape
+    k = kernel.shape[0]
+    pad = k // 2
+    padded = np.pad(x, ((0, 0), (pad, pad), (pad, pad), (0, 0)))
+    out = np.zeros((n, H, W, kernel.shape[3])) + bias
+    for i in range(k):
+        for j in range(k):
+            out += padded[:, i:i + H, j:j + W, :] @ kernel[i, j]
+    return np.maximum(out, 0)
+
+
+def max_pool(x):
+    n, H, W, c = x.shape
+    return x.reshape(n, H // 2, 2, W // 2, 2, c).max(axis=(2, 4))
+
+
+filter_rng = np.random.RandomState(0)
+K1 = filter_rng.randn(3, 3, 1, 8) * np.sqrt(2.0 / 9)
+K2 = filter_rng.randn(3, 3, 8, 16) * np.sqrt(2.0 / 72)
+
+
+def feature_maps(images):
+    x = images[..., None]
+    conv1 = conv_same(x, K1, np.zeros(8))
+    conv2 = conv_same(max_pool(conv1), K2, np.zeros(16))
+    return {"conv1": conv1, "conv2": conv2}
+
+
+def train_head(images, labels, steps=400, lr=1.0):
+    pooled = feature_maps(images)["conv2"].mean(axis=(1, 2))
+    W, b = np.zeros((pooled.shape[1], K)), np.zeros(K)
+    onehot = np.eye(K)[labels]
+    for _ in range(steps):
+        p = softmax(pooled @ W + b)
+        W -= lr * pooled.T @ (p - onehot) / len(labels)
+        b -= lr * (p - onehot).mean(axis=0)
+    return W, b
+
+
+def predict(images, head):
+    W, b = head
+    return softmax(feature_maps(images)["conv2"].mean(axis=(1, 2)) @ W + b)
+
+
+x_train, y_train = make_images(300, seed=1)
+x_test, y_test = make_images(200, seed=2, shift=1)
+head = train_head(x_train, y_train)
+probabilities = predict(x_test, head)
+print("test accuracy is well above chance:", float((probabilities.argmax(axis=1) == y_test).mean()) > 0.5)
+
+PATCH = 4
+image = x_test[0]
 guess = int(probabilities[0].argmax())
 base = float(probabilities[0, guess])
-grid = 28 - PATCH + 1
+grid = S - PATCH + 1
 batch = []
 for top in range(grid):
     for left in range(grid):
-        occluded = x_test[0].copy()
+        occluded = image.copy()
         occluded[top:top + PATCH, left:left + PATCH] = 0.0
         batch.append(occluded)
-scores = model.predict(np.stack(batch), verbose=0)[:, guess]
-drops = base - scores.reshape(grid, ___)          # replace ___ with grid
+scores = predict(np.stack(batch), head)[:, guess]
+drops = base - scores.reshape(grid, ___)   # replace ___ with grid
 worst = np.unravel_index(drops.argmax(), drops.shape)
-print(f"{grid * grid} forward passes with an {PATCH}x{PATCH} patch")
-print(f"unoccluded confidence {base:.4f}")
-print(f"largest drop {drops.max():.4f} at row {worst[0]}, column {worst[1]}")
-print(f"smallest drop {drops.min():.4f}  mean drop {drops.mean():.4f}")
-heat = gradcam(model, x_test[0], guess)
-coarse = drops[:heat.shape[0] * 3:3, :heat.shape[1] * 3:3]
-print(f"correlation with the Grad-CAM map: "
-      f"{np.corrcoef(coarse.ravel(), heat.ravel())[0, 1]:.4f}")
+print(grid * grid, "forward passes with a", PATCH, "x", PATCH, "patch")
+print("the drops form a", drops.shape, "grid:", drops.shape == (9, 9))
+print("the largest drop is clearly positive:", bool(drops.max() > 0.05))
+print("the largest drop is over the glyph, not the border:", bool(2 <= worst[0] <= 6 and 2 <= worst[1] <= 6))
+print("some patch makes the model MORE confident when hidden:", bool(drops.min() < 0))
 print("a negative drop means hiding that region made the model *more*")
-print("confident, which is information Grad-CAM cannot give you")
+print("confident, which is information Grad-CAM cannot give you")`}
+  solution={`import numpy as np
 
-# -- Expected Output -------------------------------------------
-# 441 forward passes with an 8x8 patch
-# unoccluded confidence 0.6820
-# largest drop 0.6791 at row 12, column 16
-# smallest drop -0.0534  mean drop 0.2326
-# correlation with the Grad-CAM map: 0.5697
-# a negative drop means hiding that region made the model *more*
-# confident, which is information Grad-CAM cannot give you
-# --------------------------------------------------------------`}
+K, S = 3, 12
+glyph_rng = np.random.RandomState(7)
+GLYPHS = (glyph_rng.rand(K, 5, 5) > 0.45).astype(float)
+
+
+def make_images(n, seed, shift=0):
+    r = np.random.RandomState(seed)
+    y = r.randint(0, K, n)
+    x = np.zeros((n, S, S))
+    for i in range(n):
+        top = 3 + r.randint(-shift, shift + 1) if shift else 3
+        left = 3 + r.randint(-shift, shift + 1) if shift else 3
+        x[i, top:top + 5, left:left + 5] = GLYPHS[y[i]]
+    return x + 0.15 * r.randn(n, S, S), y
+
+
+def softmax(z):
+    p = np.exp(z - z.max(axis=1, keepdims=True))
+    return p / p.sum(axis=1, keepdims=True)
+
+
+def augment(batch, training, r, max_shift=2):
+    """Random shifts, applied only while training."""
+    if not training:
+        return batch
+    out = np.empty_like(batch)
+    for i, img in enumerate(batch):
+        dy, dx = r.randint(-max_shift, max_shift + 1, 2)
+        out[i] = np.roll(np.roll(img, dy, axis=0), dx, axis=1)
+    return out
+
+
+def train_model(x, y, epochs, strength=0, seed=0, val=None, lr=0.1, units=32):
+    r = np.random.RandomState(seed)
+    W1 = r.randn(S * S, units) * 0.1
+    W2 = r.randn(units, K) * 0.1
+    onehot = np.eye(K)[y]
+    curve = []
+    for epoch in range(epochs):
+        xb = augment(x, strength > 0, r, strength).reshape(len(x), -1)
+        pre = xb @ W1
+        h = np.maximum(pre, 0)
+        dz = (softmax(h @ W2) - onehot) / len(y)
+        W2 -= lr * h.T @ dz
+        W1 -= lr * xb.T @ ((dz @ W2.T) * (pre > 0))
+        if val is not None:
+            curve.append(score((W1, W2), *val))
+    return (W1, W2), curve
+
+
+def score(model, x, y):
+    W1, W2 = model
+    h = np.maximum(x.reshape(len(x), -1) @ W1, 0)
+    return float((softmax(h @ W2).argmax(axis=1) == y).mean())
+
+
+def conv_same(x, kernel, bias):
+    """x: (n, H, W, cin), kernel: (k, k, cin, cout), stride 1, same padding, relu."""
+    n, H, W, _ = x.shape
+    k = kernel.shape[0]
+    pad = k // 2
+    padded = np.pad(x, ((0, 0), (pad, pad), (pad, pad), (0, 0)))
+    out = np.zeros((n, H, W, kernel.shape[3])) + bias
+    for i in range(k):
+        for j in range(k):
+            out += padded[:, i:i + H, j:j + W, :] @ kernel[i, j]
+    return np.maximum(out, 0)
+
+
+def max_pool(x):
+    n, H, W, c = x.shape
+    return x.reshape(n, H // 2, 2, W // 2, 2, c).max(axis=(2, 4))
+
+
+filter_rng = np.random.RandomState(0)
+K1 = filter_rng.randn(3, 3, 1, 8) * np.sqrt(2.0 / 9)
+K2 = filter_rng.randn(3, 3, 8, 16) * np.sqrt(2.0 / 72)
+
+
+def feature_maps(images):
+    x = images[..., None]
+    conv1 = conv_same(x, K1, np.zeros(8))
+    conv2 = conv_same(max_pool(conv1), K2, np.zeros(16))
+    return {"conv1": conv1, "conv2": conv2}
+
+
+def train_head(images, labels, steps=400, lr=1.0):
+    pooled = feature_maps(images)["conv2"].mean(axis=(1, 2))
+    W, b = np.zeros((pooled.shape[1], K)), np.zeros(K)
+    onehot = np.eye(K)[labels]
+    for _ in range(steps):
+        p = softmax(pooled @ W + b)
+        W -= lr * pooled.T @ (p - onehot) / len(labels)
+        b -= lr * (p - onehot).mean(axis=0)
+    return W, b
+
+
+def predict(images, head):
+    W, b = head
+    return softmax(feature_maps(images)["conv2"].mean(axis=(1, 2)) @ W + b)
+
+
+x_train, y_train = make_images(300, seed=1)
+x_test, y_test = make_images(200, seed=2, shift=1)
+head = train_head(x_train, y_train)
+probabilities = predict(x_test, head)
+print("test accuracy is well above chance:", float((probabilities.argmax(axis=1) == y_test).mean()) > 0.5)
+
+PATCH = 4
+image = x_test[0]
+guess = int(probabilities[0].argmax())
+base = float(probabilities[0, guess])
+grid = S - PATCH + 1
+batch = []
+for top in range(grid):
+    for left in range(grid):
+        occluded = image.copy()
+        occluded[top:top + PATCH, left:left + PATCH] = 0.0
+        batch.append(occluded)
+scores = predict(np.stack(batch), head)[:, guess]
+drops = base - scores.reshape(grid, grid)
+worst = np.unravel_index(drops.argmax(), drops.shape)
+print(grid * grid, "forward passes with a", PATCH, "x", PATCH, "patch")
+print("the drops form a", drops.shape, "grid:", drops.shape == (9, 9))
+print("the largest drop is clearly positive:", bool(drops.max() > 0.05))
+print("the largest drop is over the glyph, not the border:", bool(2 <= worst[0] <= 6 and 2 <= worst[1] <= 6))
+print("some patch makes the model MORE confident when hidden:", bool(drops.min() < 0))
+print("a negative drop means hiding that region made the model *more*")
+print("confident, which is information Grad-CAM cannot give you")`}
+  sct={`test_output_contains("the drops form a (9, 9) grid: True", pattern=False)
+test_output_contains("the largest drop is clearly positive: True", pattern=False)
+test_output_contains("the largest drop is over the glyph, not the border: True", pattern=False)
+test_output_contains("some patch makes the model MORE confident when hidden: True", pattern=False)
+success_msg("Hiding the region that matters costs the most confidence, and some regions actually count against the predicted class, which gradient maps cannot show.")`}
+  height={460}
 />
 
 <DataCampExercise
   lang="python"
-  hint={`The gradient is taken with respect to the input variable. Normalise it before the step, and clip the image back into [0, 1] afterwards.`}
+  hint={`The gradient is taken with respect to the input image. Normalise it before the step and clip the image back into [0, 1] afterwards.`}
   code={`# Task: Exercise 4 - Synthesise a filter's preferred input
 import numpy as np
-import tensorflow as tf
-from tensorflow import keras
 
-# (model from Exercise 1)
+K, S = 3, 12
+glyph_rng = np.random.RandomState(7)
+GLYPHS = (glyph_rng.rand(K, 5, 5) > 0.45).astype(float)
 
-probe = keras.Model(model.inputs, model.get_layer("conv1").output)
-keras.utils.set_random_seed(0)
-synthetic = tf.Variable(tf.random.uniform((1, 28, 28, 1), 0.4, 0.6, seed=0))
-print(f"{'step':>6} {'mean response':>15} {'image std':>11}")
+
+def make_images(n, seed, shift=0):
+    r = np.random.RandomState(seed)
+    y = r.randint(0, K, n)
+    x = np.zeros((n, S, S))
+    for i in range(n):
+        top = 3 + r.randint(-shift, shift + 1) if shift else 3
+        left = 3 + r.randint(-shift, shift + 1) if shift else 3
+        x[i, top:top + 5, left:left + 5] = GLYPHS[y[i]]
+    return x + 0.15 * r.randn(n, S, S), y
+
+
+def softmax(z):
+    p = np.exp(z - z.max(axis=1, keepdims=True))
+    return p / p.sum(axis=1, keepdims=True)
+
+
+def augment(batch, training, r, max_shift=2):
+    """Random shifts, applied only while training."""
+    if not training:
+        return batch
+    out = np.empty_like(batch)
+    for i, img in enumerate(batch):
+        dy, dx = r.randint(-max_shift, max_shift + 1, 2)
+        out[i] = np.roll(np.roll(img, dy, axis=0), dx, axis=1)
+    return out
+
+
+def train_model(x, y, epochs, strength=0, seed=0, val=None, lr=0.1, units=32):
+    r = np.random.RandomState(seed)
+    W1 = r.randn(S * S, units) * 0.1
+    W2 = r.randn(units, K) * 0.1
+    onehot = np.eye(K)[y]
+    curve = []
+    for epoch in range(epochs):
+        xb = augment(x, strength > 0, r, strength).reshape(len(x), -1)
+        pre = xb @ W1
+        h = np.maximum(pre, 0)
+        dz = (softmax(h @ W2) - onehot) / len(y)
+        W2 -= lr * h.T @ dz
+        W1 -= lr * xb.T @ ((dz @ W2.T) * (pre > 0))
+        if val is not None:
+            curve.append(score((W1, W2), *val))
+    return (W1, W2), curve
+
+
+def score(model, x, y):
+    W1, W2 = model
+    h = np.maximum(x.reshape(len(x), -1) @ W1, 0)
+    return float((softmax(h @ W2).argmax(axis=1) == y).mean())
+
+
+def conv_same(x, kernel, bias):
+    """x: (n, H, W, cin), kernel: (k, k, cin, cout), stride 1, same padding, relu."""
+    n, H, W, _ = x.shape
+    k = kernel.shape[0]
+    pad = k // 2
+    padded = np.pad(x, ((0, 0), (pad, pad), (pad, pad), (0, 0)))
+    out = np.zeros((n, H, W, kernel.shape[3])) + bias
+    for i in range(k):
+        for j in range(k):
+            out += padded[:, i:i + H, j:j + W, :] @ kernel[i, j]
+    return np.maximum(out, 0)
+
+
+def max_pool(x):
+    n, H, W, c = x.shape
+    return x.reshape(n, H // 2, 2, W // 2, 2, c).max(axis=(2, 4))
+
+
+filter_rng = np.random.RandomState(0)
+K1 = filter_rng.randn(3, 3, 1, 8) * np.sqrt(2.0 / 9)
+K2 = filter_rng.randn(3, 3, 8, 16) * np.sqrt(2.0 / 72)
+
+
+def feature_maps(images):
+    x = images[..., None]
+    conv1 = conv_same(x, K1, np.zeros(8))
+    conv2 = conv_same(max_pool(conv1), K2, np.zeros(16))
+    return {"conv1": conv1, "conv2": conv2}
+
+
+def train_head(images, labels, steps=400, lr=1.0):
+    pooled = feature_maps(images)["conv2"].mean(axis=(1, 2))
+    W, b = np.zeros((pooled.shape[1], K)), np.zeros(K)
+    onehot = np.eye(K)[labels]
+    for _ in range(steps):
+        p = softmax(pooled @ W + b)
+        W -= lr * pooled.T @ (p - onehot) / len(labels)
+        b -= lr * (p - onehot).mean(axis=0)
+    return W, b
+
+
+def predict(images, head):
+    W, b = head
+    return softmax(feature_maps(images)["conv2"].mean(axis=(1, 2)) @ W + b)
+
+
+x_train, y_train = make_images(300, seed=1)
+x_test, y_test = make_images(200, seed=2, shift=1)
+head = train_head(x_train, y_train)
+probabilities = predict(x_test, head)
+print("test accuracy is well above chance:", float((probabilities.argmax(axis=1) == y_test).mean()) > 0.5)
+
+kernel = K1[:, :, 0, 0]
+
+
+def response(image):
+    padded = np.pad(image, 1)
+    out = sum(kernel[i, j] * padded[i:i + S, j:j + S] for i in range(3) for j in range(3))
+    return np.maximum(out, 0), out
+
+
+def response_gradient(image):
+    """Gradient of the mean relu response with respect to the input."""
+    _, pre = response(image)
+    g = (pre > 0).astype(float) / pre.size
+    padded = np.pad(g, 1)
+    return sum(kernel[i, j] * padded[2 - i:2 - i + S, 2 - j:2 - j + S] for i in range(3) for j in range(3))
+
+
+synthetic = np.random.RandomState(0).uniform(0.4, 0.6, (S, S))
+start = float(response(synthetic)[0].mean())
 for step in range(121):
-    if step % 30 == 0:
-        response = float(tf.reduce_mean(
-            probe(synthetic, training=False)[..., 0]).numpy())
-        print(f"{step:6d} {response:15.4f} "
-              f"{float(synthetic.numpy().std()):11.4f}")
-    with tf.GradientTape() as tape:
-        activation = tf.reduce_mean(probe(synthetic, training=False)[..., 0])
-    gradient = tape.gradient(activation, ___)     # replace ___ with synthetic
-    gradient = gradient / (tf.norm(gradient) + 1e-8)
-    synthetic.assign_add(2.0 * gradient)
-    synthetic.assign(tf.clip_by_value(synthetic, 0.0, 1.0))
-picture = synthetic.numpy()[0, :, :, 0]
-print(f"fraction of pixels pinned at 0 or 1: "
-      f"{float(((picture <= 1e-6) | (picture >= 1 - 1e-6)).mean()):.4f}")
+    gradient = response_gradient(___)   # replace ___ with synthetic
+    gradient = gradient / (np.linalg.norm(gradient) + 1e-8)
+    synthetic = np.clip(synthetic + 0.2 * gradient, 0.0, 1.0)
+end = float(response(synthetic)[0].mean())
+pinned = float(((synthetic <= 1e-6) | (synthetic >= 1 - 1e-6)).mean())
+print("the filter's mean response rose:", end > start)
+print("it rose by more than a factor of 1.5:", end > 1.5 * start)
+print("most pixels are pinned at 0 or 1:", pinned > 0.5)
 print("the ascent runs into the clipping bounds: the filter wants more")
-print("contrast than an image can represent")
+print("contrast than an image can represent")`}
+  solution={`import numpy as np
 
-# -- Expected Output -------------------------------------------
-#   step   mean response   image std
-#      0          0.0140      0.0576
-#     30          0.1633      0.4788
-#     60          0.1660      0.4894
-#     90          0.1663      0.4914
-#    120          0.1666      0.4931
-# fraction of pixels pinned at 0 or 1: 0.9656
-# the ascent runs into the clipping bounds: the filter wants more
-# contrast than an image can represent
-# --------------------------------------------------------------`}
+K, S = 3, 12
+glyph_rng = np.random.RandomState(7)
+GLYPHS = (glyph_rng.rand(K, 5, 5) > 0.45).astype(float)
+
+
+def make_images(n, seed, shift=0):
+    r = np.random.RandomState(seed)
+    y = r.randint(0, K, n)
+    x = np.zeros((n, S, S))
+    for i in range(n):
+        top = 3 + r.randint(-shift, shift + 1) if shift else 3
+        left = 3 + r.randint(-shift, shift + 1) if shift else 3
+        x[i, top:top + 5, left:left + 5] = GLYPHS[y[i]]
+    return x + 0.15 * r.randn(n, S, S), y
+
+
+def softmax(z):
+    p = np.exp(z - z.max(axis=1, keepdims=True))
+    return p / p.sum(axis=1, keepdims=True)
+
+
+def augment(batch, training, r, max_shift=2):
+    """Random shifts, applied only while training."""
+    if not training:
+        return batch
+    out = np.empty_like(batch)
+    for i, img in enumerate(batch):
+        dy, dx = r.randint(-max_shift, max_shift + 1, 2)
+        out[i] = np.roll(np.roll(img, dy, axis=0), dx, axis=1)
+    return out
+
+
+def train_model(x, y, epochs, strength=0, seed=0, val=None, lr=0.1, units=32):
+    r = np.random.RandomState(seed)
+    W1 = r.randn(S * S, units) * 0.1
+    W2 = r.randn(units, K) * 0.1
+    onehot = np.eye(K)[y]
+    curve = []
+    for epoch in range(epochs):
+        xb = augment(x, strength > 0, r, strength).reshape(len(x), -1)
+        pre = xb @ W1
+        h = np.maximum(pre, 0)
+        dz = (softmax(h @ W2) - onehot) / len(y)
+        W2 -= lr * h.T @ dz
+        W1 -= lr * xb.T @ ((dz @ W2.T) * (pre > 0))
+        if val is not None:
+            curve.append(score((W1, W2), *val))
+    return (W1, W2), curve
+
+
+def score(model, x, y):
+    W1, W2 = model
+    h = np.maximum(x.reshape(len(x), -1) @ W1, 0)
+    return float((softmax(h @ W2).argmax(axis=1) == y).mean())
+
+
+def conv_same(x, kernel, bias):
+    """x: (n, H, W, cin), kernel: (k, k, cin, cout), stride 1, same padding, relu."""
+    n, H, W, _ = x.shape
+    k = kernel.shape[0]
+    pad = k // 2
+    padded = np.pad(x, ((0, 0), (pad, pad), (pad, pad), (0, 0)))
+    out = np.zeros((n, H, W, kernel.shape[3])) + bias
+    for i in range(k):
+        for j in range(k):
+            out += padded[:, i:i + H, j:j + W, :] @ kernel[i, j]
+    return np.maximum(out, 0)
+
+
+def max_pool(x):
+    n, H, W, c = x.shape
+    return x.reshape(n, H // 2, 2, W // 2, 2, c).max(axis=(2, 4))
+
+
+filter_rng = np.random.RandomState(0)
+K1 = filter_rng.randn(3, 3, 1, 8) * np.sqrt(2.0 / 9)
+K2 = filter_rng.randn(3, 3, 8, 16) * np.sqrt(2.0 / 72)
+
+
+def feature_maps(images):
+    x = images[..., None]
+    conv1 = conv_same(x, K1, np.zeros(8))
+    conv2 = conv_same(max_pool(conv1), K2, np.zeros(16))
+    return {"conv1": conv1, "conv2": conv2}
+
+
+def train_head(images, labels, steps=400, lr=1.0):
+    pooled = feature_maps(images)["conv2"].mean(axis=(1, 2))
+    W, b = np.zeros((pooled.shape[1], K)), np.zeros(K)
+    onehot = np.eye(K)[labels]
+    for _ in range(steps):
+        p = softmax(pooled @ W + b)
+        W -= lr * pooled.T @ (p - onehot) / len(labels)
+        b -= lr * (p - onehot).mean(axis=0)
+    return W, b
+
+
+def predict(images, head):
+    W, b = head
+    return softmax(feature_maps(images)["conv2"].mean(axis=(1, 2)) @ W + b)
+
+
+x_train, y_train = make_images(300, seed=1)
+x_test, y_test = make_images(200, seed=2, shift=1)
+head = train_head(x_train, y_train)
+probabilities = predict(x_test, head)
+print("test accuracy is well above chance:", float((probabilities.argmax(axis=1) == y_test).mean()) > 0.5)
+
+kernel = K1[:, :, 0, 0]
+
+
+def response(image):
+    padded = np.pad(image, 1)
+    out = sum(kernel[i, j] * padded[i:i + S, j:j + S] for i in range(3) for j in range(3))
+    return np.maximum(out, 0), out
+
+
+def response_gradient(image):
+    """Gradient of the mean relu response with respect to the input."""
+    _, pre = response(image)
+    g = (pre > 0).astype(float) / pre.size
+    padded = np.pad(g, 1)
+    return sum(kernel[i, j] * padded[2 - i:2 - i + S, 2 - j:2 - j + S] for i in range(3) for j in range(3))
+
+
+synthetic = np.random.RandomState(0).uniform(0.4, 0.6, (S, S))
+start = float(response(synthetic)[0].mean())
+for step in range(121):
+    gradient = response_gradient(synthetic)
+    gradient = gradient / (np.linalg.norm(gradient) + 1e-8)
+    synthetic = np.clip(synthetic + 0.2 * gradient, 0.0, 1.0)
+end = float(response(synthetic)[0].mean())
+pinned = float(((synthetic <= 1e-6) | (synthetic >= 1 - 1e-6)).mean())
+print("the filter's mean response rose:", end > start)
+print("it rose by more than a factor of 1.5:", end > 1.5 * start)
+print("most pixels are pinned at 0 or 1:", pinned > 0.5)
+print("the ascent runs into the clipping bounds: the filter wants more")
+print("contrast than an image can represent")`}
+  sct={`test_output_contains("the filter's mean response rose: True", pattern=False)
+test_output_contains("it rose by more than a factor of 1.5: True", pattern=False)
+test_output_contains("most pixels are pinned at 0 or 1: True", pattern=False)
+success_msg("Climbing the gradient of a filter's response builds an image it likes: a pattern that pushes most pixels to the extremes.")`}
+  height={460}
 />
 
 <DataCampExercise
   lang="python"
-  hint={`Build a second model with the same architecture and a different seed, do not train it, and run the identical Grad-CAM function on both.`}
+  hint={`Build a second head with random weights, do not train it, and run the identical Grad-CAM function on both. Then correlate the two maps.`}
   code={`# Task: Exercise 5 - The sanity check: does the map depend on training?
 import numpy as np
-import tensorflow as tf
-from tensorflow import keras
 
-# (trained model, x_test and probabilities from Exercise 1)
-
-
-def build(seed):
-    keras.utils.set_random_seed(seed)
-    inputs = keras.layers.Input((28, 28, 1))
-    x = keras.layers.Conv2D(32, 3, padding="same", activation="relu",
-                            name="conv1")(inputs)
-    x = keras.layers.MaxPooling2D(2)(x)
-    x = keras.layers.Conv2D(64, 3, padding="same", activation="relu",
-                            name="conv2")(x)
-    x = keras.layers.MaxPooling2D(2)(x)
-    x = keras.layers.Conv2D(64, 3, padding="same", activation="relu",
-                            name="conv3")(x)
-    pooled = keras.layers.GlobalAveragePooling2D()(x)
-    return keras.Model(inputs, keras.layers.Dense(10, activation="softmax",
-                                                  name="head")(pooled))
+K, S = 3, 12
+glyph_rng = np.random.RandomState(7)
+GLYPHS = (glyph_rng.rand(K, 5, 5) > 0.45).astype(float)
 
 
-def gradcam_raw(target, image, class_index, layer_name="conv3"):
-    probe = keras.Model(target.inputs, [target.get_layer(layer_name).output,
-                                        target.output])
-    with tf.GradientTape() as tape:
-        maps, predictions = probe(image[None, ...], training=False)
-        score = predictions[:, class_index]
-    gradient = tape.gradient(score, maps)[0].numpy()
+def make_images(n, seed, shift=0):
+    r = np.random.RandomState(seed)
+    y = r.randint(0, K, n)
+    x = np.zeros((n, S, S))
+    for i in range(n):
+        top = 3 + r.randint(-shift, shift + 1) if shift else 3
+        left = 3 + r.randint(-shift, shift + 1) if shift else 3
+        x[i, top:top + 5, left:left + 5] = GLYPHS[y[i]]
+    return x + 0.15 * r.randn(n, S, S), y
+
+
+def softmax(z):
+    p = np.exp(z - z.max(axis=1, keepdims=True))
+    return p / p.sum(axis=1, keepdims=True)
+
+
+def augment(batch, training, r, max_shift=2):
+    """Random shifts, applied only while training."""
+    if not training:
+        return batch
+    out = np.empty_like(batch)
+    for i, img in enumerate(batch):
+        dy, dx = r.randint(-max_shift, max_shift + 1, 2)
+        out[i] = np.roll(np.roll(img, dy, axis=0), dx, axis=1)
+    return out
+
+
+def train_model(x, y, epochs, strength=0, seed=0, val=None, lr=0.1, units=32):
+    r = np.random.RandomState(seed)
+    W1 = r.randn(S * S, units) * 0.1
+    W2 = r.randn(units, K) * 0.1
+    onehot = np.eye(K)[y]
+    curve = []
+    for epoch in range(epochs):
+        xb = augment(x, strength > 0, r, strength).reshape(len(x), -1)
+        pre = xb @ W1
+        h = np.maximum(pre, 0)
+        dz = (softmax(h @ W2) - onehot) / len(y)
+        W2 -= lr * h.T @ dz
+        W1 -= lr * xb.T @ ((dz @ W2.T) * (pre > 0))
+        if val is not None:
+            curve.append(score((W1, W2), *val))
+    return (W1, W2), curve
+
+
+def score(model, x, y):
+    W1, W2 = model
+    h = np.maximum(x.reshape(len(x), -1) @ W1, 0)
+    return float((softmax(h @ W2).argmax(axis=1) == y).mean())
+
+
+def conv_same(x, kernel, bias):
+    """x: (n, H, W, cin), kernel: (k, k, cin, cout), stride 1, same padding, relu."""
+    n, H, W, _ = x.shape
+    k = kernel.shape[0]
+    pad = k // 2
+    padded = np.pad(x, ((0, 0), (pad, pad), (pad, pad), (0, 0)))
+    out = np.zeros((n, H, W, kernel.shape[3])) + bias
+    for i in range(k):
+        for j in range(k):
+            out += padded[:, i:i + H, j:j + W, :] @ kernel[i, j]
+    return np.maximum(out, 0)
+
+
+def max_pool(x):
+    n, H, W, c = x.shape
+    return x.reshape(n, H // 2, 2, W // 2, 2, c).max(axis=(2, 4))
+
+
+filter_rng = np.random.RandomState(0)
+K1 = filter_rng.randn(3, 3, 1, 8) * np.sqrt(2.0 / 9)
+K2 = filter_rng.randn(3, 3, 8, 16) * np.sqrt(2.0 / 72)
+
+
+def feature_maps(images):
+    x = images[..., None]
+    conv1 = conv_same(x, K1, np.zeros(8))
+    conv2 = conv_same(max_pool(conv1), K2, np.zeros(16))
+    return {"conv1": conv1, "conv2": conv2}
+
+
+def train_head(images, labels, steps=400, lr=1.0):
+    pooled = feature_maps(images)["conv2"].mean(axis=(1, 2))
+    W, b = np.zeros((pooled.shape[1], K)), np.zeros(K)
+    onehot = np.eye(K)[labels]
+    for _ in range(steps):
+        p = softmax(pooled @ W + b)
+        W -= lr * pooled.T @ (p - onehot) / len(labels)
+        b -= lr * (p - onehot).mean(axis=0)
+    return W, b
+
+
+def predict(images, head):
+    W, b = head
+    return softmax(feature_maps(images)["conv2"].mean(axis=(1, 2)) @ W + b)
+
+
+x_train, y_train = make_images(300, seed=1)
+x_test, y_test = make_images(200, seed=2, shift=1)
+head = train_head(x_train, y_train)
+probabilities = predict(x_test, head)
+print("test accuracy is well above chance:", float((probabilities.argmax(axis=1) == y_test).mean()) > 0.5)
+
+image = x_test[0]
+guess = int(probabilities[0].argmax())
+
+
+def gradcam_raw(head, image, class_index):
+    W, b = head
+    maps = feature_maps(image[None, ...])["conv2"][0]
+    gradient = np.ones(maps.shape) * W[:, class_index] / (maps.shape[0] * maps.shape[1])
     weights = gradient.mean(axis=(0, 1))
-    raw = np.maximum((maps[0].numpy() * weights).sum(axis=-1), 0)
+    raw = np.maximum((maps * weights).sum(axis=-1), 0)
     return raw / (raw.max() + 1e-8), float(raw.max())
 
 
-untrained = build(1)                       # same architecture, never fitted
+untrained = (np.random.RandomState(5).randn(*head[0].shape) * 0.5, np.zeros(K))
+trained_map, trained_peak = gradcam_raw(head, image, guess)
+random_map, random_peak = gradcam_raw(untrained, image, guess)
+print("model        raw peak > 0")
+for label, peak in (("trained", trained_peak), ("untrained", random_peak)):
+    print(format(label, "12s"), peak > 0)
+correlation = np.corrcoef(trained_map.ravel(), ___.ravel())[0, 1]   # replace ___ with random_map
+print("an untrained network still produces a map with a peak:", random_peak > 0)
+print("the two maps are not the same picture (correlation below 0.5):", bool(correlation < 0.5))
+print("if your method cannot tell the two apart it is not measuring the model")`}
+  solution={`import numpy as np
+
+K, S = 3, 12
+glyph_rng = np.random.RandomState(7)
+GLYPHS = (glyph_rng.rand(K, 5, 5) > 0.45).astype(float)
+
+
+def make_images(n, seed, shift=0):
+    r = np.random.RandomState(seed)
+    y = r.randint(0, K, n)
+    x = np.zeros((n, S, S))
+    for i in range(n):
+        top = 3 + r.randint(-shift, shift + 1) if shift else 3
+        left = 3 + r.randint(-shift, shift + 1) if shift else 3
+        x[i, top:top + 5, left:left + 5] = GLYPHS[y[i]]
+    return x + 0.15 * r.randn(n, S, S), y
+
+
+def softmax(z):
+    p = np.exp(z - z.max(axis=1, keepdims=True))
+    return p / p.sum(axis=1, keepdims=True)
+
+
+def augment(batch, training, r, max_shift=2):
+    """Random shifts, applied only while training."""
+    if not training:
+        return batch
+    out = np.empty_like(batch)
+    for i, img in enumerate(batch):
+        dy, dx = r.randint(-max_shift, max_shift + 1, 2)
+        out[i] = np.roll(np.roll(img, dy, axis=0), dx, axis=1)
+    return out
+
+
+def train_model(x, y, epochs, strength=0, seed=0, val=None, lr=0.1, units=32):
+    r = np.random.RandomState(seed)
+    W1 = r.randn(S * S, units) * 0.1
+    W2 = r.randn(units, K) * 0.1
+    onehot = np.eye(K)[y]
+    curve = []
+    for epoch in range(epochs):
+        xb = augment(x, strength > 0, r, strength).reshape(len(x), -1)
+        pre = xb @ W1
+        h = np.maximum(pre, 0)
+        dz = (softmax(h @ W2) - onehot) / len(y)
+        W2 -= lr * h.T @ dz
+        W1 -= lr * xb.T @ ((dz @ W2.T) * (pre > 0))
+        if val is not None:
+            curve.append(score((W1, W2), *val))
+    return (W1, W2), curve
+
+
+def score(model, x, y):
+    W1, W2 = model
+    h = np.maximum(x.reshape(len(x), -1) @ W1, 0)
+    return float((softmax(h @ W2).argmax(axis=1) == y).mean())
+
+
+def conv_same(x, kernel, bias):
+    """x: (n, H, W, cin), kernel: (k, k, cin, cout), stride 1, same padding, relu."""
+    n, H, W, _ = x.shape
+    k = kernel.shape[0]
+    pad = k // 2
+    padded = np.pad(x, ((0, 0), (pad, pad), (pad, pad), (0, 0)))
+    out = np.zeros((n, H, W, kernel.shape[3])) + bias
+    for i in range(k):
+        for j in range(k):
+            out += padded[:, i:i + H, j:j + W, :] @ kernel[i, j]
+    return np.maximum(out, 0)
+
+
+def max_pool(x):
+    n, H, W, c = x.shape
+    return x.reshape(n, H // 2, 2, W // 2, 2, c).max(axis=(2, 4))
+
+
+filter_rng = np.random.RandomState(0)
+K1 = filter_rng.randn(3, 3, 1, 8) * np.sqrt(2.0 / 9)
+K2 = filter_rng.randn(3, 3, 8, 16) * np.sqrt(2.0 / 72)
+
+
+def feature_maps(images):
+    x = images[..., None]
+    conv1 = conv_same(x, K1, np.zeros(8))
+    conv2 = conv_same(max_pool(conv1), K2, np.zeros(16))
+    return {"conv1": conv1, "conv2": conv2}
+
+
+def train_head(images, labels, steps=400, lr=1.0):
+    pooled = feature_maps(images)["conv2"].mean(axis=(1, 2))
+    W, b = np.zeros((pooled.shape[1], K)), np.zeros(K)
+    onehot = np.eye(K)[labels]
+    for _ in range(steps):
+        p = softmax(pooled @ W + b)
+        W -= lr * pooled.T @ (p - onehot) / len(labels)
+        b -= lr * (p - onehot).mean(axis=0)
+    return W, b
+
+
+def predict(images, head):
+    W, b = head
+    return softmax(feature_maps(images)["conv2"].mean(axis=(1, 2)) @ W + b)
+
+
+x_train, y_train = make_images(300, seed=1)
+x_test, y_test = make_images(200, seed=2, shift=1)
+head = train_head(x_train, y_train)
+probabilities = predict(x_test, head)
+print("test accuracy is well above chance:", float((probabilities.argmax(axis=1) == y_test).mean()) > 0.5)
+
 image = x_test[0]
 guess = int(probabilities[0].argmax())
-trained_map, trained_peak = gradcam_raw(model, image, guess)
-random_map, random_peak = gradcam_raw(untrained, image, guess)
-print(f"{'model':12s} {'raw peak':>12} {'cells above 0.1':>16}")
-for label, heat_map, peak in (("trained", trained_map, trained_peak),
-                              ("untrained", random_map, random_peak)):
-    print(f"{label:12s} {peak:12.4f} "
-          f"{int((heat_map > 0.1).sum()):16d}")
-correlation = np.corrcoef(trained_map.ravel(), ___.ravel())[0, 1]
-# replace ___ with random_map
-print(f"correlation between the two maps: {correlation:.4f}")
-print("an untrained network still produces a smooth blob with a peak; if your")
-print("method cannot tell the two apart it is not measuring the model")
 
-# -- Expected Output -------------------------------------------
-# model            raw peak  cells above 0.1
-# trained            0.0761               17
-# untrained          0.0002               31
-# correlation between the two maps: 0.6729
-# an untrained network still produces a smooth blob with a peak; if your
-# method cannot tell the two apart it is not measuring the model
-#
-# (the raw peak differs by 375x, but the *normalised* maps still correlate at
-#  0.67 — so part of what Grad-CAM shows is the architecture, not the weights)
-# --------------------------------------------------------------`}
+
+def gradcam_raw(head, image, class_index):
+    W, b = head
+    maps = feature_maps(image[None, ...])["conv2"][0]
+    gradient = np.ones(maps.shape) * W[:, class_index] / (maps.shape[0] * maps.shape[1])
+    weights = gradient.mean(axis=(0, 1))
+    raw = np.maximum((maps * weights).sum(axis=-1), 0)
+    return raw / (raw.max() + 1e-8), float(raw.max())
+
+
+untrained = (np.random.RandomState(5).randn(*head[0].shape) * 0.5, np.zeros(K))
+trained_map, trained_peak = gradcam_raw(head, image, guess)
+random_map, random_peak = gradcam_raw(untrained, image, guess)
+print("model        raw peak > 0")
+for label, peak in (("trained", trained_peak), ("untrained", random_peak)):
+    print(format(label, "12s"), peak > 0)
+correlation = np.corrcoef(trained_map.ravel(), random_map.ravel())[0, 1]
+print("an untrained network still produces a map with a peak:", random_peak > 0)
+print("the two maps are not the same picture (correlation below 0.5):", bool(correlation < 0.5))
+print("if your method cannot tell the two apart it is not measuring the model")`}
+  sct={`test_output_contains("an untrained network still produces a map with a peak: True", pattern=False)
+test_output_contains("the two maps are not the same picture (correlation below 0.5): True", pattern=False)
+success_msg("An untrained network still produces a smooth blob with a peak, so the real test is whether the map changes when the weights do.")`}
+  height={460}
 />

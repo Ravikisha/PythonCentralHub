@@ -5,10 +5,6 @@ sidebar:
   order: 432
 ---
 
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
-import Figure from "../../../../components/Figure.astro";
-import Quiz from "../../../../components/Quiz.astro";
-
 The [previous page](/deep-learning/phase-04---sequence-models-with-rnns/intro-to-recurrent-neural-networks-rnn-for-sequences/)
 left a `SimpleRNN(32)` at **0.5856** on IMDB — behind a bag-of-words model that has no
 concept of order at all. The problem is the recurrence itself: $h_t = \tanh(W_x x_t +
@@ -140,7 +136,7 @@ Three honest observations:
    the additive update to a large fixed point that the first real tokens have to undo —
    the same attractor measured on the intro page, and a concrete reason to pass
    `mask_zero=True`.
-3. **A mean forget gate of 0.7275 is not long-term memory.** $0.7275^{10} = 0.0412$.
+3. **A mean forget gate of 0.7275 is not long-term memory.** $0.7275^{10} = 0.0415$.
    This trained cell is smoothing over a few tokens, which is what sentiment needs.
    The *capability* to hold a value for hundreds of steps is there — it is what $f
    \approx 1$ means — but this task never asked for it.
@@ -448,7 +444,7 @@ backwards:
         "The gate should always be exactly 0.5",
       ],
       answer: 1,
-      explain: "0.7275^10 = 0.0412. The capability to hold a value exists (f near 1); this task simply never needed it.",
+      explain: "0.7275^10 = 0.0415. The capability to hold a value exists (f near 1); this task simply never needed it.",
     },
     {
       q: "On the adding problem at 16 units and 20 epochs, two of three cells scored at the do-nothing baseline. What follows?",
@@ -479,102 +475,285 @@ backwards:
 
 <DataCampExercise
   lang="python"
-  hint={`Each gate needs an input matrix, a recurrent matrix and a bias, so count the weights Keras allocates and compare against G*(features*U + U^2 + U).`}
+  hint={`Each gate needs an input matrix, a recurrent matrix and a bias, so count the weights each cell allocates and compare against gates * (features*units + units*units + units).`}
   code={`# Task: Exercise 1 - Every gate is another weight matrix pair
 import numpy as np
-from tensorflow import keras
+
+
+def sigmoid(z):
+    return 1 / (1 + np.exp(-z))
+
+
+class Cell:
+    """SimpleRNN, GRU or LSTM with Keras-style weight shapes. Input (batch, time, features)."""
+    GATES = {"SimpleRNN": 1, "GRU": 3, "LSTM": 4}
+
+    def __init__(self, kind, units, features, seed=0, scale=1.0):
+        r = np.random.RandomState(seed)
+        g = self.GATES[kind]
+        self.kind, self.units = kind, units
+        self.kernel = r.randn(features, g * units) * np.sqrt(1.0 / features)
+        self.recurrent = r.randn(units, g * units) * scale / np.sqrt(units)
+        self.bias = np.zeros((2, g * units)) if kind == "GRU" else np.zeros(g * units)
+        if kind == "LSTM":
+            self.bias[units:2 * units] = 1.0           # unit_forget_bias
+        self.weights = [self.kernel, self.recurrent, self.bias]
+
+    def final_state(self, x):
+        n, t, _ = x.shape
+        u = self.units
+        h, c = np.zeros((n, u)), np.zeros((n, u))
+        for step in range(t):
+            if self.kind == "SimpleRNN":
+                h = np.tanh(x[:, step] @ self.kernel + h @ self.recurrent + self.bias)
+            elif self.kind == "GRU":
+                zx = x[:, step] @ self.kernel + self.bias[0]
+                zh = h @ self.recurrent + self.bias[1]
+                z = sigmoid(zx[:, :u] + zh[:, :u])
+                r = sigmoid(zx[:, u:2 * u] + zh[:, u:2 * u])
+                cand = np.tanh(zx[:, 2 * u:] + r * zh[:, 2 * u:])
+                h = z * h + (1 - z) * cand
+            else:
+                z = x[:, step] @ self.kernel + h @ self.recurrent + self.bias
+                i, f, g, o = sigmoid(z[:, :u]), sigmoid(z[:, u:2 * u]), np.tanh(z[:, 2 * u:3 * u]), sigmoid(z[:, 3 * u:])
+                c = f * c + i * g
+                h = o * np.tanh(c)
+        return h
+
 
 FEATURES = 32
-CELLS = (("SimpleRNN", keras.layers.SimpleRNN, 1),
-         ("GRU", keras.layers.GRU, 3),
-         ("LSTM", keras.layers.LSTM, 4))
-
-print(f"{'units':>6} " + " ".join(f"{name:>12}" for name, _, _ in CELLS))
+print("units   SimpleRNN          GRU         LSTM")
 for units in (16, 32, 64, 128):
     row = []
-    for _, layer_class, _ in CELLS:
-        layer = layer_class(units)
-        layer.build((None, 200, FEATURES))
-        row.append(int(sum(np.prod(w.shape) for w in layer.weights)))
-    print(f"{units:6d} " + " ".join(f"{v:12,}" for v in row))
+    for kind in ("SimpleRNN", "GRU", "LSTM"):
+        cell = Cell(kind, units, FEATURES)
+        row.append(int(sum(np.prod(w.shape) for w in cell.weights)))
+    print(format(units, "5d"), " ".join(format(v, "12,") for v in row))
 
-print()
-print(f"{'cell':12s} {'gates':>6} {'formula at 32':>14} {'counted':>9}")
-for name, layer_class, gates in CELLS:
-    layer = layer_class(32)
-    layer.build((None, 200, FEATURES))
-    counted = int(sum(np.prod(w.shape) for w in layer.weights))
+print("cell         gates  formula at 32   counted")
+matches = {}
+for kind in ("SimpleRNN", "GRU", "LSTM"):
+    cell = Cell(kind, 32, FEATURES)
+    gates = Cell.GATES[kind]
+    counted = int(sum(np.prod(w.shape) for w in cell.weights))
     formula = gates * (FEATURES * 32 + 32 * 32 + ___)   # replace ___ with 32
-    print(f"{name:12s} {gates:6d} {formula:14,} {counted:9,}")
-print("the GRU counts slightly above 3x because Keras carries a second bias")
-print("vector for its reset-after variant")
+    matches[kind] = (formula, counted)
+    print(format(kind, "12s"), format(gates, "6d"), format(formula, "14,"), format(counted, "9,"))
+print("SimpleRNN and LSTM match the formula exactly:", matches["SimpleRNN"][0] == matches["SimpleRNN"][1] and matches["LSTM"][0] == matches["LSTM"][1])
+print("the GRU counts slightly above 3x because of a second bias vector:", matches["GRU"][1] - matches["GRU"][0] == 3 * 32)
+print("an LSTM has four times the parameters of a SimpleRNN of the same width:", matches["LSTM"][1] == 4 * matches["SimpleRNN"][1])`}
+  solution={`import numpy as np
 
-# -- Expected Output -------------------------------------------
-#  units    SimpleRNN          GRU         LSTM
-#     16          784        2,400        3,136
-#     32        2,080        6,336        8,320
-#     64        6,208       18,816       24,832
-#    128       20,608       62,208       82,432
-#
-# cell          gates  formula at 32   counted
-# SimpleRNN         1          2,080     2,080
-# GRU               3          6,240     6,336
-# LSTM              4          8,320     8,320
-# the GRU counts slightly above 3x because Keras carries a second bias
-# vector for its reset-after variant
-# --------------------------------------------------------------`}
+
+def sigmoid(z):
+    return 1 / (1 + np.exp(-z))
+
+
+class Cell:
+    """SimpleRNN, GRU or LSTM with Keras-style weight shapes. Input (batch, time, features)."""
+    GATES = {"SimpleRNN": 1, "GRU": 3, "LSTM": 4}
+
+    def __init__(self, kind, units, features, seed=0, scale=1.0):
+        r = np.random.RandomState(seed)
+        g = self.GATES[kind]
+        self.kind, self.units = kind, units
+        self.kernel = r.randn(features, g * units) * np.sqrt(1.0 / features)
+        self.recurrent = r.randn(units, g * units) * scale / np.sqrt(units)
+        self.bias = np.zeros((2, g * units)) if kind == "GRU" else np.zeros(g * units)
+        if kind == "LSTM":
+            self.bias[units:2 * units] = 1.0           # unit_forget_bias
+        self.weights = [self.kernel, self.recurrent, self.bias]
+
+    def final_state(self, x):
+        n, t, _ = x.shape
+        u = self.units
+        h, c = np.zeros((n, u)), np.zeros((n, u))
+        for step in range(t):
+            if self.kind == "SimpleRNN":
+                h = np.tanh(x[:, step] @ self.kernel + h @ self.recurrent + self.bias)
+            elif self.kind == "GRU":
+                zx = x[:, step] @ self.kernel + self.bias[0]
+                zh = h @ self.recurrent + self.bias[1]
+                z = sigmoid(zx[:, :u] + zh[:, :u])
+                r = sigmoid(zx[:, u:2 * u] + zh[:, u:2 * u])
+                cand = np.tanh(zx[:, 2 * u:] + r * zh[:, 2 * u:])
+                h = z * h + (1 - z) * cand
+            else:
+                z = x[:, step] @ self.kernel + h @ self.recurrent + self.bias
+                i, f, g, o = sigmoid(z[:, :u]), sigmoid(z[:, u:2 * u]), np.tanh(z[:, 2 * u:3 * u]), sigmoid(z[:, 3 * u:])
+                c = f * c + i * g
+                h = o * np.tanh(c)
+        return h
+
+
+FEATURES = 32
+print("units   SimpleRNN          GRU         LSTM")
+for units in (16, 32, 64, 128):
+    row = []
+    for kind in ("SimpleRNN", "GRU", "LSTM"):
+        cell = Cell(kind, units, FEATURES)
+        row.append(int(sum(np.prod(w.shape) for w in cell.weights)))
+    print(format(units, "5d"), " ".join(format(v, "12,") for v in row))
+
+print("cell         gates  formula at 32   counted")
+matches = {}
+for kind in ("SimpleRNN", "GRU", "LSTM"):
+    cell = Cell(kind, 32, FEATURES)
+    gates = Cell.GATES[kind]
+    counted = int(sum(np.prod(w.shape) for w in cell.weights))
+    formula = gates * (FEATURES * 32 + 32 * 32 + 32)
+    matches[kind] = (formula, counted)
+    print(format(kind, "12s"), format(gates, "6d"), format(formula, "14,"), format(counted, "9,"))
+print("SimpleRNN and LSTM match the formula exactly:", matches["SimpleRNN"][0] == matches["SimpleRNN"][1] and matches["LSTM"][0] == matches["LSTM"][1])
+print("the GRU counts slightly above 3x because of a second bias vector:", matches["GRU"][1] - matches["GRU"][0] == 3 * 32)
+print("an LSTM has four times the parameters of a SimpleRNN of the same width:", matches["LSTM"][1] == 4 * matches["SimpleRNN"][1])`}
+  sct={`test_output_contains("SimpleRNN and LSTM match the formula exactly: True", pattern=False)
+test_output_contains("the GRU counts slightly above 3x because of a second bias vector: True", pattern=False)
+test_output_contains("an LSTM has four times the parameters of a SimpleRNN of the same width: True", pattern=False)
+success_msg("Every gate is another input matrix, recurrent matrix and bias, so an LSTM has four times the parameters of a plain recurrent layer and a GRU has three times plus a second bias.")`}
+  height={460}
 />
 
 <DataCampExercise
   lang="python"
-  hint={`Keras packs the four gates into one kernel of width 4*units in the order i, f, g, o. Slice them out and run c = f*c + i*g, h = o*tanh(c).`}
+  hint={`The four gates are packed into one kernel of width 4*units in the order i, f, g, o. Slice them out and run c = f*c + i*g, h = o*tanh(c).`}
   code={`# Task: Exercise 2 - The LSTM cell, from its own weights
 import numpy as np
-from tensorflow import keras
-
-TIMESTEPS, FEATURES, UNITS = 15, 6, 4
-keras.utils.set_random_seed(0)
-layer = keras.layers.LSTM(UNITS, return_sequences=True)
-sequence = np.random.default_rng(0).standard_normal(
-    (1, TIMESTEPS, FEATURES)).astype("float32")
-keras_states = layer(sequence).numpy()[0]
-kernel, recurrent, bias = layer.get_weights()
-print(f"kernel {kernel.shape}  recurrent {recurrent.shape}  bias {bias.shape}")
-print(f"one kernel of width 4 x {UNITS} = {4 * UNITS}: all four gates at once")
 
 
 def sigmoid(z):
-    return 1.0 / (1.0 + np.exp(-z))
+    return 1 / (1 + np.exp(-z))
 
 
-h = np.zeros(UNITS, "float32")
-c = np.zeros(UNITS, "float32")
-states = []
+class Cell:
+    """SimpleRNN, GRU or LSTM with Keras-style weight shapes. Input (batch, time, features)."""
+    GATES = {"SimpleRNN": 1, "GRU": 3, "LSTM": 4}
+
+    def __init__(self, kind, units, features, seed=0, scale=1.0):
+        r = np.random.RandomState(seed)
+        g = self.GATES[kind]
+        self.kind, self.units = kind, units
+        self.kernel = r.randn(features, g * units) * np.sqrt(1.0 / features)
+        self.recurrent = r.randn(units, g * units) * scale / np.sqrt(units)
+        self.bias = np.zeros((2, g * units)) if kind == "GRU" else np.zeros(g * units)
+        if kind == "LSTM":
+            self.bias[units:2 * units] = 1.0           # unit_forget_bias
+        self.weights = [self.kernel, self.recurrent, self.bias]
+
+    def final_state(self, x):
+        n, t, _ = x.shape
+        u = self.units
+        h, c = np.zeros((n, u)), np.zeros((n, u))
+        for step in range(t):
+            if self.kind == "SimpleRNN":
+                h = np.tanh(x[:, step] @ self.kernel + h @ self.recurrent + self.bias)
+            elif self.kind == "GRU":
+                zx = x[:, step] @ self.kernel + self.bias[0]
+                zh = h @ self.recurrent + self.bias[1]
+                z = sigmoid(zx[:, :u] + zh[:, :u])
+                r = sigmoid(zx[:, u:2 * u] + zh[:, u:2 * u])
+                cand = np.tanh(zx[:, 2 * u:] + r * zh[:, 2 * u:])
+                h = z * h + (1 - z) * cand
+            else:
+                z = x[:, step] @ self.kernel + h @ self.recurrent + self.bias
+                i, f, g, o = sigmoid(z[:, :u]), sigmoid(z[:, u:2 * u]), np.tanh(z[:, 2 * u:3 * u]), sigmoid(z[:, 3 * u:])
+                c = f * c + i * g
+                h = o * np.tanh(c)
+        return h
+
+
+TIMESTEPS, FEATURES, UNITS = 15, 6, 4
+layer = Cell("LSTM", UNITS, FEATURES, seed=0)
+sequence = np.random.RandomState(0).randn(1, TIMESTEPS, FEATURES)
+layer_state = layer.final_state(sequence)[0]
+kernel, recurrent, bias = layer.weights
+print("kernel", kernel.shape, " recurrent", recurrent.shape, " bias", bias.shape)
+print("one kernel of width 4 x", UNITS, "=", 4 * UNITS, ": all four gates at once")
+
+h = np.zeros(UNITS)
+c = np.zeros(UNITS)
 for x in sequence[0]:
     z = x @ kernel + h @ recurrent + bias
     i = sigmoid(z[:UNITS])
     f = sigmoid(z[UNITS:2 * UNITS])
     g = np.tanh(z[2 * UNITS:3 * UNITS])
     o = sigmoid(z[3 * UNITS:])
-    c = f * c + i * ___                      # replace ___ with g
+    c = f * c + i * ___   # replace ___ with g
     h = o * np.tanh(c)
-    states.append(h.copy())
-mine = np.stack(states)
-print(f"max |difference| against Keras: "
-      f"{float(np.abs(mine - keras_states).max()):.2e}")
-print(f"final carry |c| {float(np.abs(c).mean()):.4f}  "
-      f"final hidden |h| {float(np.abs(h).mean()):.4f}")
+print("the hand-written cell reproduces the layer's final state:", bool(np.allclose(h, layer_state)))
+print("the carry and the hidden state are different things:", not np.allclose(c, h))
 print("slice the gates in the wrong order and the cell still runs - it just")
-print("learns nothing sensible, with no error to tell you")
+print("learns nothing sensible, with no error to tell you")`}
+  solution={`import numpy as np
 
-# -- Expected Output -------------------------------------------
-# kernel (6, 16)  recurrent (4, 16)  bias (16,)
-# one kernel of width 4 x 4 = 16: all four gates at once
-# max |difference| against Keras: 1.19e-07
-# final carry |c| 0.5121  final hidden |h| 0.2853
-# slice the gates in the wrong order and the cell still runs - it just
-# learns nothing sensible, with no error to tell you
-# --------------------------------------------------------------`}
+
+def sigmoid(z):
+    return 1 / (1 + np.exp(-z))
+
+
+class Cell:
+    """SimpleRNN, GRU or LSTM with Keras-style weight shapes. Input (batch, time, features)."""
+    GATES = {"SimpleRNN": 1, "GRU": 3, "LSTM": 4}
+
+    def __init__(self, kind, units, features, seed=0, scale=1.0):
+        r = np.random.RandomState(seed)
+        g = self.GATES[kind]
+        self.kind, self.units = kind, units
+        self.kernel = r.randn(features, g * units) * np.sqrt(1.0 / features)
+        self.recurrent = r.randn(units, g * units) * scale / np.sqrt(units)
+        self.bias = np.zeros((2, g * units)) if kind == "GRU" else np.zeros(g * units)
+        if kind == "LSTM":
+            self.bias[units:2 * units] = 1.0           # unit_forget_bias
+        self.weights = [self.kernel, self.recurrent, self.bias]
+
+    def final_state(self, x):
+        n, t, _ = x.shape
+        u = self.units
+        h, c = np.zeros((n, u)), np.zeros((n, u))
+        for step in range(t):
+            if self.kind == "SimpleRNN":
+                h = np.tanh(x[:, step] @ self.kernel + h @ self.recurrent + self.bias)
+            elif self.kind == "GRU":
+                zx = x[:, step] @ self.kernel + self.bias[0]
+                zh = h @ self.recurrent + self.bias[1]
+                z = sigmoid(zx[:, :u] + zh[:, :u])
+                r = sigmoid(zx[:, u:2 * u] + zh[:, u:2 * u])
+                cand = np.tanh(zx[:, 2 * u:] + r * zh[:, 2 * u:])
+                h = z * h + (1 - z) * cand
+            else:
+                z = x[:, step] @ self.kernel + h @ self.recurrent + self.bias
+                i, f, g, o = sigmoid(z[:, :u]), sigmoid(z[:, u:2 * u]), np.tanh(z[:, 2 * u:3 * u]), sigmoid(z[:, 3 * u:])
+                c = f * c + i * g
+                h = o * np.tanh(c)
+        return h
+
+
+TIMESTEPS, FEATURES, UNITS = 15, 6, 4
+layer = Cell("LSTM", UNITS, FEATURES, seed=0)
+sequence = np.random.RandomState(0).randn(1, TIMESTEPS, FEATURES)
+layer_state = layer.final_state(sequence)[0]
+kernel, recurrent, bias = layer.weights
+print("kernel", kernel.shape, " recurrent", recurrent.shape, " bias", bias.shape)
+print("one kernel of width 4 x", UNITS, "=", 4 * UNITS, ": all four gates at once")
+
+h = np.zeros(UNITS)
+c = np.zeros(UNITS)
+for x in sequence[0]:
+    z = x @ kernel + h @ recurrent + bias
+    i = sigmoid(z[:UNITS])
+    f = sigmoid(z[UNITS:2 * UNITS])
+    g = np.tanh(z[2 * UNITS:3 * UNITS])
+    o = sigmoid(z[3 * UNITS:])
+    c = f * c + i * g
+    h = o * np.tanh(c)
+print("the hand-written cell reproduces the layer's final state:", bool(np.allclose(h, layer_state)))
+print("the carry and the hidden state are different things:", not np.allclose(c, h))
+print("slice the gates in the wrong order and the cell still runs - it just")
+print("learns nothing sensible, with no error to tell you")`}
+  sct={`test_output_contains("kernel (6, 16)  recurrent (4, 16)  bias (16,)", pattern=False)
+test_output_contains("the hand-written cell reproduces the layer's final state: True", pattern=False)
+success_msg("Slicing one wide kernel into four gates and running c = f*c + i*g, h = o*tanh(c) reproduces the whole layer.")`}
+  height={460}
 />
 
 <DataCampExercise
@@ -598,147 +777,420 @@ print("for the length of a review")
 # -- Expected Output -------------------------------------------
 #  forget gate  after 10 steps   after 50  half-life
 #       0.5000        0.000977   0.000000        1.0
-#       0.7275        0.041216   0.000000        2.2
+#       0.7275        0.041527   0.000000        2.2
 #       0.9000        0.348678   0.005154        6.6
 #       0.9900        0.904382   0.605006       69.0
-#       0.9990        0.990045   0.951217      692.8
-# the measured gate keeps 0.0412 of a memory after ten
+#       0.9990        0.990045   0.951206      692.8
+# the measured gate keeps 0.0415 of a memory after ten
 # steps: that cell is smoothing over a few tokens, not storing anything
 # for the length of a review
 # --------------------------------------------------------------`}
+  solution={`import numpy as np
+
+MEASURED = 0.7275          # the trained LSTM's mean forget gate
+print(f"{'forget gate':>12} {'after 10 steps':>15} {'after 50':>10} "
+      f"{'half-life':>10}")
+for gate in (0.50, MEASURED, 0.90, 0.99, 0.999):
+    after10 = gate ** 10
+    after50 = gate ** 50
+    half_life = np.log(0.5) / np.log(gate)
+    print(f"{gate:12.4f} {after10:15.6f} {after50:10.6f} {half_life:10.1f}")
+print(f"the measured gate keeps {MEASURED ** 10:.4f} of a memory after ten")
+print("steps: that cell is smoothing over a few tokens, not storing anything")
+print("for the length of a review")`}
+  sct={`test_output_contains("0.7275        0.041527", pattern=False)
+test_output_contains("0.9900        0.904382   0.605006       69.0", pattern=False)
+success_msg("A forget gate of 0.73 keeps only 4% of a memory after ten steps; it takes a gate near 0.99 to remember across a whole review.")`}
+  height={460}
 />
 
 <DataCampExercise
   lang="python"
-  hint={`Swap only the recurrent layer between the three models — embedding, head, seed and epochs must be identical or the comparison means nothing.`}
+  hint={`Use the same readout on every cell and swap only the recurrent layer, so the difference is the gating. The trained readout looks at the cell's final state.`}
   code={`# Task: Exercise 4 - What the gates buy on real text
-import time
-
 import numpy as np
-from tensorflow import keras
 
-VOCAB, MAXLEN, LIMIT, EPOCHS = 10000, 200, 5000, 5
-(x_train, y_train), (x_test, y_test) = keras.datasets.imdb.load_data(
-    num_words=VOCAB)
-pad = keras.preprocessing.sequence.pad_sequences
-x_train = pad(x_train[:LIMIT], maxlen=MAXLEN)
-x_test = pad(x_test[:LIMIT // 2], maxlen=MAXLEN)
-y_train, y_test = y_train[:LIMIT], y_test[:LIMIT // 2]
 
-print(f"{'cell':12s} {'recurrent params':>17} {'best val acc':>13} "
-      f"{'seconds':>9}")
-for name, layer_class in (("SimpleRNN", keras.layers.SimpleRNN),
-                          ("GRU", keras.layers.GRU),
-                          ("LSTM", keras.layers.LSTM)):
-    keras.utils.set_random_seed(0)
-    cell = layer_class(32)
-    model = keras.Sequential([keras.layers.Input((MAXLEN,)),
-                              keras.layers.Embedding(VOCAB, 32),
-                              cell,
-                              keras.layers.Dense(1, activation="sigmoid")])
-    model.compile(keras.optimizers.Adam(1e-3), "binary_crossentropy",
-                  metrics=["accuracy"])
-    started = time.perf_counter()
-    history = model.fit(x_train, y_train, epochs=EPOCHS, batch_size=64,
-                        verbose=0, validation_data=(x_test, y_test))
-    recurrent_params = int(sum(np.prod(w.shape) for w in ___.weights))
-    # replace ___ with cell
-    print(f"{name:12s} {recurrent_params:17,} "
-          f"{max(history.history['val_accuracy']):13.4f} "
-          f"{time.perf_counter() - started:9.1f}")
-print("the gates are worth about +0.23 accuracy here, for 3-4x the recurrent")
-print("parameters and roughly 1.6x the wall-clock")
+def sigmoid(z):
+    return 1 / (1 + np.exp(-z))
 
-# -- Expected Output -------------------------------------------
-# cell          recurrent params  best val acc   seconds
-# SimpleRNN                2,080        0.5856      29.5
-# GRU                      6,336        0.8156      52.3
-# LSTM                     8,320        0.8136      47.9
-# the gates are worth about +0.23 accuracy here, for 3-4x the recurrent
-# parameters and roughly 1.6x the wall-clock
-# --------------------------------------------------------------`}
+
+class Cell:
+    """SimpleRNN, GRU or LSTM with Keras-style weight shapes. Input (batch, time, features)."""
+    GATES = {"SimpleRNN": 1, "GRU": 3, "LSTM": 4}
+
+    def __init__(self, kind, units, features, seed=0, scale=1.0):
+        r = np.random.RandomState(seed)
+        g = self.GATES[kind]
+        self.kind, self.units = kind, units
+        self.kernel = r.randn(features, g * units) * np.sqrt(1.0 / features)
+        self.recurrent = r.randn(units, g * units) * scale / np.sqrt(units)
+        self.bias = np.zeros((2, g * units)) if kind == "GRU" else np.zeros(g * units)
+        if kind == "LSTM":
+            self.bias[units:2 * units] = 1.0           # unit_forget_bias
+        self.weights = [self.kernel, self.recurrent, self.bias]
+
+    def final_state(self, x):
+        n, t, _ = x.shape
+        u = self.units
+        h, c = np.zeros((n, u)), np.zeros((n, u))
+        for step in range(t):
+            if self.kind == "SimpleRNN":
+                h = np.tanh(x[:, step] @ self.kernel + h @ self.recurrent + self.bias)
+            elif self.kind == "GRU":
+                zx = x[:, step] @ self.kernel + self.bias[0]
+                zh = h @ self.recurrent + self.bias[1]
+                z = sigmoid(zx[:, :u] + zh[:, :u])
+                r = sigmoid(zx[:, u:2 * u] + zh[:, u:2 * u])
+                cand = np.tanh(zx[:, 2 * u:] + r * zh[:, 2 * u:])
+                h = z * h + (1 - z) * cand
+            else:
+                z = x[:, step] @ self.kernel + h @ self.recurrent + self.bias
+                i, f, g, o = sigmoid(z[:, :u]), sigmoid(z[:, u:2 * u]), np.tanh(z[:, 2 * u:3 * u]), sigmoid(z[:, 3 * u:])
+                c = f * c + i * g
+                h = o * np.tanh(c)
+        return h
+
+
+def make(n, length, seed):
+    r = np.random.RandomState(seed)
+    x = r.normal(0, 0.3, (n, length, 1))
+    bits = r.randint(0, 2, n)
+    x[:, 0, 0] = bits * 2 - 1                     # the clue is at the FIRST step
+    return x, bits
+
+
+def readout(features, y, epochs=400, lr=0.5):
+    f = np.c_[features, np.ones(len(features))]
+    w = np.zeros(f.shape[1])
+    for _ in range(epochs):
+        w -= lr * f.T @ (1 / (1 + np.exp(-f @ w)) - y) / len(y)
+    return w
+
+
+print("length  cell          recovers the first clue")
+results = {}
+for length in (10, 20):
+    x, y = make(1500, length, 0)
+    x_test, y_test = make(1000, length, 1)
+    for kind in ("SimpleRNN", "GRU", "LSTM"):
+        cell = Cell(kind, 32, 1, seed=0)
+        w = readout(cell.final_state(x), y)
+        test = np.c_[cell.___(x_test), np.ones(len(x_test))]   # replace ___ with final_state
+        results[(length, kind)] = float((((test @ w) > 0) == y_test).mean())
+        print(format(length, "6d"), format(kind, "12s"), "measured")
+print("at length 20 the LSTM still holds the early clue (above 0.75):", results[(20, "LSTM")] > 0.75)
+print("at length 20 the SimpleRNN has lost it (below 0.65):", results[(20, "SimpleRNN")] < 0.65)
+print("the LSTM beats the SimpleRNN at length 20 by more than 0.15:", results[(20, "LSTM")] - results[(20, "SimpleRNN")] > 0.15)
+print("the gates are worth memory: the further back the clue, the more they matter")`}
+  solution={`import numpy as np
+
+
+def sigmoid(z):
+    return 1 / (1 + np.exp(-z))
+
+
+class Cell:
+    """SimpleRNN, GRU or LSTM with Keras-style weight shapes. Input (batch, time, features)."""
+    GATES = {"SimpleRNN": 1, "GRU": 3, "LSTM": 4}
+
+    def __init__(self, kind, units, features, seed=0, scale=1.0):
+        r = np.random.RandomState(seed)
+        g = self.GATES[kind]
+        self.kind, self.units = kind, units
+        self.kernel = r.randn(features, g * units) * np.sqrt(1.0 / features)
+        self.recurrent = r.randn(units, g * units) * scale / np.sqrt(units)
+        self.bias = np.zeros((2, g * units)) if kind == "GRU" else np.zeros(g * units)
+        if kind == "LSTM":
+            self.bias[units:2 * units] = 1.0           # unit_forget_bias
+        self.weights = [self.kernel, self.recurrent, self.bias]
+
+    def final_state(self, x):
+        n, t, _ = x.shape
+        u = self.units
+        h, c = np.zeros((n, u)), np.zeros((n, u))
+        for step in range(t):
+            if self.kind == "SimpleRNN":
+                h = np.tanh(x[:, step] @ self.kernel + h @ self.recurrent + self.bias)
+            elif self.kind == "GRU":
+                zx = x[:, step] @ self.kernel + self.bias[0]
+                zh = h @ self.recurrent + self.bias[1]
+                z = sigmoid(zx[:, :u] + zh[:, :u])
+                r = sigmoid(zx[:, u:2 * u] + zh[:, u:2 * u])
+                cand = np.tanh(zx[:, 2 * u:] + r * zh[:, 2 * u:])
+                h = z * h + (1 - z) * cand
+            else:
+                z = x[:, step] @ self.kernel + h @ self.recurrent + self.bias
+                i, f, g, o = sigmoid(z[:, :u]), sigmoid(z[:, u:2 * u]), np.tanh(z[:, 2 * u:3 * u]), sigmoid(z[:, 3 * u:])
+                c = f * c + i * g
+                h = o * np.tanh(c)
+        return h
+
+
+def make(n, length, seed):
+    r = np.random.RandomState(seed)
+    x = r.normal(0, 0.3, (n, length, 1))
+    bits = r.randint(0, 2, n)
+    x[:, 0, 0] = bits * 2 - 1                     # the clue is at the FIRST step
+    return x, bits
+
+
+def readout(features, y, epochs=400, lr=0.5):
+    f = np.c_[features, np.ones(len(features))]
+    w = np.zeros(f.shape[1])
+    for _ in range(epochs):
+        w -= lr * f.T @ (1 / (1 + np.exp(-f @ w)) - y) / len(y)
+    return w
+
+
+print("length  cell          recovers the first clue")
+results = {}
+for length in (10, 20):
+    x, y = make(1500, length, 0)
+    x_test, y_test = make(1000, length, 1)
+    for kind in ("SimpleRNN", "GRU", "LSTM"):
+        cell = Cell(kind, 32, 1, seed=0)
+        w = readout(cell.final_state(x), y)
+        test = np.c_[cell.final_state(x_test), np.ones(len(x_test))]
+        results[(length, kind)] = float((((test @ w) > 0) == y_test).mean())
+        print(format(length, "6d"), format(kind, "12s"), "measured")
+print("at length 20 the LSTM still holds the early clue (above 0.75):", results[(20, "LSTM")] > 0.75)
+print("at length 20 the SimpleRNN has lost it (below 0.65):", results[(20, "SimpleRNN")] < 0.65)
+print("the LSTM beats the SimpleRNN at length 20 by more than 0.15:", results[(20, "LSTM")] - results[(20, "SimpleRNN")] > 0.15)
+print("the gates are worth memory: the further back the clue, the more they matter")`}
+  sct={`test_output_contains("at length 20 the LSTM still holds the early clue (above 0.75): True", pattern=False)
+test_output_contains("at length 20 the SimpleRNN has lost it (below 0.65): True", pattern=False)
+test_output_contains("the LSTM beats the SimpleRNN at length 20 by more than 0.15: True", pattern=False)
+success_msg("With the clue at the very first step, an LSTM's carry path still holds it at length 20 while a plain recurrent layer has lost it.")`}
+  height={460}
 />
 
 <DataCampExercise
   lang="python"
-  hint={`Two marked positions, one early and one late; the target is the sum of the two marked values. Always compare against predicting the mean sum of 1.0.`}
+  hint={`Two marked positions, one early and one late; the target is the sum of the two marked values. Always compare against predicting the mean.`}
   code={`# Task: Exercise 5 - The adding problem, and its baseline
 import numpy as np
-from tensorflow import keras
 
-LENGTH, ROWS, EPOCHS, UNITS = 80, 3000, 30, 32
+
+def sigmoid(z):
+    return 1 / (1 + np.exp(-z))
+
+
+class Cell:
+    """SimpleRNN, GRU or LSTM with Keras-style weight shapes. Input (batch, time, features)."""
+    GATES = {"SimpleRNN": 1, "GRU": 3, "LSTM": 4}
+
+    def __init__(self, kind, units, features, seed=0, scale=1.0):
+        r = np.random.RandomState(seed)
+        g = self.GATES[kind]
+        self.kind, self.units = kind, units
+        self.kernel = r.randn(features, g * units) * np.sqrt(1.0 / features)
+        self.recurrent = r.randn(units, g * units) * scale / np.sqrt(units)
+        self.bias = np.zeros((2, g * units)) if kind == "GRU" else np.zeros(g * units)
+        if kind == "LSTM":
+            self.bias[units:2 * units] = 1.0           # unit_forget_bias
+        self.weights = [self.kernel, self.recurrent, self.bias]
+
+    def final_state(self, x):
+        n, t, _ = x.shape
+        u = self.units
+        h, c = np.zeros((n, u)), np.zeros((n, u))
+        for step in range(t):
+            if self.kind == "SimpleRNN":
+                h = np.tanh(x[:, step] @ self.kernel + h @ self.recurrent + self.bias)
+            elif self.kind == "GRU":
+                zx = x[:, step] @ self.kernel + self.bias[0]
+                zh = h @ self.recurrent + self.bias[1]
+                z = sigmoid(zx[:, :u] + zh[:, :u])
+                r = sigmoid(zx[:, u:2 * u] + zh[:, u:2 * u])
+                cand = np.tanh(zx[:, 2 * u:] + r * zh[:, 2 * u:])
+                h = z * h + (1 - z) * cand
+            else:
+                z = x[:, step] @ self.kernel + h @ self.recurrent + self.bias
+                i, f, g, o = sigmoid(z[:, :u]), sigmoid(z[:, u:2 * u]), np.tanh(z[:, 2 * u:3 * u]), sigmoid(z[:, 3 * u:])
+                c = f * c + i * g
+                h = o * np.tanh(c)
+        return h
+
+
+LENGTH, ROWS = 20, 3000
 
 
 def adding_task(length, rows, seed=0):
-    rng = np.random.default_rng(seed)
-    values = rng.uniform(0.0, 1.0, (rows, length)).astype("float32")
-    markers = np.zeros((rows, length), "float32")
-    early = rng.integers(0, max(1, length // 10), rows)
-    late = rng.integers(length // 2, length, rows)
+    rng = np.random.RandomState(seed)
+    values = rng.uniform(0.0, 1.0, (rows, length))
+    markers = np.zeros((rows, length))
+    early = rng.randint(0, max(1, length // 10), rows)
+    late = rng.randint(length // 2, length, rows)
     index = np.arange(rows)
     markers[index, early] = 1.0
     markers[index, late] = 1.0
-    targets = values[index, early] + values[index, ___]
-    # replace ___ with late
+    targets = values[index, early] + values[index, ___]   # replace ___ with late
     return np.stack([values, markers], axis=-1), targets
 
 
 x, y = adding_task(LENGTH, ROWS)
 x_test, y_test = adding_task(LENGTH, 1000, seed=1)
 baseline = float(np.abs(y_test - 1.0).mean())
-print(f"sequence length {LENGTH}, target = the sum of two marked values")
-print(f"target mean {y.mean():.4f}  sd {y.std():.4f}")
-print(f"predicting the mean sum of 1.0 scores MAE {baseline:.4f}")
-print(f"{'cell':12s} {'best val MAE':>13} {'beats baseline by':>18}")
-for name, layer_class in (("SimpleRNN", keras.layers.SimpleRNN),
-                          ("GRU", keras.layers.GRU),
-                          ("LSTM", keras.layers.LSTM)):
-    keras.utils.set_random_seed(0)
-    model = keras.Sequential([keras.layers.Input((LENGTH, 2)),
-                              layer_class(UNITS),
-                              keras.layers.Dense(1)])
-    model.compile(keras.optimizers.Adam(3e-3), "mse", metrics=["mae"])
-    history = model.fit(x, y, epochs=EPOCHS, batch_size=64, verbose=0,
-                        validation_data=(x_test, y_test))
-    best = min(history.history["val_mae"])
-    print(f"{name:12s} {best:13.4f} {baseline - best:+18.4f}")
+print("sequence length", LENGTH, ", target = the sum of two marked values")
+print("predicting the mean sum of 1.0 scores an MAE that we must beat")
+maes = {}
+for kind in ("SimpleRNN", "GRU", "LSTM"):
+    cell = Cell(kind, 64, 2, seed=0)
+    f = np.c_[cell.final_state(x), np.ones(ROWS)]
+    ft = np.c_[cell.final_state(x_test), np.ones(len(x_test))]
+    w = np.linalg.solve(f.T @ f + 1e-2 * np.eye(f.shape[1]), f.T @ y)
+    maes[kind] = float(np.abs(ft @ w - y_test).mean())
+    print(format(kind, "12s"), "measured")
+print("every cell beats the baseline:", all(v < baseline for v in maes.values()))
+print("the LSTM beats the baseline by more than 0.2:", baseline - maes["LSTM"] > 0.2)
+print("the LSTM is the best of the three:", maes["LSTM"] < maes["GRU"] < maes["SimpleRNN"])
 print("a cell sitting at the baseline has not been shown to be incapable, only")
-print("untrained: raise the units and the epochs before drawing a conclusion")
+print("untrained: raise the units and the epochs before drawing a conclusion")`}
+  solution={`import numpy as np
 
-# -- Expected Output -------------------------------------------
-# (the baseline is about 0.33; whether a cell beats it depends heavily on the
-#  budget, which is the entire point of this exercise)
-# --------------------------------------------------------------`}
+
+def sigmoid(z):
+    return 1 / (1 + np.exp(-z))
+
+
+class Cell:
+    """SimpleRNN, GRU or LSTM with Keras-style weight shapes. Input (batch, time, features)."""
+    GATES = {"SimpleRNN": 1, "GRU": 3, "LSTM": 4}
+
+    def __init__(self, kind, units, features, seed=0, scale=1.0):
+        r = np.random.RandomState(seed)
+        g = self.GATES[kind]
+        self.kind, self.units = kind, units
+        self.kernel = r.randn(features, g * units) * np.sqrt(1.0 / features)
+        self.recurrent = r.randn(units, g * units) * scale / np.sqrt(units)
+        self.bias = np.zeros((2, g * units)) if kind == "GRU" else np.zeros(g * units)
+        if kind == "LSTM":
+            self.bias[units:2 * units] = 1.0           # unit_forget_bias
+        self.weights = [self.kernel, self.recurrent, self.bias]
+
+    def final_state(self, x):
+        n, t, _ = x.shape
+        u = self.units
+        h, c = np.zeros((n, u)), np.zeros((n, u))
+        for step in range(t):
+            if self.kind == "SimpleRNN":
+                h = np.tanh(x[:, step] @ self.kernel + h @ self.recurrent + self.bias)
+            elif self.kind == "GRU":
+                zx = x[:, step] @ self.kernel + self.bias[0]
+                zh = h @ self.recurrent + self.bias[1]
+                z = sigmoid(zx[:, :u] + zh[:, :u])
+                r = sigmoid(zx[:, u:2 * u] + zh[:, u:2 * u])
+                cand = np.tanh(zx[:, 2 * u:] + r * zh[:, 2 * u:])
+                h = z * h + (1 - z) * cand
+            else:
+                z = x[:, step] @ self.kernel + h @ self.recurrent + self.bias
+                i, f, g, o = sigmoid(z[:, :u]), sigmoid(z[:, u:2 * u]), np.tanh(z[:, 2 * u:3 * u]), sigmoid(z[:, 3 * u:])
+                c = f * c + i * g
+                h = o * np.tanh(c)
+        return h
+
+
+LENGTH, ROWS = 20, 3000
+
+
+def adding_task(length, rows, seed=0):
+    rng = np.random.RandomState(seed)
+    values = rng.uniform(0.0, 1.0, (rows, length))
+    markers = np.zeros((rows, length))
+    early = rng.randint(0, max(1, length // 10), rows)
+    late = rng.randint(length // 2, length, rows)
+    index = np.arange(rows)
+    markers[index, early] = 1.0
+    markers[index, late] = 1.0
+    targets = values[index, early] + values[index, late]
+    return np.stack([values, markers], axis=-1), targets
+
+
+x, y = adding_task(LENGTH, ROWS)
+x_test, y_test = adding_task(LENGTH, 1000, seed=1)
+baseline = float(np.abs(y_test - 1.0).mean())
+print("sequence length", LENGTH, ", target = the sum of two marked values")
+print("predicting the mean sum of 1.0 scores an MAE that we must beat")
+maes = {}
+for kind in ("SimpleRNN", "GRU", "LSTM"):
+    cell = Cell(kind, 64, 2, seed=0)
+    f = np.c_[cell.final_state(x), np.ones(ROWS)]
+    ft = np.c_[cell.final_state(x_test), np.ones(len(x_test))]
+    w = np.linalg.solve(f.T @ f + 1e-2 * np.eye(f.shape[1]), f.T @ y)
+    maes[kind] = float(np.abs(ft @ w - y_test).mean())
+    print(format(kind, "12s"), "measured")
+print("every cell beats the baseline:", all(v < baseline for v in maes.values()))
+print("the LSTM beats the baseline by more than 0.2:", baseline - maes["LSTM"] > 0.2)
+print("the LSTM is the best of the three:", maes["LSTM"] < maes["GRU"] < maes["SimpleRNN"])
+print("a cell sitting at the baseline has not been shown to be incapable, only")
+print("untrained: raise the units and the epochs before drawing a conclusion")`}
+  sct={`test_output_contains("every cell beats the baseline: True", pattern=False)
+test_output_contains("the LSTM beats the baseline by more than 0.2: True", pattern=False)
+test_output_contains("the LSTM is the best of the three: True", pattern=False)
+success_msg("The adding problem needs two far-apart values to survive to the end. Always compare against predicting the mean, and here the LSTM is the only cell that clearly beats it.")`}
+  height={460}
 />
 
 <DataCampExercise
   lang="python"
-  hint={`unit_forget_bias initialises the forget slice of the bias vector to 1 and leaves the other three at 0. Slice the bias into four equal parts to see it.`}
+  hint={`unit_forget_bias initialises the forget slice of the bias vector to 1 and leaves the other three at 0. Slice the bias into four equal parts.`}
   code={`# Task: Exercise 6 - Why the forget bias starts at 1
 import numpy as np
-from tensorflow import keras
+
 
 UNITS, FEATURES = 8, 4
-print(f"{'unit_forget_bias':>17} {'i slice':>10} {'f slice':>10} "
-      f"{'g slice':>10} {'o slice':>10}")
-for flag in (True, False):
-    keras.utils.set_random_seed(0)
-    layer = keras.layers.LSTM(UNITS, unit_forget_bias=flag)
-    layer.build((None, 20, FEATURES))
-    bias = layer.get_weights()[2]
-    parts = [bias[k * UNITS:(k + 1) * UNITS].mean() for k in range(___)]
-    # replace ___ with 4
-    print(f"{str(flag):>17} " + " ".join(f"{float(v):10.4f}" for v in parts))
-print(f"sigmoid(1) = {1 / (1 + np.exp(-1)):.4f}, so with the default the cell")
-print("starts out keeping about 73% of its carry per step instead of erasing")
-print("it - the same reasoning as a residual connection starting near identity")
 
-# -- Expected Output -------------------------------------------
-#  unit_forget_bias    i slice    f slice    g slice    o slice
-#               True     0.0000     1.0000     0.0000     0.0000
-#              False     0.0000     0.0000     0.0000     0.0000
-# sigmoid(1) = 0.7311, so with the default the cell
-# starts out keeping about 73% of its carry per step instead of erasing
-# it - the same reasoning as a residual connection starting near identity
-# --------------------------------------------------------------`}
+
+def lstm_bias(unit_forget_bias):
+    """Keras packs the bias as [input | forget | cell | output]."""
+    bias = np.zeros(4 * UNITS)
+    if unit_forget_bias:
+        bias[UNITS:2 * UNITS] = 1.0
+    return bias
+
+
+print("unit_forget_bias   i slice    f slice    g slice    o slice")
+slices = {}
+for flag in (True, False):
+    bias = lstm_bias(flag)
+    parts = [bias[k * UNITS:(k + 1) * UNITS].mean() for k in range(___)]   # replace ___ with 4
+    slices[flag] = parts
+    print(format(str(flag), "17s"), " ".join(format(float(v), "10.4f") for v in parts))
+print("with the default only the forget slice is 1:", slices[True] == [0.0, 1.0, 0.0, 0.0])
+print("without it every slice is 0:", slices[False] == [0.0, 0.0, 0.0, 0.0])
+print("sigmoid(1) =", format(1 / (1 + np.exp(-1)), ".4f"), ", so with the default the cell")
+print("starts out keeping about 73% of its carry per step instead of erasing")
+print("it - the same reasoning as a residual connection starting near identity")`}
+  solution={`import numpy as np
+
+
+UNITS, FEATURES = 8, 4
+
+
+def lstm_bias(unit_forget_bias):
+    """Keras packs the bias as [input | forget | cell | output]."""
+    bias = np.zeros(4 * UNITS)
+    if unit_forget_bias:
+        bias[UNITS:2 * UNITS] = 1.0
+    return bias
+
+
+print("unit_forget_bias   i slice    f slice    g slice    o slice")
+slices = {}
+for flag in (True, False):
+    bias = lstm_bias(flag)
+    parts = [bias[k * UNITS:(k + 1) * UNITS].mean() for k in range(4)]
+    slices[flag] = parts
+    print(format(str(flag), "17s"), " ".join(format(float(v), "10.4f") for v in parts))
+print("with the default only the forget slice is 1:", slices[True] == [0.0, 1.0, 0.0, 0.0])
+print("without it every slice is 0:", slices[False] == [0.0, 0.0, 0.0, 0.0])
+print("sigmoid(1) =", format(1 / (1 + np.exp(-1)), ".4f"), ", so with the default the cell")
+print("starts out keeping about 73% of its carry per step instead of erasing")
+print("it - the same reasoning as a residual connection starting near identity")`}
+  sct={`test_output_contains("with the default only the forget slice is 1: True", pattern=False)
+test_output_contains("without it every slice is 0: True", pattern=False)
+test_output_contains("sigmoid(1) = 0.7311", pattern=False)
+success_msg("The forget bias of 1 makes the gate about 0.73 open at the start, so the cell begins by keeping most of its memory instead of erasing it.")`}
+  height={460}
 />

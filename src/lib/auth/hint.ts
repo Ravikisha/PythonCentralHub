@@ -37,9 +37,27 @@ export function readHint(): AuthHint | null {
   }
 }
 
+/**
+ * Fired on this window whenever the hint changes, so the header updates the
+ * moment a name is saved or a provider is linked instead of on the next page
+ * load. Other tabs hear about it through the browser's own `storage` event.
+ */
+export const HINT_EVENT = "pch-auth-hint";
+
+function announce(): void {
+  try {
+    window.dispatchEvent(new Event(HINT_EVENT));
+  } catch {
+    /* no window (server) -- nothing to tell */
+  }
+}
+
 export function writeHint(hint: AuthHint): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(hint));
+    const next = JSON.stringify(hint);
+    if (localStorage.getItem(KEY) === next) return;
+    localStorage.setItem(KEY, next);
+    announce();
   } catch {
     /* storage unavailable -- the UI just falls back to signed out */
   }
@@ -47,13 +65,28 @@ export function writeHint(hint: AuthHint): void {
 
 export function clearHint(): void {
   try {
+    if (localStorage.getItem(KEY) === null) return;
     localStorage.removeItem(KEY);
+    announce();
   } catch {
     /* ignore */
   }
 }
 
-/** First letter of the name or email, for the fallback avatar. */
+/** Call `fn` whenever the hint changes here or in another tab. */
+export function onHintChange(fn: () => void): () => void {
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === KEY || e.key === null) fn();
+  };
+  window.addEventListener(HINT_EVENT, fn);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener(HINT_EVENT, fn);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+/** First letter of the name or email. */
 export function initialOf(hint: Pick<AuthHint, "name" | "email">): string {
   const source = hint.name || hint.email || "?";
   return source.trim().charAt(0).toUpperCase() || "?";

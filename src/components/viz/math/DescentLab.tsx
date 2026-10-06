@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * DescentLab — gradient descent and its variants, one update per frame.
  *

@@ -25,3 +25,141 @@ Create API tests that validate:
 
 - Don’t call real paid APIs in CI
 - Use recorded responses or a local mock server
+
+## Scenario
+
+A team consumes a weather service that returns the current conditions for a city. You are asked to write an automated suite that would notice if the service, or your understanding of it, changes. Your suite must run in CI without a paid key and without depending on the network.
+
+## Plan the suite before coding
+
+Write down the contract first, as the API fundamentals lesson suggests. For example:
+
+| Case | Request | Expected |
+| --- | --- | --- |
+| Valid city | `GET /weather?city=Oslo` | 200, JSON with `city`, `temp_c` (number), `conditions` (string) |
+| Unknown city | `GET /weather?city=Nowhereville` | 404, JSON with an `error` message |
+| Missing parameter | `GET /weather` | 400 |
+| Missing key | valid request without API key | 401 |
+| Slow service | server delays 6 seconds | client raises a timeout, handled |
+
+Each row becomes a test, and negative cases get the same care as the happy path.
+
+## Give yourself a local server
+
+To avoid the real service, write a tiny fake with the standard library and start it in a fixture:
+
+```python title="conftest.py" showLineNumbers{1}
+import json
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse, parse_qs
+
+import pytest
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        url = urlparse(self.path)
+        city = parse_qs(url.query).get("city", [None])[0]
+        if self.headers.get("X-Api-Key") != "test-key":
+            self._send(401, {"error": "unauthorized"})
+        elif city is None:
+            self._send(400, {"error": "city required"})
+        elif city == "Oslo":
+            self._send(200, {"city": "Oslo", "temp_c": 4.5, "conditions": "cloudy"})
+        else:
+            self._send(404, {"error": "city not found"})
+
+    def _send(self, status, body):
+        data = json.dumps(body).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *args):
+        pass
+
+
+@pytest.fixture(scope="session")
+def base_url():
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_port}"
+    server.shutdown()
+```
+
+Port 0 lets the operating system choose a free port, so parallel CI runs do not clash.
+
+## Example tests
+
+```python title="test_weather_api.py" showLineNumbers{1}
+import requests
+
+HEADERS = {"X-Api-Key": "test-key"}
+
+
+def test_valid_city_contract(base_url):
+    r = requests.get(f"{base_url}/weather", params={"city": "Oslo"}, headers=HEADERS, timeout=5)
+    assert r.status_code == 200
+    body = r.json()
+    assert isinstance(body["temp_c"], (int, float))
+    assert isinstance(body["conditions"], str)
+
+
+def test_unknown_city_is_404(base_url):
+    r = requests.get(f"{base_url}/weather", params={"city": "Nowhereville"}, headers=HEADERS, timeout=5)
+    assert r.status_code == 404
+```
+
+## Stretch goals
+
+- Add tests for the missing key and the missing parameter.
+- Validate the body with a JSON schema.
+- Add a separate marked test, `@pytest.mark.live`, that hits the real service and runs only nightly.
+- Retry once on a timeout, and test the retry with a mock.
+
+## Common mistakes
+
+Assert on the temperature value from a live service and the test fails tomorrow. Assert on shape and type instead. Forgetting timeouts, and using real keys in the repository, are the other two.
+
+## Check your understanding
+
+<Quiz
+  questions={[
+    {
+      q: "Why does the project use a local fake server instead of the real weather API in CI?",
+      options: [
+        "Real APIs never return JSON",
+        "Tests stay deterministic, free and independent of the network",
+        "Fake servers are faster to write than tests",
+        "CI cannot make HTTP calls",
+      ],
+      answer: 1,
+      explain: "Real services change, cost money and can be down, which makes CI results unreliable.",
+    },
+    {
+      q: "Against a live weather service, which assertion is most likely to become flaky?",
+      options: [
+        "The response has a temp_c field of numeric type",
+        "The status code is 200",
+        "temp_c equals exactly 4.5",
+        "The Content-Type is JSON",
+      ],
+      answer: 2,
+      explain: "Live values change over time, so assert on shape and type rather than a specific reading.",
+    },
+    {
+      q: "Which case is a negative test?",
+      options: [
+        "A valid city returns 200",
+        "A request with no API key returns 401",
+        "The JSON has a city field",
+        "The response takes under 1 second",
+      ],
+      answer: 1,
+      explain: "Negative tests check that invalid or unauthorised requests are rejected properly.",
+    },
+  ]}
+/>

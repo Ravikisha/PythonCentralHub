@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * SpanExplorer — offering vectors one at a time and watching the span grow.
  *

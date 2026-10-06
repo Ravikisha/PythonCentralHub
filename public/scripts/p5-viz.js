@@ -84,6 +84,22 @@
     }
   }
 
+  /**
+   * Teardown for every sketch built on the current page. The shell navigates
+   * without reloading, and p5 puts its mouse, key and resize handlers on the
+   * window -- so instances from pages already left kept running, and piled
+   * up, until a full reload. ContentRuntime calls destroy() on navigation.
+   */
+  var teardowns = [];
+
+  function destroy() {
+    var list = teardowns;
+    teardowns = [];
+    list.forEach(function (fn) {
+      try { fn(); } catch (e) { /* already gone */ }
+    });
+  }
+
   function initFig(fig) {
     if (fig.dataset.p5Ready === "1") return;
     fig.dataset.p5Ready = "1";
@@ -155,8 +171,9 @@
     }
 
     // Lazy build + frugal pause/resume via viewport visibility.
+    var io = null;
     if ("IntersectionObserver" in window) {
-      var io = new IntersectionObserver(function (entries) {
+      io = new IntersectionObserver(function (entries) {
         entries.forEach(function (e) {
           if (e.isIntersecting) {
             if (!built) build();
@@ -170,21 +187,56 @@
     } else {
       build();
     }
+
+    teardowns.push(function () {
+      if (io) io.disconnect();
+      if (instance && instance.remove) instance.remove();
+      instance = null;
+      built = false;
+      delete fig.dataset.p5Ready;
+    });
   }
 
   function init() {
     var figs = document.querySelectorAll(".pch-p5[data-p5]");
     if (!figs.length) return;
-    loadP5()
-      .then(function () {
-        figs.forEach(initFig);
-      })
-      .catch(function () {
-        figs.forEach(function (fig) {
+
+    function start(fig) {
+      loadP5()
+        .then(function () {
+          initFig(fig);
+        })
+        .catch(function () {
           setError(fig, "could not load p5.js (offline?)");
         });
+    }
+
+    // p5 itself (~230 KB) is fetched only when a sketch comes within a
+    // couple of screens, not on page load: most sketches sit far down a
+    // lesson, and many readers never scroll that far.
+    if (!("IntersectionObserver" in window)) {
+      figs.forEach(start);
+      return;
+    }
+    var gate = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        gate.unobserve(e.target);
+        start(e.target);
       });
+    }, { rootMargin: "1200px 0px" });
+    figs.forEach(function (fig) {
+      gate.observe(fig);
+    });
+    teardowns.push(function () {
+      gate.disconnect();
+    });
   }
+
+  // Re-entrant on purpose: initFig skips a figure it has already built, so the
+  // shell can call this again after a client-side navigation brings new
+  // sketches onto the page.
+  window.__pchP5 = { init: init, destroy: destroy };
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);

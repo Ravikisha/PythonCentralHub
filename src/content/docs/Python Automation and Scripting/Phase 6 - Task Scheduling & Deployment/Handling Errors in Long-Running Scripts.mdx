@@ -62,3 +62,175 @@ flowchart TD
     F -- "No" --> A
     F -- "Yes" --> G["Give up and alert"]
 ```
+
+## What goes wrong in a script that runs for days
+
+A script you run by hand fails in front of you. A script that runs on a schedule, or loops for weeks, fails when nobody is looking. The network drops, an API returns 503, a disk fills, one file in ten thousand is corrupt. Good error handling means separating errors into two kinds and treating each properly.
+
+- **Transient errors** go away if you try again: a timeout, a connection reset, HTTP 429 or 503. Retry these, with a growing delay.
+- **Permanent errors** will happen every time: a `KeyError` from a bug, a 404, a wrong password. Retrying wastes time. Log them and stop, or skip the item.
+
+The principles on this page follow from that. Fail fast on bugs, retry the transient, and tell a human when retries run out.
+
+## A retry helper that only retries what it should
+
+The simple `retry` above catches every `Exception`, so it would also retry a `TypeError` caused by a typo. This version retries only the errors you name, adds a little random jitter, and does not swallow the original traceback.
+
+```python title="retry_safe.py" showLineNumbers{1}
+import logging
+import random
+import time
+
+log = logging.getLogger("job")
+
+
+def retry(fn, tries=3, base_delay=1.0, retry_on=(ConnectionError, TimeoutError)):
+    for attempt in range(1, tries + 1):
+        try:
+            return fn()
+        except retry_on as err:
+            if attempt == tries:
+                log.error("giving up after %d attempts: %s", tries, err)
+                raise
+            delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.25)
+            log.warning("attempt %d failed (%s), retrying in %.1fs", attempt, err, delay)
+            time.sleep(delay)
+
+
+calls = {"n": 0}
+
+
+def flaky():
+    calls["n"] += 1
+    if calls["n"] < 3:
+        raise ConnectionError("network blip")
+    return "ok"
+
+
+logging.basicConfig(level=logging.INFO)
+print(retry(flaky, base_delay=0.01))
+```
+
+The delays double on each attempt (1 s, 2 s, 4 s), which gives a struggling server time to recover. The random jitter stops many scripts from retrying at the same instant. On the last attempt the function re-raises with a bare `raise`, so the caller sees the real error and the full traceback. With `requests`, the exceptions to retry on are `requests.ConnectionError` and `requests.Timeout`.
+
+## Handle one item at a time
+
+In a loop over many items, one bad item should not kill the whole run. Catch the error per item, record it, and continue. At the end, report how many failed.
+
+```python title="per_item_errors.py" showLineNumbers{1}
+def process_all(items, handle):
+    failures = []
+    for item in items:
+        try:
+            handle(item)
+        except Exception as err:            # deliberately broad at this boundary
+            failures.append((item, repr(err)))
+    return failures
+```
+
+Catching `Exception` is acceptable at this one boundary, because you record every error. Do not use a bare `except:` because it also catches `KeyboardInterrupt` and `SystemExit`.
+
+## Common mistakes
+
+- **`except Exception: pass`.** It hides every failure. At the least, log it.
+- **Retrying forever.** Always cap the attempts.
+- **Retrying non-idempotent actions**, such as sending a payment or an email, unless you are sure the first try did not succeed.
+- **No alert after the last retry.** A silent failure is the worst kind. Send a message (see the communication phase).
+- **Losing the traceback.** Use `log.exception` or a bare `raise`.
+
+## 🧪 Try It Yourself
+
+### Exercise 1 – Retry a Flaky Function
+
+<DataCampExercise
+  lang="python"
+  hint={`Loop over the attempts and return the result as soon as the call works. Catch ConnectionError in the except line.`}
+  code={`# Task: retry a function that fails twice, then succeeds (no real waiting)
+calls = {"n": 0}
+
+def flaky():
+    calls["n"] += 1
+    if calls["n"] < 3:
+        raise ConnectionError("blip")
+    return "ok"
+
+def retry(fn, tries=3):
+    for attempt in range(1, tries + 1):
+        try:
+            return fn()
+        except ___:          # replace ___ with ConnectionError
+            print("attempt", attempt, "failed")
+            if attempt == tries:
+                raise
+
+print(retry(flaky))
+
+# ── Expected Output ───────────────────────────────────────────
+# attempt 1 failed
+# attempt 2 failed
+# ok
+# ──────────────────────────────────────────────────────────────`}
+  solution={`calls = {"n": 0}
+
+def flaky():
+    calls["n"] += 1
+    if calls["n"] < 3:
+        raise ConnectionError("blip")
+    return "ok"
+
+def retry(fn, tries=3):
+    for attempt in range(1, tries + 1):
+        try:
+            return fn()
+        except ConnectionError:
+            print("attempt", attempt, "failed")
+            if attempt == tries:
+                raise
+
+print(retry(flaky))`}
+  sct={`test_output_contains("attempt 1 failed")
+test_output_contains("attempt 2 failed")
+test_output_contains("ok")
+success_msg("Your retry loop recovers from transient errors.")`}
+  height={200}
+/>
+
+## Check your understanding
+
+<Quiz
+  questions={[
+    {
+      q: "Which error should a script retry?",
+      options: [
+        "A KeyError caused by a typo in the code",
+        "A timeout from a temporary network problem",
+        "A wrong password",
+        "A 404 for a page that does not exist",
+      ],
+      answer: 1,
+      explain: "Timeouts are transient and often succeed on a second try. The others will fail the same way every time.",
+    },
+    {
+      q: "Why does the delay grow with each attempt (backoff)?",
+      options: [
+        "To give an overloaded service time to recover and avoid hammering it",
+        "To make the script slower on purpose",
+        "Because time.sleep only works with powers of two",
+        "To reduce memory use",
+      ],
+      answer: 0,
+      explain: "Waiting longer each time reduces load on a struggling server, and jitter prevents many clients from retrying together.",
+    },
+    {
+      q: "In a loop over 10,000 files, one file is corrupt. What is the best handling?",
+      options: [
+        "Let the exception stop the whole run",
+        "Catch it per item, record the failure, continue, and report the failures at the end",
+        "Delete the file",
+        "Ignore it silently",
+      ],
+      answer: 1,
+      explain: "One bad item should not lose the work of the other 9,999, but the failure must be recorded so someone can fix it.",
+    },
+  ]}
+/>

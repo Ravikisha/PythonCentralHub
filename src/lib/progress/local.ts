@@ -35,9 +35,21 @@ export interface ProgressState {
   bookmarks: string[];
   /** `${pageId}#${ordinal}` -> best result */
   quizzes: Record<string, QuizResult>;
+  /**
+   * `${pageId}#${ordinal}` -> epoch millis of the first passing Submit.
+   * Optional so a store written before it existed still reads.
+   */
+  exercises?: Record<string, number>;
   /** pageId -> the learner's own note, private to them */
   notes: Record<string, string>;
   streak: { last: string; count: number; longest: number };
+  /**
+   * Courses the learner has chosen, by slug, oldest first. Set when they
+   * start a course or finish a lesson in one, so "My courses" means the ones
+   * they took up rather than every catalogue page they opened. Optional so a
+   * store written before it existed still reads.
+   */
+  enrolled?: string[];
   /** Set once the cloud copy has been pulled down on this device. */
   hydrated: boolean;
 }
@@ -48,6 +60,7 @@ function empty(): ProgressState {
     modules: {},
     bookmarks: [],
     quizzes: {},
+    exercises: {},
     notes: {},
     streak: { last: "", count: 0, longest: 0 },
     hydrated: false,
@@ -61,7 +74,16 @@ export function read(): ProgressState {
     const parsed = JSON.parse(raw) as Partial<ProgressState>;
     // Merged into a fresh object so a value written by an older version of
     // this code never leaves a field undefined for the callers below.
-    return { ...empty(), ...parsed, v: 1 };
+    const state = { ...empty(), ...parsed, v: 1 as const };
+    // Stores from before enrolment existed: every course with progress was
+    // being taken, so it starts out enrolled. Done once -- after this the
+    // list is the learner's own, and removing a course sticks.
+    if (!Array.isArray(parsed.enrolled)) {
+      state.enrolled = Object.entries(state.modules)
+        .filter(([, ids]) => ids.length > 0)
+        .map(([slug]) => slug);
+    }
+    return state;
   } catch {
     return empty();
   }
@@ -115,10 +137,40 @@ export function totalCompleted(state = read()): number {
   return Object.values(state.modules).reduce((n, list) => n + list.length, 0);
 }
 
+/** Courses the learner has taken up, oldest first. */
+export function enrolledCourses(state = read()): string[] {
+  return state.enrolled ?? [];
+}
+
+/** Add a course to "My courses". Idempotent; returns whether it was new. */
+export function enrol(course: string): boolean {
+  const state = read();
+  const list = state.enrolled ?? [];
+  if (list.includes(course)) return false;
+  state.enrolled = [...list, course];
+  write(state);
+  queue({ kind: "enrol", course });
+  return true;
+}
+
+/** Take a course off "My courses". Progress in it is kept. */
+export function unenrol(course: string): void {
+  const state = read();
+  const list = state.enrolled ?? [];
+  if (!list.includes(course)) return;
+  state.enrolled = list.filter((c) => c !== course);
+  write(state);
+  queue({ kind: "enrol", course });
+}
+
 /** Mark a page complete or clear it. Returns the new completion state. */
 export function setComplete(pageId: string, on: boolean): boolean {
   const state = read();
   const mod = moduleOf(pageId);
+  // Finishing a lesson is taking the course up, even without pressing Start.
+  if (on && !(state.enrolled ?? []).includes(mod)) {
+    state.enrolled = [...(state.enrolled ?? []), mod];
+  }
   const list = new Set(state.modules[mod] ?? []);
 
   if (on) list.add(pageId);
@@ -183,6 +235,41 @@ export function recordQuiz(
 }
 
 /* -------------------------------------------------------------------------- */
+/* Exercises                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Record a passed coding exercise. Only the first pass is kept: an exercise is
+ * done or not, and re-submitting a solved one should not move anything.
+ *
+ * Like quiz scores, these are the learner's own record -- the grading runs in
+ * their browser -- and never gate a certificate.
+ */
+export function recordExercise(pageId: string, ordinal: number): void {
+  const state = read();
+  const key = `${pageId}#${ordinal}`;
+  const passed = state.exercises ?? {};
+  if (passed[key]) return;
+
+  const at = Date.now();
+  state.exercises = { ...passed, [key]: at };
+  bumpStreak(state);
+  write(state);
+
+  queue({ kind: "exercise", key, at });
+}
+
+/** Passed exercises per page id, from the `${pageId}#${ordinal}` keys. */
+export function exercisesByPage(state = read()): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const key of Object.keys(state.exercises ?? {})) {
+    const page = key.slice(0, key.lastIndexOf("#"));
+    out.set(page, (out.get(page) ?? 0) + 1);
+  }
+  return out;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Notes                                                                       */
 /* -------------------------------------------------------------------------- */
 
@@ -227,6 +314,19 @@ function bumpStreak(state: ProgressState): void {
   state.streak.count = gap === 1 ? state.streak.count + 1 : 1;
   state.streak.last = day;
   state.streak.longest = Math.max(state.streak.longest, state.streak.count);
+}
+
+/**
+ * The streak as of today.
+ *
+ * The stored count only changes when something is completed, so a learner
+ * who stopped a week ago still read "12-day streak". A streak is live if the
+ * last active day is today or yesterday (today can still extend it);
+ * otherwise it has lapsed and reads 0. `longest` is history and is untouched.
+ */
+export function currentStreak(state: ProgressState): number {
+  if (!state.streak.last) return 0;
+  return daysBetween(state.streak.last, today()) <= 1 ? state.streak.count : 0;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -274,7 +374,9 @@ export type PendingOp =
   | { kind: "complete" | "uncomplete"; module: string; pageId: string }
   | { kind: "bookmark" | "unbookmark"; pageId: string }
   | { kind: "quiz"; key: string; correct: number; total: number }
-  | { kind: "note"; pageId: string; text: string };
+  | { kind: "exercise"; key: string; at: number }
+  | { kind: "note"; pageId: string; text: string }
+  | { kind: "enrol"; course: string };
 
 let pending: PendingOp[] = [];
 let timer: number | undefined;
@@ -342,6 +444,26 @@ export async function flush(): Promise<void> {
     pending = ops.concat(pending);
     console.warn("[progress] sync deferred:", err);
   }
+}
+
+/**
+ * Forget everything this browser holds about the reader's progress.
+ *
+ * Called when an account is deleted. Without it the cloud copy goes and the
+ * local one stays, so the next sign-up on this browser would push a deleted
+ * account's reading history into the new one.
+ */
+export function clearLocal(): void {
+  try {
+    localStorage.removeItem(KEY);
+    // The "pick up where you left off" pointer names the previous reader's
+    // last lesson, so it goes with the rest.
+    localStorage.removeItem(LAST_KEY);
+  } catch {
+    /* storage unavailable: there was nothing to clear */
+  }
+  pending = [];
+  notify();
 }
 
 /**

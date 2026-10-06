@@ -19,10 +19,24 @@ export function getFirebaseApp(): FirebaseApp {
   return getApps().length ? getApp() : initializeApp(firebaseConfig);
 }
 
+/**
+ * Local emulators, for the end-to-end tests only (tests/e2e). Set
+ * NEXT_PUBLIC_FIREBASE_EMULATORS=1 at build time to point Auth at
+ * localhost:9099 and Firestore at localhost:8080. Never set in production.
+ */
+const EMULATORS = process.env.NEXT_PUBLIC_FIREBASE_EMULATORS === "1";
+let dbConnected = false;
+let authConnected = false;
+
 /** Firestore handle. The SDK chunk loads on first call, not on page load. */
 export async function getDb() {
-  const { getFirestore } = await import("firebase/firestore");
-  return getFirestore(getFirebaseApp());
+  const { getFirestore, connectFirestoreEmulator } = await import("firebase/firestore");
+  const db = getFirestore(getFirebaseApp());
+  if (EMULATORS && !dbConnected) {
+    connectFirestoreEmulator(db, "127.0.0.1", 8080);
+    dbConnected = true;
+  }
+  return db;
 }
 
 /**
@@ -30,8 +44,12 @@ export async function getDb() {
  * password-reset emails arrive in the reader's language.
  */
 export async function getAuthClient() {
-  const { getAuth } = await import("firebase/auth");
+  const { getAuth, connectAuthEmulator } = await import("firebase/auth");
   const auth = getAuth(getFirebaseApp());
+  if (EMULATORS && !authConnected) {
+    connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+    authConnected = true;
+  }
   auth.useDeviceLanguage();
   return auth;
 }
@@ -62,7 +80,9 @@ export async function callApi<T = unknown>(
   const user = auth.currentUser;
   if (!user) throw new Error("Sign in first.");
 
-  const res = await fetch(`/api/${path}`, {
+  // Trailing slash: the site sets `trailingSlash`, and without it every call
+  // would take a 308 hop before reaching the handler.
+  const res = await fetch(`/api/${path.replace(/\/$/, "")}/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -71,8 +91,18 @@ export async function callApi<T = unknown>(
     body: JSON.stringify(payload),
   });
 
-  const data = (await res.json().catch(() => ({}))) as { error?: string } & T;
-  if (!res.ok) throw new Error(data.error || "Something went wrong. Please try again.");
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    code?: string;
+  } & T;
+  if (!res.ok) {
+    // The code rides along so callers can tell "sign in again" or "not set up
+    // yet" apart from a plain failure, and so authErrorKey() can translate it.
+    throw Object.assign(
+      new Error(data.error || "Something went wrong. Please try again."),
+      { code: data.code, status: res.status },
+    );
+  }
   return data as T;
 }
 

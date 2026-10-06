@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * ProjectionLab — §3.8 stepped: projection onto a line, projection onto a
  * plane, and Gram-Schmidt.

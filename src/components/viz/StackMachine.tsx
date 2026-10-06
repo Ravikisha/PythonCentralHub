@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * StackMachine — step-through visualization for stack algorithms.
  *

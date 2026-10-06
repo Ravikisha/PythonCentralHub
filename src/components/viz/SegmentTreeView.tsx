@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * SegmentTreeView — step-through visualization of a segment tree.
  *

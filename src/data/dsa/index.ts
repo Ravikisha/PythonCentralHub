@@ -11,12 +11,30 @@
  * they need, already filtered.
  */
 import yaml from "js-yaml";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
-import problemsRaw from "./problems.yaml?raw";
-import sheetsRaw from "./sheets.yaml?raw";
-import companiesRaw from "./companies.yaml?raw";
-import syllabusRaw from "./syllabus.yaml?raw";
-import recallRaw from "./recall.yaml?raw";
+/**
+ * The YAML is read from disk rather than imported.
+ *
+ * Vite's `?raw` suffix inlined these at build time for Astro; Turbopack has no
+ * equivalent and fails with "Unknown module type". Reading them here keeps the
+ * module's shape identical and costs nothing, because everything below is
+ * evaluated once on the server.
+ *
+ * This is server-only by construction: ProblemLadder is a server component and
+ * these pages are statically generated, so the read happens at build time. A
+ * future route that needed this data at request time on a serverless function
+ * would have to trace these files into the bundle.
+ */
+const DATA_DIR = join(process.cwd(), "src", "data", "dsa");
+const read = (file: string) => readFileSync(join(DATA_DIR, file), "utf8");
+
+const problemsRaw = read("problems.yaml");
+const sheetsRaw = read("sheets.yaml");
+const companiesRaw = read("companies.yaml");
+const syllabusRaw = read("syllabus.yaml");
+const recallRaw = read("recall.yaml");
 
 export type Difficulty = "easy" | "medium" | "hard";
 

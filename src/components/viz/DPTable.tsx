@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * DPTable — step-through visualization for dynamic-programming table fills.
  *

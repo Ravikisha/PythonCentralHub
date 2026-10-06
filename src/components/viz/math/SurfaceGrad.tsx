@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * SurfaceGrad — the gradient built from its definition, one claim per frame.
  *

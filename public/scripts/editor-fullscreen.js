@@ -221,10 +221,40 @@ function ensureModal() {
   });
 
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && !modal.hidden) close();
+    if (modal.hidden) return;
+    if (e.key === "Escape") {
+      close();
+      return;
+    }
+    // Keep Tab inside the window. aria-modal tells assistive tech the page
+    // behind is inert; this makes the keyboard agree.
+    if (e.key === "Tab") {
+      const focusable = Array.from(
+        panel.querySelectorAll(
+          'button, [href], input, select, textarea, iframe, [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter(function (el) { return !el.disabled && el.offsetParent !== null; });
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  });
+
+  // Browser Back while open: close instead of leaving the page scroll-locked
+  // under a window for content that is no longer there.
+  window.addEventListener("popstate", function () {
+    if (!modal.hidden) close();
   });
 
   modal._close = close;
+  modal._closeButton = closeDot;
   modal._body = body;
   modal._title = titleEl;
   modal._controls = controls;
@@ -274,6 +304,9 @@ export function openFullscreen({ title = "", buildContent, buildControls, captio
 
   modal.hidden = false;
   document.body.style.overflow = "hidden";
+  // Focus moves into the window, so keyboard and screen-reader users start
+  // where the content is rather than behind it.
+  try { modal._closeButton && modal._closeButton.focus(); } catch (_) {}
 }
 
 /** Close the modal programmatically. */

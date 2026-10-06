@@ -31,13 +31,6 @@ function walk(dir) {
   return out;
 }
 
-/** Depth from the page to src/components, for the relative import path. */
-const importPath = (file) => {
-  // From the page directory to src/ is 4 hops: <phase> -> DSA with Python -> docs -> content.
-  const depth = relative(DOCS, file).split(sep).length + 2;
-  return `${"../".repeat(depth)}components/dsa/ProblemLadder.astro`;
-};
-
 /** The page's declared canonical pattern — always the first entry. */
 function canonicalPattern(text) {
   const fm = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
@@ -120,22 +113,8 @@ for (const file of walk(DOCS)) {
 
   let next = text.slice(0, start) + replacement + text.slice(end);
 
-  // Add the import beside the page's other component imports.
-  const imp = `import ProblemLadder from "${importPath(file)}";`;
-  if (!next.includes("dsa/ProblemLadder.astro")) {
-    const imports = [...next.matchAll(/^import .*?;\s*$/gm)];
-    if (imports.length > 0) {
-      const at = imports[imports.length - 1].index + imports[imports.length - 1][0].length;
-      next = next.slice(0, at) + `\n\n${imp}` + next.slice(at);
-    } else {
-      const fm = next.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n/);
-      next = next.slice(0, fm[0].length) + `\n${imp}\n` + next.slice(fm[0].length);
-    }
-  }
-
-  // MDX requires a blank line after an import before prose or JSX.
-  next = next.replace(/^(import .*?;)\n(?=[^\s\n]|<)/gm, "$1\n\n").replace(/\n{4,}/g, "\n\n\n");
-
+  // No import: the Next app provides every MDX component globally
+  // (mdx-components.tsx). An import of the old .astro file fails the build.
   if (!DRY) writeFileSync(file, next, "utf8");
   changed += 1;
   console.log(`ok  ${name}  (${Object.keys(notes).length} notes carried over)`);

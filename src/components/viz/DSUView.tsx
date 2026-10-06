@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * DSUView — step-through visualization of union-find.
  *

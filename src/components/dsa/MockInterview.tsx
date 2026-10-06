@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * MockInterview — a timed 45-minute round with a real judge and a rubric.
  *

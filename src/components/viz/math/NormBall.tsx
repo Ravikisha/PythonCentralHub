@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * NormBall — the unit ball of ℓ_p as p sweeps, with the probe vector rescaled
  * onto it at every step.

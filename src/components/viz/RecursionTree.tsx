@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * RecursionTree — step-through visualization of a call tree.
  *

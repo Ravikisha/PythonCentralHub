@@ -1,166 +1,90 @@
-<img src="./poster/docs1.png" alt="Python Projects Repository" width="100%"/>
+# Python Central Hub
 
-# Python Central Hub  🐍
+Free, self-paced courses in programming, data, machine learning and the
+mathematics behind it, with code you run in the page.
 
-## Project Name: Python Central Hub Repository
+Python Central Hub is a learning platform built on Next.js. Each top-level folder of
+`src/content/docs` is a course, and each MDX file in it is a lesson. Lessons
+carry runnable Python (Pyodide, in the browser), graded exercises, quizzes,
+diagrams and interactive visualisations. Learners can track progress without an
+account; with one, progress syncs, and they can sit final assessments for a
+verifiable certificate.
 
-### A central repository for open-source Python projects covering diverse aspects of development.
+## Courses
 
-[![GitHub](https://img.shields.io/badge/GitHub-Repository-green)](https://github.com/Ravikisha/PythonCentralHub)
-[![Contributions welcome](https://img.shields.io/badge/Contributions-Welcome-brightgreen.svg)](CONTRIBUTING.md)
+| Code | Course |
+|---|---|
+| PY 101 | Python Programming |
+| PY 150 | Python Projects |
+| PY 180 | Automation and Scripting |
+| DATA 110 | Data Analytics with Python |
+| MATH 120 | Mathematics for Machine Learning |
+| ML 210 | Machine Learning |
+| DL 310 | Deep Learning |
+| CS 220 | Data Structures and Algorithms |
+| WEB 201 | Web Development with Flask |
+| SE 230 | Software Testing and Quality |
 
-Welcome to the Python Central Hub Repository, a hub for open-source Python projects. This repository brings together diverse Python projects that cover various aspects of development. Whether you're a beginner or an experienced developer, there's something here for you. Explore, contribute to, or use these projects as building blocks for your own Python endeavors.
+The catalogue, course codes and learning paths live in `lib/courses.data.mjs`.
 
-## Project Overview 🚀
+## Stack
 
-The Python Central Hub Repository is designed to provide a comprehensive collection of open-source Python projects that span different domains. These projects aim to serve as educational resources, examples, and starting points for your Python journey. You can explore, contribute to, or use these projects as building blocks for your own Python endeavors.
+- **Next.js 16** (App Router) with **Fumadocs** for the content pipeline
+- **Firebase** Authentication and Cloud Firestore for accounts and progress
+- **Vercel** for hosting, route handlers (`app/api/*`), cron, analytics
+- **Pyodide** in a Web Worker for exercises and the in-page Python playground
+- Tailwind CSS v4 and shadcn/ui components
 
-## Project Goals 🎯
-The Python Central Hub Repository aims to:
-- Provide a central repository for open-source Python projects.
-- Showcase the power and flexibility of Python.
-- Provide a platform for showcasing your Python projects.
-- Inspire and educate developers of all levels.
-- Foster collaboration and innovation in the Python community.
-- Provide a starting point for your Python journey.
-- Serve as a resource for learning and teaching Python.
-- Provide a platform for contributing to Python projects.
-- Encourage the development of new Python projects.
-- Provide a platform for finding Python projects to use.
+## Getting started
 
-## Project Stack 💻
-<p align="left">
-    <img src="https://img.shields.io/badge/Python-3.9.6-yellow?style=for-the-badge&logo=python" alt="Python" />
-    <img src="https://img.shields.io/badge/HTML-5-orange?style=for-the-badge&logo=html5" alt="HTML" />
-    <img src="https://img.shields.io/badge/CSS-3-blue?style=for-the-badge&logo=css3" alt="CSS" />
-    <img src="https://img.shields.io/badge/JavaScript-ES6-yellow?style=for-the-badge&logo=javascript" alt="JavaScript" />
-    <img src="https://img.shields.io/badge/Bootstrap-5.0.2-purple?style=for-the-badge&logo=bootstrap" alt="Bootstrap" />
-    <img src="https://img.shields.io/badge/Flask-2.0.1-black?style=for-the-badge&logo=flask" alt="Flask" />
-    <img src="https://img.shields.io/badge/Flask RESTful-0.3.9-red?style=for-the-badge&logo=flaskrestful" alt="Flask RESTful" />
-    <img src="https://img.shields.io/badge/Flask SQLAlchemy-2.5.1-orange?style=for-the-badge&logo=flasksqlalchemy" alt="Flask SQLAlchemy" />
-    <img src="https://img.shields.io/badge/Flask JWT Extended-4.2.3-yellow?style=for-the-badge&logo=flaskjwtextended" alt="Flask JWT Extended" />
-    <img src="https://img.shields.io/badge/Flask Bcrypt-0.7.1-blue?style=for-the-badge&logo=flaskbcrypt" alt="Flask Bcrypt" />
-    <img src="https://img.shields.io/badge/Jinja-3.0.1-green?style=for-the-badge&logo=jinja" alt="Jinja" />
-    <img src="https://img.shields.io/badge/WTForms-2.3.3-red?style=for-the-badge&logo=wtforms" alt="WTForms" />
-    <img src="https://img.shields.io/badge/QT-5.15.2-orange?style=for-the-badge&logo=qt" alt="QT" />
-    <img src="https://img.shields.io/badge/Django-3.2.5-green?style=for-the-badge&logo=django" alt="Django" />
-    <img src="https://img.shields.io/badge/React-17.0.2-blue?style=for-the-badge&logo=react" alt="React" />
-    <img src="https://img.shields.io/badge/Node.js-14.17.3-green?style=for-the-badge&logo=node.js" alt="Node.js" />
-    <img src="https://img.shields.io/badge/Express.js-4.17.1-black?style=for-the-badge&logo=express" alt="Express.js" />
-    <img src="https://img.shields.io/badge/SQLite-3.36.0-blue?style=for-the-badge&logo=sqlite" alt="SQLite" />
-    <img src="https://img.shields.io/badge/MySQL-8.0.26-orange?style=for-the-badge&logo=mysql" alt="MySQL" />
-    <img src="https://img.shields.io/badge/PostgreSQL-13.3-blue?style=for-the-badge&logo=postgresql" alt="PostgreSQL" />
-    <img src="https://img.shields.io/badge/PyMongo-3.12.0-green?style=for-the-badge&logo=pymongo" alt="PyMongo" />
-    <img src="https://img.shields.io/badge/Redis-3.5.3-red?style=for-the-badge&logo=redis" alt="Redis" />
-    <img src="https://img.shields.io/badge/Machine Learning-1.0.1-yellow?style=for-the-badge&logo=machinelearning" alt="Machine Learning" />
-    <img src="https://img.shields.io/badge/Data Science-1.0.1-blue?style=for-the-badge&logo=datascience" alt="Data Science" />
-    <img src="https://img.shields.io/badge/Computer Vision-1.0.1-green?style=for-the-badge&logo=computervision" alt="Computer Vision" />
-    <img src="https://img.shields.io/badge/Deep Learning-1.0.1-red?style=for-the-badge&logo=deeplearning" alt="Deep Learning" />
-    <img src="https://img.shields.io/badge/Artificial Intelligence-1.0.1-orange?style=for-the-badge&logo=artificialintelligence" alt="Artificial Intelligence" />
-    <img src="https://img.shields.io/badge/Internet of Things-1.0.1-yellow?style=for-the-badge&logo=internetofthings" alt="Internet of Things" />
-    <img src="https://img.shields.io/badge/Blockchain-1.0.1-blue?style=for-the-badge&logo=blockchain" alt="Blockchain" />
-    <img src="https://img.shields.io/badge/Cloud Computing-1.0.1-green?style=for-the-badge&logo=cloudcomputing" alt="Cloud Computing" />
-    <img src="https://img.shields.io/badge/DevOps-1.0.1-red?style=for-the-badge&logo=devops" alt="DevOps" />
-    <img src="https://img.shields.io/badge/Software Testing-1.0.1-orange?style=for-the-badge&logo=softwaretesting" alt="Software Testing" />
-    <img src="https://img.shields.io/badge/Security-1.0.1-yellow?style=for-the-badge&logo=security" alt="Security" />
-    <img src="https://img.shields.io/badge/Utilities-1.0.1-blue?style=for-the-badge&logo=utilities" alt="Utilities" />
-    <img src="https://img.shields.io/badge/Games-1.0.1-green?style=for-the-badge&logo=games" alt="Games" />
-    <img src="https://img.shields.io/badge/TensorFlow-2.5.0-red?style=for-the-badge&logo=tensorflow" alt="TensorFlow" />
-    <img src="https://img.shields.io/badge/PyTorch-1.9.0-orange?style=for-the-badge&logo=pytorch" alt="PyTorch" />
-    <img src="https://img.shields.io/badge/Keras-2.4.3-yellow?style=for-the-badge&logo=keras" alt="Keras" />
-    <img src="https://img.shields.io/badge/Scikit Learn-0.24.2-blue?style=for-the-badge&logo=scikitlearn" alt="Scikit Learn" />
-    <img src="https://img.shields.io/badge/NumPy-1.21.1-green?style=for-the-badge&logo=numpy" alt="NumPy" />
-    <img src="https://img.shields.io/badge/Pandas-1.3.1-red?style=for-the-badge&logo=pandas" alt="Pandas" />
-    <img src="https://img.shields.io/badge/SciPy-1.7.1-orange?style=for-the-badge&logo=scipy" alt="SciPy" />
-    <img src="https://img.shields.io/badge/Matplotlib-3.4.2-yellow?style=for-the-badge&logo=matplotlib" alt="Matplotlib" />
-    <img src="https://img.shields.io/badge/Seaborn-0.11.1-blue?style=for-the-badge&logo=seaborn" alt="Seaborn" />
-    <img src="https://img.shields.io/badge/Plotly-5.1.0-green?style=for-the-badge&logo=plotly" alt="Plotly" />
-    <img src="https://img.shields.io/badge/Other-1.0.1-red?style=for-the-badge&logo=other" alt="Other" />
-</p>
+```bash
+npm install
+npm run dev            # http://localhost:3000
+```
 
-## Project Categories 🌟
+The site runs without any environment variables: Firebase falls back to the
+public web config, and the server routes answer "not configured" until their
+secrets are set. See `.env.example` for every variable.
 
-The Python Central Hub Repository includes projects in various categories, including but not limited to:
+## Useful scripts
 
-- **Web Development**: Python web applications, frameworks, and APIs.
-- **Data Science**: Data analysis, machine learning, and data visualization projects.
-- **Automation**: Python scripts and tools to automate tasks.
-- **Utilities**: Handy Python utilities and libraries.
-- **Games**: Fun and educational Python games and simulations.
-- **Security**: Security-related Python projects and tools.
+| Script | What it does |
+|---|---|
+| `npm run build` | Full production build (about 12 minutes, 1,200+ pages) |
+| `npm run typecheck` | TypeScript |
+| `npm run content:check` | Compiles every lesson and checks every exercise's props |
+| `npm run routes:verify` | Proves no indexed lesson URL has moved |
+| `npm run i18n:check` | UI strings complete in every locale |
+| `npm run smoke -- --base http://localhost:3000` | Renders a sample of pages and every app route |
+| `npm test` | Unit tests |
+| `npm run test:rules` | Firestore rules tests (needs the Firebase emulator) |
+| `npm run test:e2e` | Playwright end-to-end tests |
+| `npm run deploy` | `vercel deploy --prod` |
 
-## Python Books 📚
-- [Python Crash Course](./books/Python%20Crash%20Course.pdf%20(%20PDFDrive.com%20).pdf)
-- [Automate the Boring Stuff with Python](./books/Automate%20the%20Boring%20Stuff%20with%20Python.pdf)
-- [Fluent Python](./books/Fluent%20Python.pdf)
-- [Learn Python 3 the Hard Way](./books/Learn%20Python%203%20the%20Hard%20Way_%20A%20Very%20Simple%20Introduction%20to%20the%20Terrifyingly%20Beautiful%20World%20of%20Computers%20and%20Code%20(%20PDFDrive.com%20).pdf)
-- [Head First Python](./books/Head%20First%20Python%20%20A%20Brain-Friendly%20Guide%20(%20PDFDrive.com%20).pdf)
-- [Big Book of Small Python Projects](./books/BigBookSmallPythonProjects.pdf)
-- [Python Cookbook](./books/Python_Cookbook_3rd_Edition.pdf)
-- [Dive into Python 3](./books/diveintopython3.pdf)
-- [Effective Python](./books/Effective-Python.pdf)
-- [Think Python](./books/think-python-2nd.pdf)
-- [Learning Python](./books/learning-python.pdf)
+## Writing content
 
-## Application Screenshots 📷
-![Screenshot 1](./poster/mainPage.png)
-![Screenshot 2](./poster/lightMode1.png)
-![Screenshot 3](./poster/pageDemo.png)
-![Screenshot 4](./poster/lightMode2.png)
-![Screenshot 5](./poster/someFeature.png)
-![Screenshot 6](./poster/search.png)
+- One lesson per `.mdx` file. The file and folder names are the URL, and
+  1,100+ lesson URLs are indexed: never rename them. The slug rule is in
+  `lib/slug.mjs`.
+- Components (`DataCampExercise`, `Quiz`, `Figure`, `FileCode`, …) are
+  available in every lesson without an import (`mdx-components.tsx`).
+- Exercises run on Pyodide (Python 3.13, numpy, pandas, scipy, scikit-learn,
+  matplotlib). They are graded with `test_output_contains(...)` and
+  `success_msg(...)` only.
+- Run `npm run content:check` before pushing; CI runs it too.
 
+## Deploying
 
-## How to Use 🛠️
+Vercel builds every push. Before the first production launch, work through
+[`docs/launch-checklist.md`](docs/launch-checklist.md): environment variables,
+Firestore rules, email, analytics and the domain.
 
-1. **Explore the Repository:**
+## Contributing
 
-   Visit the [Python Central Hub Repository](https://github.com/Ravikisha/PythonCentralHub) on GitHub to explore the collection of projects.
+Issues and pull requests are welcome. For lesson fixes, edit the MDX file and
+open a pull request; `npm run content:check` must pass.
 
-2. **Contribute or Use Projects:**
+## License
 
-   - **Contribution**: If you'd like to contribute to any project, follow the project's guidelines in its repository.
-   - **Usage**: If you want to use a project, simply clone the project's repository and follow its documentation for installation and usage instructions.
-
-## Installation Steps 📦
-
-To contribute to or use projects in this repository, follow these general steps:
-
-1. **Clone the Repository:**
-
-   ```bash
-   git clone https://github.com/Ravikisha/PythonCentralHub.git
-   cd Python-Projects
-   ```
-
-2. **Explore the Projects:**
-
-   Choose a project from the repository and navigate to its folder.
-
-3. **Installation and Usage:**
-
-   Each project may have its own installation and usage instructions. Please refer to the project's README or documentation for specific guidance.
-
-4. **Contribute (If Desired):**
-
-   To contribute to a project, follow the contribution guidelines outlined in the project's repository.
-
-## How to Contribute 🤝
-
-We welcome contributions from developers of all levels. If you'd like to add your Python project to this repository or contribute to an existing project, please review the [CONTRIBUTING.md](CONTRIBUTING.md) file for guidelines and instructions.
-
-## License 📜
-
-This repository is open-source and is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
-The Python Central Hub Repository is a community-driven initiative to foster Python development. Whether you're a newcomer or an expert, you'll find inspiration, knowledge, and opportunities for collaboration here. Join us and contribute to the world of Python! 🌐🐍
-
-For more information or inquiries, contact us at [@Ravi Kishan](mailto:ravikishan63392@gmail.com).
-
----
-
-## Support ☕
-
-If you found this project helpful, consider buying me a coffee!
-
-[![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://www.buymeacoffee.com/ravikisha)
+MIT. See [LICENSE](LICENSE). Contact:
+[ravikishan63392@gmail.com](mailto:ravikishan63392@gmail.com).

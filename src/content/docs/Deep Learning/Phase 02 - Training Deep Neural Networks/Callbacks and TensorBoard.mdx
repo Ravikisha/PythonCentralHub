@@ -5,10 +5,6 @@ sidebar:
   order: 418
 ---
 
-import DataCampExercise from "../../../../components/DataCampExercise.astro";
-import Figure from "../../../../components/Figure.astro";
-import Quiz from "../../../../components/Quiz.astro";
-
 `model.fit` is a loop you cannot see inside. Callbacks are the hooks that let you
 watch it, stop it, save from it and change it mid-flight — and every one of the
 training policies in this phase was built from them. This page measures four of
@@ -506,350 +502,1691 @@ spatial structure becomes part of the model.
 
 <DataCampExercise
   lang="python"
-  hint={`Record logs["loss"] and, separately, evaluate the same batch yourself after the step. The two numbers are different quantities.`}
+  hint={`Record logs['loss'] and, separately, evaluate the same batch yourself after the step. The two numbers are different quantities.`}
   code={`# Task: Exercise 1 - The loss Keras prints is not the batch loss
 import numpy as np
-from tensorflow import keras
 
-(x_train, y_train), _ = keras.datasets.fashion_mnist.load_data()
-x_train = x_train[:6000].reshape(6000, -1).astype("float32") / 255.0
-y_train = y_train[:6000]
-BATCH = 128
-
-keras.utils.set_random_seed(0)
-model = keras.Sequential([
-    keras.layers.Input((784,)),
-    keras.layers.Dense(256, activation="relu"),
-    keras.layers.Dense(256, activation="relu"),
-    keras.layers.Dense(10, activation="softmax"),
-])
-model.compile(keras.optimizers.Adam(1e-3), "sparse_categorical_crossentropy",
-              metrics=["accuracy"])
-loss_fn = keras.losses.SparseCategoricalCrossentropy()
+rng = np.random.RandomState(0)
+D, K = 40, 3
 
 
-class Record(keras.callbacks.Callback):
+def make_data(n):
+    y = rng.randint(0, K, n)
+    centres = np.zeros((K, D))
+    centres[0, :4], centres[1, 4:8], centres[2, 8:12] = 0.8, 0.8, 0.8
+    return centres[y] + rng.randn(n, D), y
+
+
+class Callback:
+    def on_train_batch_end(self, batch, logs):
+        pass
+
+    def on_epoch_end(self, epoch, logs):
+        pass
+
+
+class Model:
+    """A softmax classifier with a Keras-like fit() and callbacks."""
+    def __init__(self, lr=0.1):
+        self.W = np.zeros((D, K))
+        self.b = np.zeros(K)
+        self.learning_rate = lr
+        self.stop_training = False
+
+    def probs(self, x):
+        z = x @ self.W + self.b
+        p = np.exp(z - z.max(axis=1, keepdims=True))
+        return p / p.sum(axis=1, keepdims=True)
+
+    def loss(self, x, y):
+        return float(-np.log(self.probs(x)[np.arange(len(y)), y] + 1e-12).mean())
+
+    def accuracy(self, x, y):
+        return float((self.probs(x).argmax(axis=1) == y).mean())
+
+    def fit(self, x, y, epochs, batch_size, val=None, callbacks=()):
+        history = {}
+        for cb in callbacks:
+            cb.model = self
+        for epoch in range(epochs):
+            seen, total = 0, 0.0
+            for batch, start in enumerate(range(0, len(x), batch_size)):
+                xb, yb = x[start:start + batch_size], y[start:start + batch_size]
+                p = self.probs(xb)
+                total += self.loss(xb, yb) * len(yb)
+                seen += len(yb)
+                grad = p.copy()
+                grad[np.arange(len(yb)), yb] -= 1
+                self.W -= self.learning_rate * xb.T @ grad / len(yb)
+                self.b -= self.learning_rate * grad.mean(axis=0)
+                logs = {"loss": total / seen}
+                for cb in callbacks:
+                    cb.on_train_batch_end(batch, logs)
+            logs = {"loss": total / seen, "accuracy": self.accuracy(x, y)}
+            if val is not None:
+                logs["val_loss"] = self.loss(*val)
+                logs["val_accuracy"] = self.accuracy(*val)
+            for cb in callbacks:
+                cb.on_epoch_end(epoch, logs)
+            for key, value in logs.items():
+                history.setdefault(key, []).append(value)
+            if self.stop_training:
+                break
+        return history
+
+
+class EarlyStopping(Callback):
+    def __init__(self, patience, restore_best_weights=True):
+        self.patience, self.restore = patience, restore_best_weights
+        self.best, self.wait, self.weights = float("inf"), 0, None
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+            self.weights = (self.model.W.copy(), self.model.b.copy())
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.stop_training = True
+                if self.restore:
+                    self.model.W, self.model.b = self.weights
+
+
+class ModelCheckpoint(Callback):
+    def __init__(self, save_best_only):
+        self.save_best_only, self.best, self.saved = save_best_only, float("inf"), []
+
+    def on_epoch_end(self, epoch, logs):
+        if not self.save_best_only or logs["val_loss"] < self.best:
+            self.best = min(self.best, logs["val_loss"])
+            self.saved.append((self.model.W.copy(), self.model.b.copy()))
+
+
+class ReduceLROnPlateau(Callback):
+    def __init__(self, factor, patience, min_lr):
+        self.factor, self.patience, self.min_lr = factor, patience, min_lr
+        self.best, self.wait = float("inf"), 0
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.learning_rate = max(self.model.learning_rate * self.factor, self.min_lr)
+                self.wait = 0
+
+x_train, y_train = make_data(400)
+BATCH = 50
+
+
+class Record(Callback):
     def __init__(self):
-        super().__init__()
-        self.running, self.actual, self.epochs = [], [], []
+        self.running, self.actual = [], []
 
-    def on_train_batch_end(self, batch, logs=None):
-        self.running.append(float(logs["___"]))       # replace ___ with loss
+    def on_train_batch_end(self, batch, logs):
+        self.running.append(float(logs["___"]))   # replace ___ with loss
         start = batch * BATCH
-        rows = x_train[start:start + BATCH]
-        labels = y_train[start:start + BATCH]
-        self.actual.append(float(loss_fn(labels, model(rows,
-                                                       training=False)).numpy()))
-
-    def on_epoch_end(self, epoch, logs=None):
-        self.epochs.append(float(logs["loss"]))
+        rows, labels = x_train[start:start + BATCH], y_train[start:start + BATCH]
+        self.actual.append(self.model.loss(rows, labels))
 
 
 recorder = Record()
-model.fit(x_train, y_train, epochs=10, batch_size=BATCH, verbose=0,
-          callbacks=[recorder])
+model = Model(lr=0.05)
+history = model.fit(x_train, y_train, epochs=5, batch_size=BATCH, callbacks=[recorder])
 
-actual = np.array(recorder.actual)
+steps = 400 // BATCH
 running = np.array(recorder.running)
-steps = int(np.ceil(len(x_train) / BATCH))
-print(f"{'epoch':>6} {'printed':>9} {'batch min':>10} {'batch max':>10} "
-      f"{'batch sd':>9} {'running mid-epoch':>18}")
-for index in (0, 1, 4, 9):
-    window = actual[index * steps:(index + 1) * steps]
-    mid = running[index * steps + steps // 2]
-    print(f"{index + 1:6d} {recorder.epochs[index]:9.4f} {window.min():10.4f} "
-          f"{window.max():10.4f} {window.std(ddof=1):9.4f} {mid:18.4f}")
+actual = np.array(recorder.actual)
+mid = running[2 * steps + steps // 2]
+print("batches per epoch:", steps)
+print("the epoch loss is the mean of the batch losses seen so far:", bool(np.isclose(running[2 * steps + steps - 1], history["loss"][2])))
+print("the running loss differs from the batch loss just computed:", bool(abs(running - actual).max() > 1e-3))
+print("batch losses vary more than the printed epoch loss:", bool(actual[:steps].std() > 0))
 print("logs['loss'] is the running average of the epoch so far, not the loss")
-print("on the batch that just finished")
+print("on the batch that just finished")`}
+  solution={`import numpy as np
 
-# -- Expected Output -------------------------------------------
-#  epoch   printed  batch min  batch max  batch sd  running mid-epoch
-#      1    0.9039     0.4560     2.0592    0.3501             1.1317
-#      2    0.5289     0.3218     0.7452    0.0943             0.5502
-#      5    0.3851     0.2165     0.5168    0.0678             0.3882
-#     10    0.2796     0.1316     0.3895    0.0546             0.2811
-# logs['loss'] is the running average of the epoch so far, not the loss
-# on the batch that just finished
-# --------------------------------------------------------------`}
+rng = np.random.RandomState(0)
+D, K = 40, 3
+
+
+def make_data(n):
+    y = rng.randint(0, K, n)
+    centres = np.zeros((K, D))
+    centres[0, :4], centres[1, 4:8], centres[2, 8:12] = 0.8, 0.8, 0.8
+    return centres[y] + rng.randn(n, D), y
+
+
+class Callback:
+    def on_train_batch_end(self, batch, logs):
+        pass
+
+    def on_epoch_end(self, epoch, logs):
+        pass
+
+
+class Model:
+    """A softmax classifier with a Keras-like fit() and callbacks."""
+    def __init__(self, lr=0.1):
+        self.W = np.zeros((D, K))
+        self.b = np.zeros(K)
+        self.learning_rate = lr
+        self.stop_training = False
+
+    def probs(self, x):
+        z = x @ self.W + self.b
+        p = np.exp(z - z.max(axis=1, keepdims=True))
+        return p / p.sum(axis=1, keepdims=True)
+
+    def loss(self, x, y):
+        return float(-np.log(self.probs(x)[np.arange(len(y)), y] + 1e-12).mean())
+
+    def accuracy(self, x, y):
+        return float((self.probs(x).argmax(axis=1) == y).mean())
+
+    def fit(self, x, y, epochs, batch_size, val=None, callbacks=()):
+        history = {}
+        for cb in callbacks:
+            cb.model = self
+        for epoch in range(epochs):
+            seen, total = 0, 0.0
+            for batch, start in enumerate(range(0, len(x), batch_size)):
+                xb, yb = x[start:start + batch_size], y[start:start + batch_size]
+                p = self.probs(xb)
+                total += self.loss(xb, yb) * len(yb)
+                seen += len(yb)
+                grad = p.copy()
+                grad[np.arange(len(yb)), yb] -= 1
+                self.W -= self.learning_rate * xb.T @ grad / len(yb)
+                self.b -= self.learning_rate * grad.mean(axis=0)
+                logs = {"loss": total / seen}
+                for cb in callbacks:
+                    cb.on_train_batch_end(batch, logs)
+            logs = {"loss": total / seen, "accuracy": self.accuracy(x, y)}
+            if val is not None:
+                logs["val_loss"] = self.loss(*val)
+                logs["val_accuracy"] = self.accuracy(*val)
+            for cb in callbacks:
+                cb.on_epoch_end(epoch, logs)
+            for key, value in logs.items():
+                history.setdefault(key, []).append(value)
+            if self.stop_training:
+                break
+        return history
+
+
+class EarlyStopping(Callback):
+    def __init__(self, patience, restore_best_weights=True):
+        self.patience, self.restore = patience, restore_best_weights
+        self.best, self.wait, self.weights = float("inf"), 0, None
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+            self.weights = (self.model.W.copy(), self.model.b.copy())
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.stop_training = True
+                if self.restore:
+                    self.model.W, self.model.b = self.weights
+
+
+class ModelCheckpoint(Callback):
+    def __init__(self, save_best_only):
+        self.save_best_only, self.best, self.saved = save_best_only, float("inf"), []
+
+    def on_epoch_end(self, epoch, logs):
+        if not self.save_best_only or logs["val_loss"] < self.best:
+            self.best = min(self.best, logs["val_loss"])
+            self.saved.append((self.model.W.copy(), self.model.b.copy()))
+
+
+class ReduceLROnPlateau(Callback):
+    def __init__(self, factor, patience, min_lr):
+        self.factor, self.patience, self.min_lr = factor, patience, min_lr
+        self.best, self.wait = float("inf"), 0
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.learning_rate = max(self.model.learning_rate * self.factor, self.min_lr)
+                self.wait = 0
+
+x_train, y_train = make_data(400)
+BATCH = 50
+
+
+class Record(Callback):
+    def __init__(self):
+        self.running, self.actual = [], []
+
+    def on_train_batch_end(self, batch, logs):
+        self.running.append(float(logs["loss"]))
+        start = batch * BATCH
+        rows, labels = x_train[start:start + BATCH], y_train[start:start + BATCH]
+        self.actual.append(self.model.loss(rows, labels))
+
+
+recorder = Record()
+model = Model(lr=0.05)
+history = model.fit(x_train, y_train, epochs=5, batch_size=BATCH, callbacks=[recorder])
+
+steps = 400 // BATCH
+running = np.array(recorder.running)
+actual = np.array(recorder.actual)
+mid = running[2 * steps + steps // 2]
+print("batches per epoch:", steps)
+print("the epoch loss is the mean of the batch losses seen so far:", bool(np.isclose(running[2 * steps + steps - 1], history["loss"][2])))
+print("the running loss differs from the batch loss just computed:", bool(abs(running - actual).max() > 1e-3))
+print("batch losses vary more than the printed epoch loss:", bool(actual[:steps].std() > 0))
+print("logs['loss'] is the running average of the epoch so far, not the loss")
+print("on the batch that just finished")`}
+  sct={`test_output_contains("batches per epoch: 8", pattern=False)
+test_output_contains("the epoch loss is the mean of the batch losses seen so far: True", pattern=False)
+test_output_contains("the running loss differs from the batch loss just computed: True", pattern=False)
+success_msg("The logged loss is a running average over the epoch, so it lags the loss on the batch that just finished.")`}
+  height={460}
 />
 
 <DataCampExercise
   lang="python"
-  hint={`Setting self.model.stop_training = True inside on_epoch_end ends the run after that epoch completes. Record the epoch so you can report it afterwards.`}
+  hint={`Setting self.model.stop_training = True inside on_epoch_end ends the run after that epoch completes. Record the epoch so you can report it.`}
   code={`# Task: Exercise 2 - Write a callback that stops on your own condition
 import numpy as np
-from tensorflow import keras
 
-(x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()
-x_train = x_train[:6000].reshape(6000, -1).astype("float32") / 255.0
-y_train = y_train[:6000]
-x_test = x_test[:1500].reshape(1500, -1).astype("float32") / 255.0
-y_test = y_test[:1500]
+rng = np.random.RandomState(0)
+D, K = 40, 3
 
 
-class StopAt(keras.callbacks.Callback):
+def make_data(n):
+    y = rng.randint(0, K, n)
+    centres = np.zeros((K, D))
+    centres[0, :4], centres[1, 4:8], centres[2, 8:12] = 0.8, 0.8, 0.8
+    return centres[y] + rng.randn(n, D), y
+
+
+class Callback:
+    def on_train_batch_end(self, batch, logs):
+        pass
+
+    def on_epoch_end(self, epoch, logs):
+        pass
+
+
+class Model:
+    """A softmax classifier with a Keras-like fit() and callbacks."""
+    def __init__(self, lr=0.1):
+        self.W = np.zeros((D, K))
+        self.b = np.zeros(K)
+        self.learning_rate = lr
+        self.stop_training = False
+
+    def probs(self, x):
+        z = x @ self.W + self.b
+        p = np.exp(z - z.max(axis=1, keepdims=True))
+        return p / p.sum(axis=1, keepdims=True)
+
+    def loss(self, x, y):
+        return float(-np.log(self.probs(x)[np.arange(len(y)), y] + 1e-12).mean())
+
+    def accuracy(self, x, y):
+        return float((self.probs(x).argmax(axis=1) == y).mean())
+
+    def fit(self, x, y, epochs, batch_size, val=None, callbacks=()):
+        history = {}
+        for cb in callbacks:
+            cb.model = self
+        for epoch in range(epochs):
+            seen, total = 0, 0.0
+            for batch, start in enumerate(range(0, len(x), batch_size)):
+                xb, yb = x[start:start + batch_size], y[start:start + batch_size]
+                p = self.probs(xb)
+                total += self.loss(xb, yb) * len(yb)
+                seen += len(yb)
+                grad = p.copy()
+                grad[np.arange(len(yb)), yb] -= 1
+                self.W -= self.learning_rate * xb.T @ grad / len(yb)
+                self.b -= self.learning_rate * grad.mean(axis=0)
+                logs = {"loss": total / seen}
+                for cb in callbacks:
+                    cb.on_train_batch_end(batch, logs)
+            logs = {"loss": total / seen, "accuracy": self.accuracy(x, y)}
+            if val is not None:
+                logs["val_loss"] = self.loss(*val)
+                logs["val_accuracy"] = self.accuracy(*val)
+            for cb in callbacks:
+                cb.on_epoch_end(epoch, logs)
+            for key, value in logs.items():
+                history.setdefault(key, []).append(value)
+            if self.stop_training:
+                break
+        return history
+
+
+class EarlyStopping(Callback):
+    def __init__(self, patience, restore_best_weights=True):
+        self.patience, self.restore = patience, restore_best_weights
+        self.best, self.wait, self.weights = float("inf"), 0, None
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+            self.weights = (self.model.W.copy(), self.model.b.copy())
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.stop_training = True
+                if self.restore:
+                    self.model.W, self.model.b = self.weights
+
+
+class ModelCheckpoint(Callback):
+    def __init__(self, save_best_only):
+        self.save_best_only, self.best, self.saved = save_best_only, float("inf"), []
+
+    def on_epoch_end(self, epoch, logs):
+        if not self.save_best_only or logs["val_loss"] < self.best:
+            self.best = min(self.best, logs["val_loss"])
+            self.saved.append((self.model.W.copy(), self.model.b.copy()))
+
+
+class ReduceLROnPlateau(Callback):
+    def __init__(self, factor, patience, min_lr):
+        self.factor, self.patience, self.min_lr = factor, patience, min_lr
+        self.best, self.wait = float("inf"), 0
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.learning_rate = max(self.model.learning_rate * self.factor, self.min_lr)
+                self.wait = 0
+
+x_train, y_train = make_data(600)
+x_test, y_test = make_data(600)
+
+
+class StopAt(Callback):
     def __init__(self, target):
-        super().__init__()
         self.target = target
         self.stopped_epoch = None
 
-    def on_epoch_end(self, epoch, logs=None):
+    def on_epoch_end(self, epoch, logs):
         if logs["val_accuracy"] >= self.target:
             self.stopped_epoch = epoch + 1
-            self.model.___ = True             # replace ___ with stop_training
+            self.model.___ = True   # replace ___ with stop_training
 
 
-keras.utils.set_random_seed(0)
-model = keras.Sequential([
-    keras.layers.Input((784,)),
-    keras.layers.Dense(256, activation="relu"),
-    keras.layers.Dense(256, activation="relu"),
-    keras.layers.Dense(10, activation="softmax"),
-])
-model.compile(keras.optimizers.Adam(1e-3), "sparse_categorical_crossentropy",
-              metrics=["accuracy"])
-stop = StopAt(0.86)
-history = model.fit(x_train, y_train, epochs=40, batch_size=128, verbose=0,
-                    validation_data=(x_test, y_test), callbacks=[stop])
-print(f"target 0.8600 reached at epoch {stop.stopped_epoch} of 40")
-print(f"epochs actually run: {len(history.history['loss'])}")
-print(f"val acc at that point: {history.history['val_accuracy'][-1]:.4f}")
+stop = StopAt(0.75)
+model = Model(lr=0.05)
+history = model.fit(x_train, y_train, epochs=40, batch_size=50, val=(x_test, y_test), callbacks=[stop])
+print("the target was reached:", stop.stopped_epoch is not None)
+print("training stopped before epoch 40:", len(history["loss"]) < 40)
+print("epochs run equal the epoch that hit the target:", len(history["loss"]) == stop.stopped_epoch)
+print("val acc at that point is at least the target:", history["val_accuracy"][-1] >= 0.75)`}
+  solution={`import numpy as np
 
-# -- Expected Output -------------------------------------------
-# target 0.8600 reached at epoch 36 of 40
-# epochs actually run: 36
-# val acc at that point: 0.8620
-# --------------------------------------------------------------`}
+rng = np.random.RandomState(0)
+D, K = 40, 3
+
+
+def make_data(n):
+    y = rng.randint(0, K, n)
+    centres = np.zeros((K, D))
+    centres[0, :4], centres[1, 4:8], centres[2, 8:12] = 0.8, 0.8, 0.8
+    return centres[y] + rng.randn(n, D), y
+
+
+class Callback:
+    def on_train_batch_end(self, batch, logs):
+        pass
+
+    def on_epoch_end(self, epoch, logs):
+        pass
+
+
+class Model:
+    """A softmax classifier with a Keras-like fit() and callbacks."""
+    def __init__(self, lr=0.1):
+        self.W = np.zeros((D, K))
+        self.b = np.zeros(K)
+        self.learning_rate = lr
+        self.stop_training = False
+
+    def probs(self, x):
+        z = x @ self.W + self.b
+        p = np.exp(z - z.max(axis=1, keepdims=True))
+        return p / p.sum(axis=1, keepdims=True)
+
+    def loss(self, x, y):
+        return float(-np.log(self.probs(x)[np.arange(len(y)), y] + 1e-12).mean())
+
+    def accuracy(self, x, y):
+        return float((self.probs(x).argmax(axis=1) == y).mean())
+
+    def fit(self, x, y, epochs, batch_size, val=None, callbacks=()):
+        history = {}
+        for cb in callbacks:
+            cb.model = self
+        for epoch in range(epochs):
+            seen, total = 0, 0.0
+            for batch, start in enumerate(range(0, len(x), batch_size)):
+                xb, yb = x[start:start + batch_size], y[start:start + batch_size]
+                p = self.probs(xb)
+                total += self.loss(xb, yb) * len(yb)
+                seen += len(yb)
+                grad = p.copy()
+                grad[np.arange(len(yb)), yb] -= 1
+                self.W -= self.learning_rate * xb.T @ grad / len(yb)
+                self.b -= self.learning_rate * grad.mean(axis=0)
+                logs = {"loss": total / seen}
+                for cb in callbacks:
+                    cb.on_train_batch_end(batch, logs)
+            logs = {"loss": total / seen, "accuracy": self.accuracy(x, y)}
+            if val is not None:
+                logs["val_loss"] = self.loss(*val)
+                logs["val_accuracy"] = self.accuracy(*val)
+            for cb in callbacks:
+                cb.on_epoch_end(epoch, logs)
+            for key, value in logs.items():
+                history.setdefault(key, []).append(value)
+            if self.stop_training:
+                break
+        return history
+
+
+class EarlyStopping(Callback):
+    def __init__(self, patience, restore_best_weights=True):
+        self.patience, self.restore = patience, restore_best_weights
+        self.best, self.wait, self.weights = float("inf"), 0, None
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+            self.weights = (self.model.W.copy(), self.model.b.copy())
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.stop_training = True
+                if self.restore:
+                    self.model.W, self.model.b = self.weights
+
+
+class ModelCheckpoint(Callback):
+    def __init__(self, save_best_only):
+        self.save_best_only, self.best, self.saved = save_best_only, float("inf"), []
+
+    def on_epoch_end(self, epoch, logs):
+        if not self.save_best_only or logs["val_loss"] < self.best:
+            self.best = min(self.best, logs["val_loss"])
+            self.saved.append((self.model.W.copy(), self.model.b.copy()))
+
+
+class ReduceLROnPlateau(Callback):
+    def __init__(self, factor, patience, min_lr):
+        self.factor, self.patience, self.min_lr = factor, patience, min_lr
+        self.best, self.wait = float("inf"), 0
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.learning_rate = max(self.model.learning_rate * self.factor, self.min_lr)
+                self.wait = 0
+
+x_train, y_train = make_data(600)
+x_test, y_test = make_data(600)
+
+
+class StopAt(Callback):
+    def __init__(self, target):
+        self.target = target
+        self.stopped_epoch = None
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_accuracy"] >= self.target:
+            self.stopped_epoch = epoch + 1
+            self.model.stop_training = True
+
+
+stop = StopAt(0.75)
+model = Model(lr=0.05)
+history = model.fit(x_train, y_train, epochs=40, batch_size=50, val=(x_test, y_test), callbacks=[stop])
+print("the target was reached:", stop.stopped_epoch is not None)
+print("training stopped before epoch 40:", len(history["loss"]) < 40)
+print("epochs run equal the epoch that hit the target:", len(history["loss"]) == stop.stopped_epoch)
+print("val acc at that point is at least the target:", history["val_accuracy"][-1] >= 0.75)`}
+  sct={`test_output_contains("the target was reached: True", pattern=False)
+test_output_contains("training stopped before epoch 40: True", pattern=False)
+test_output_contains("epochs run equal the epoch that hit the target: True", pattern=False)
+success_msg("Setting stop_training inside on_epoch_end ends the run right after that epoch, and the callback remembers which epoch it was.")`}
+  height={460}
 />
 
 <DataCampExercise
   lang="python"
   hint={`Only the callbacks list changes. ModelCheckpoint leaves the in-memory model at its final epoch, so the checkpoint has to be loaded back before evaluating.`}
   code={`# Task: Exercise 3 - Four policies, one model
-import os
-import tempfile
 import numpy as np
-from tensorflow import keras
 
-(x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()
-x_train = x_train[:6000].reshape(6000, -1).astype("float32") / 255.0
-y_train = y_train[:6000]
-x_test = x_test[:1500].reshape(1500, -1).astype("float32") / 255.0
-y_test = y_test[:1500]
-checkpoint_path = os.path.join(tempfile.mkdtemp(), "best.keras")
+rng = np.random.RandomState(0)
+D, K = 40, 3
 
 
-def build():
-    keras.utils.set_random_seed(0)
-    model = keras.Sequential([
-        keras.layers.Input((784,)),
-        keras.layers.Dense(256, activation="relu"),
-        keras.layers.Dense(256, activation="relu"),
-        keras.layers.Dense(10, activation="softmax"),
-    ])
-    model.compile(keras.optimizers.Adam(1e-3),
-                  "sparse_categorical_crossentropy", metrics=["accuracy"])
-    return model
+def make_data(n):
+    y = rng.randint(0, K, n)
+    centres = np.zeros((K, D))
+    centres[0, :4], centres[1, 4:8], centres[2, 8:12] = 0.8, 0.8, 0.8
+    return centres[y] + rng.randn(n, D), y
 
 
+class Callback:
+    def on_train_batch_end(self, batch, logs):
+        pass
+
+    def on_epoch_end(self, epoch, logs):
+        pass
+
+
+class Model:
+    """A softmax classifier with a Keras-like fit() and callbacks."""
+    def __init__(self, lr=0.1):
+        self.W = np.zeros((D, K))
+        self.b = np.zeros(K)
+        self.learning_rate = lr
+        self.stop_training = False
+
+    def probs(self, x):
+        z = x @ self.W + self.b
+        p = np.exp(z - z.max(axis=1, keepdims=True))
+        return p / p.sum(axis=1, keepdims=True)
+
+    def loss(self, x, y):
+        return float(-np.log(self.probs(x)[np.arange(len(y)), y] + 1e-12).mean())
+
+    def accuracy(self, x, y):
+        return float((self.probs(x).argmax(axis=1) == y).mean())
+
+    def fit(self, x, y, epochs, batch_size, val=None, callbacks=()):
+        history = {}
+        for cb in callbacks:
+            cb.model = self
+        for epoch in range(epochs):
+            seen, total = 0, 0.0
+            for batch, start in enumerate(range(0, len(x), batch_size)):
+                xb, yb = x[start:start + batch_size], y[start:start + batch_size]
+                p = self.probs(xb)
+                total += self.loss(xb, yb) * len(yb)
+                seen += len(yb)
+                grad = p.copy()
+                grad[np.arange(len(yb)), yb] -= 1
+                self.W -= self.learning_rate * xb.T @ grad / len(yb)
+                self.b -= self.learning_rate * grad.mean(axis=0)
+                logs = {"loss": total / seen}
+                for cb in callbacks:
+                    cb.on_train_batch_end(batch, logs)
+            logs = {"loss": total / seen, "accuracy": self.accuracy(x, y)}
+            if val is not None:
+                logs["val_loss"] = self.loss(*val)
+                logs["val_accuracy"] = self.accuracy(*val)
+            for cb in callbacks:
+                cb.on_epoch_end(epoch, logs)
+            for key, value in logs.items():
+                history.setdefault(key, []).append(value)
+            if self.stop_training:
+                break
+        return history
+
+
+class EarlyStopping(Callback):
+    def __init__(self, patience, restore_best_weights=True):
+        self.patience, self.restore = patience, restore_best_weights
+        self.best, self.wait, self.weights = float("inf"), 0, None
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+            self.weights = (self.model.W.copy(), self.model.b.copy())
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.stop_training = True
+                if self.restore:
+                    self.model.W, self.model.b = self.weights
+
+
+class ModelCheckpoint(Callback):
+    def __init__(self, save_best_only):
+        self.save_best_only, self.best, self.saved = save_best_only, float("inf"), []
+
+    def on_epoch_end(self, epoch, logs):
+        if not self.save_best_only or logs["val_loss"] < self.best:
+            self.best = min(self.best, logs["val_loss"])
+            self.saved.append((self.model.W.copy(), self.model.b.copy()))
+
+
+class ReduceLROnPlateau(Callback):
+    def __init__(self, factor, patience, min_lr):
+        self.factor, self.patience, self.min_lr = factor, patience, min_lr
+        self.best, self.wait = float("inf"), 0
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.learning_rate = max(self.model.learning_rate * self.factor, self.min_lr)
+                self.wait = 0
+
+x_train, y_train = make_data(60)
+x_test, y_test = make_data(600)
+
+checkpoint = ModelCheckpoint(save_best_only=___)   # replace ___ with True
 policies = [
-    ("40 fixed epochs", [], None),
-    ("EarlyStopping patience 5",
-     [keras.callbacks.EarlyStopping(monitor="val_loss", patience=5,
-                                    restore_best_weights=True)], None),
-    ("ModelCheckpoint best only",
-     [keras.callbacks.ModelCheckpoint(checkpoint_path, monitor="val_loss",
-                                      save_best_only=___)],
-     checkpoint_path),                            # replace ___ with True
-    ("ReduceLROnPlateau 0.5",
-     [keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5,
-                                        patience=3, min_lr=1e-5)], None),
+    ("40 fixed epochs", []),
+    ("EarlyStopping patience 5", [EarlyStopping(patience=5)]),
+    ("ModelCheckpoint best only", [checkpoint]),
+    ("ReduceLROnPlateau 0.5", [ReduceLROnPlateau(0.5, 3, 1e-4)]),
 ]
+epochs_run, tests = {}, {}
+for label, callbacks in policies:
+    model = Model(lr=0.3)
+    history = model.fit(x_train, y_train, epochs=40, batch_size=20, val=(x_test, y_test), callbacks=callbacks)
+    epochs_run[label] = len(history["loss"])
+    if label == "ModelCheckpoint best only":
+        model.W, model.b = checkpoint.saved[-1]      # load the best checkpoint back
+    tests[label] = model.loss(x_test, y_test)
+    print(label, "ran", epochs_run[label], "epochs")
+print("early stopping spent fewer epochs than the fixed run:", epochs_run["EarlyStopping patience 5"] < 40)
+print("early stopping and best-checkpointing hold the same weights:",
+      abs(tests["EarlyStopping patience 5"] - tests["ModelCheckpoint best only"]) < 1e-9)
+print("the best weights beat the final weights of the fixed run:", tests["ModelCheckpoint best only"] < tests["40 fixed epochs"])`}
+  solution={`import numpy as np
 
-print(f"{'policy':28s} {'epochs':>7} {'test acc':>9} {'test loss':>10}")
-for label, callbacks, restore in policies:
-    model = build()
-    history = model.fit(x_train, y_train, epochs=40, batch_size=128, verbose=0,
-                        validation_data=(x_test, y_test), callbacks=callbacks)
-    if restore:
-        model = keras.models.load_model(restore)
-    loss, accuracy = model.evaluate(x_test, y_test, verbose=0)
-    print(f"{label:28s} {len(history.history['loss']):7d} {accuracy:9.4f} "
-          f"{loss:10.4f}")
-print("early stopping and best-checkpointing hold the same weights; only the")
-print("epochs spent and the crash-safety differ")
+rng = np.random.RandomState(0)
+D, K = 40, 3
 
-# -- Expected Output -------------------------------------------
-# policy                        epochs  test acc  test loss
-# 40 fixed epochs                   40    0.8540     0.7037
-# EarlyStopping patience 5          17    0.8447     0.4643
-# ModelCheckpoint best only         40    0.8447     0.4643
-# ReduceLROnPlateau 0.5             40    0.8613     0.4234
-# early stopping and best-checkpointing hold the same weights; only the
-# epochs spent and the crash-safety differ
-# --------------------------------------------------------------`}
+
+def make_data(n):
+    y = rng.randint(0, K, n)
+    centres = np.zeros((K, D))
+    centres[0, :4], centres[1, 4:8], centres[2, 8:12] = 0.8, 0.8, 0.8
+    return centres[y] + rng.randn(n, D), y
+
+
+class Callback:
+    def on_train_batch_end(self, batch, logs):
+        pass
+
+    def on_epoch_end(self, epoch, logs):
+        pass
+
+
+class Model:
+    """A softmax classifier with a Keras-like fit() and callbacks."""
+    def __init__(self, lr=0.1):
+        self.W = np.zeros((D, K))
+        self.b = np.zeros(K)
+        self.learning_rate = lr
+        self.stop_training = False
+
+    def probs(self, x):
+        z = x @ self.W + self.b
+        p = np.exp(z - z.max(axis=1, keepdims=True))
+        return p / p.sum(axis=1, keepdims=True)
+
+    def loss(self, x, y):
+        return float(-np.log(self.probs(x)[np.arange(len(y)), y] + 1e-12).mean())
+
+    def accuracy(self, x, y):
+        return float((self.probs(x).argmax(axis=1) == y).mean())
+
+    def fit(self, x, y, epochs, batch_size, val=None, callbacks=()):
+        history = {}
+        for cb in callbacks:
+            cb.model = self
+        for epoch in range(epochs):
+            seen, total = 0, 0.0
+            for batch, start in enumerate(range(0, len(x), batch_size)):
+                xb, yb = x[start:start + batch_size], y[start:start + batch_size]
+                p = self.probs(xb)
+                total += self.loss(xb, yb) * len(yb)
+                seen += len(yb)
+                grad = p.copy()
+                grad[np.arange(len(yb)), yb] -= 1
+                self.W -= self.learning_rate * xb.T @ grad / len(yb)
+                self.b -= self.learning_rate * grad.mean(axis=0)
+                logs = {"loss": total / seen}
+                for cb in callbacks:
+                    cb.on_train_batch_end(batch, logs)
+            logs = {"loss": total / seen, "accuracy": self.accuracy(x, y)}
+            if val is not None:
+                logs["val_loss"] = self.loss(*val)
+                logs["val_accuracy"] = self.accuracy(*val)
+            for cb in callbacks:
+                cb.on_epoch_end(epoch, logs)
+            for key, value in logs.items():
+                history.setdefault(key, []).append(value)
+            if self.stop_training:
+                break
+        return history
+
+
+class EarlyStopping(Callback):
+    def __init__(self, patience, restore_best_weights=True):
+        self.patience, self.restore = patience, restore_best_weights
+        self.best, self.wait, self.weights = float("inf"), 0, None
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+            self.weights = (self.model.W.copy(), self.model.b.copy())
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.stop_training = True
+                if self.restore:
+                    self.model.W, self.model.b = self.weights
+
+
+class ModelCheckpoint(Callback):
+    def __init__(self, save_best_only):
+        self.save_best_only, self.best, self.saved = save_best_only, float("inf"), []
+
+    def on_epoch_end(self, epoch, logs):
+        if not self.save_best_only or logs["val_loss"] < self.best:
+            self.best = min(self.best, logs["val_loss"])
+            self.saved.append((self.model.W.copy(), self.model.b.copy()))
+
+
+class ReduceLROnPlateau(Callback):
+    def __init__(self, factor, patience, min_lr):
+        self.factor, self.patience, self.min_lr = factor, patience, min_lr
+        self.best, self.wait = float("inf"), 0
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.learning_rate = max(self.model.learning_rate * self.factor, self.min_lr)
+                self.wait = 0
+
+x_train, y_train = make_data(60)
+x_test, y_test = make_data(600)
+
+checkpoint = ModelCheckpoint(save_best_only=True)
+policies = [
+    ("40 fixed epochs", []),
+    ("EarlyStopping patience 5", [EarlyStopping(patience=5)]),
+    ("ModelCheckpoint best only", [checkpoint]),
+    ("ReduceLROnPlateau 0.5", [ReduceLROnPlateau(0.5, 3, 1e-4)]),
+]
+epochs_run, tests = {}, {}
+for label, callbacks in policies:
+    model = Model(lr=0.3)
+    history = model.fit(x_train, y_train, epochs=40, batch_size=20, val=(x_test, y_test), callbacks=callbacks)
+    epochs_run[label] = len(history["loss"])
+    if label == "ModelCheckpoint best only":
+        model.W, model.b = checkpoint.saved[-1]      # load the best checkpoint back
+    tests[label] = model.loss(x_test, y_test)
+    print(label, "ran", epochs_run[label], "epochs")
+print("early stopping spent fewer epochs than the fixed run:", epochs_run["EarlyStopping patience 5"] < 40)
+print("early stopping and best-checkpointing hold the same weights:",
+      abs(tests["EarlyStopping patience 5"] - tests["ModelCheckpoint best only"]) < 1e-9)
+print("the best weights beat the final weights of the fixed run:", tests["ModelCheckpoint best only"] < tests["40 fixed epochs"])`}
+  sct={`test_output_contains("early stopping spent fewer epochs than the fixed run: True", pattern=False)
+test_output_contains("early stopping and best-checkpointing hold the same weights: True", pattern=False)
+test_output_contains("the best weights beat the final weights of the fixed run: True", pattern=False)
+success_msg("Early stopping and best-only checkpointing end up holding exactly the same weights. They differ in the epochs spent and in crash-safety.")`}
+  height={460}
 />
 
 <DataCampExercise
   lang="python"
-  hint={`Without save_best_only, ModelCheckpoint writes one archive per epoch — and each archive carries the optimizer state as well as the weights.`}
+  hint={`Without save_best_only, ModelCheckpoint writes one snapshot per epoch. Pass the flag through so the same loop runs both policies.`}
   code={`# Task: Exercise 4 - What checkpointing costs on disk
-import glob
-import os
-import tempfile
-from tensorflow import keras
+import numpy as np
 
-(x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()
-x_train = x_train[:6000].reshape(6000, -1).astype("float32") / 255.0
-y_train = y_train[:6000]
-x_test = x_test[:1500].reshape(1500, -1).astype("float32") / 255.0
-y_test = y_test[:1500]
-root = tempfile.mkdtemp(prefix="pch-checkpoints-")
+rng = np.random.RandomState(0)
+D, K = 40, 3
 
 
-def build():
-    keras.utils.set_random_seed(0)
-    model = keras.Sequential([
-        keras.layers.Input((784,)),
-        keras.layers.Dense(256, activation="relu"),
-        keras.layers.Dense(256, activation="relu"),
-        keras.layers.Dense(10, activation="softmax"),
-    ])
-    model.compile(keras.optimizers.Adam(1e-3),
-                  "sparse_categorical_crossentropy", metrics=["accuracy"])
-    return model
+def make_data(n):
+    y = rng.randint(0, K, n)
+    centres = np.zeros((K, D))
+    centres[0, :4], centres[1, 4:8], centres[2, 8:12] = 0.8, 0.8, 0.8
+    return centres[y] + rng.randn(n, D), y
 
 
+class Callback:
+    def on_train_batch_end(self, batch, logs):
+        pass
+
+    def on_epoch_end(self, epoch, logs):
+        pass
+
+
+class Model:
+    """A softmax classifier with a Keras-like fit() and callbacks."""
+    def __init__(self, lr=0.1):
+        self.W = np.zeros((D, K))
+        self.b = np.zeros(K)
+        self.learning_rate = lr
+        self.stop_training = False
+
+    def probs(self, x):
+        z = x @ self.W + self.b
+        p = np.exp(z - z.max(axis=1, keepdims=True))
+        return p / p.sum(axis=1, keepdims=True)
+
+    def loss(self, x, y):
+        return float(-np.log(self.probs(x)[np.arange(len(y)), y] + 1e-12).mean())
+
+    def accuracy(self, x, y):
+        return float((self.probs(x).argmax(axis=1) == y).mean())
+
+    def fit(self, x, y, epochs, batch_size, val=None, callbacks=()):
+        history = {}
+        for cb in callbacks:
+            cb.model = self
+        for epoch in range(epochs):
+            seen, total = 0, 0.0
+            for batch, start in enumerate(range(0, len(x), batch_size)):
+                xb, yb = x[start:start + batch_size], y[start:start + batch_size]
+                p = self.probs(xb)
+                total += self.loss(xb, yb) * len(yb)
+                seen += len(yb)
+                grad = p.copy()
+                grad[np.arange(len(yb)), yb] -= 1
+                self.W -= self.learning_rate * xb.T @ grad / len(yb)
+                self.b -= self.learning_rate * grad.mean(axis=0)
+                logs = {"loss": total / seen}
+                for cb in callbacks:
+                    cb.on_train_batch_end(batch, logs)
+            logs = {"loss": total / seen, "accuracy": self.accuracy(x, y)}
+            if val is not None:
+                logs["val_loss"] = self.loss(*val)
+                logs["val_accuracy"] = self.accuracy(*val)
+            for cb in callbacks:
+                cb.on_epoch_end(epoch, logs)
+            for key, value in logs.items():
+                history.setdefault(key, []).append(value)
+            if self.stop_training:
+                break
+        return history
+
+
+class EarlyStopping(Callback):
+    def __init__(self, patience, restore_best_weights=True):
+        self.patience, self.restore = patience, restore_best_weights
+        self.best, self.wait, self.weights = float("inf"), 0, None
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+            self.weights = (self.model.W.copy(), self.model.b.copy())
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.stop_training = True
+                if self.restore:
+                    self.model.W, self.model.b = self.weights
+
+
+class ModelCheckpoint(Callback):
+    def __init__(self, save_best_only):
+        self.save_best_only, self.best, self.saved = save_best_only, float("inf"), []
+
+    def on_epoch_end(self, epoch, logs):
+        if not self.save_best_only or logs["val_loss"] < self.best:
+            self.best = min(self.best, logs["val_loss"])
+            self.saved.append((self.model.W.copy(), self.model.b.copy()))
+
+
+class ReduceLROnPlateau(Callback):
+    def __init__(self, factor, patience, min_lr):
+        self.factor, self.patience, self.min_lr = factor, patience, min_lr
+        self.best, self.wait = float("inf"), 0
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.learning_rate = max(self.model.learning_rate * self.factor, self.min_lr)
+                self.wait = 0
+
+x_train, y_train = make_data(60)
+x_test, y_test = make_data(300)
+
+sizes = {}
 for label, best_only in (("save every epoch", False), ("save_best_only", True)):
-    folder = os.path.join(root, label.replace(" ", "-"))
-    os.makedirs(folder, exist_ok=True)
-    template = "epoch-{epoch:02d}.keras" if not best_only else "best.keras"
-    model = build()
-    model.fit(x_train, y_train, epochs=8, batch_size=128, verbose=0,
-              validation_data=(x_test, y_test),
-              callbacks=[keras.callbacks.ModelCheckpoint(
-                  os.path.join(folder, template), monitor="val_loss",
-                  save_best_only=___)])            # replace ___ with best_only
-    files = sorted(glob.glob(os.path.join(folder, "*.keras")))
-    total = sum(os.path.getsize(f) for f in files)
-    print(f"{label:18s} {len(files)} file(s)  {total:,} bytes")
-print(f"the model has {build().count_params():,} parameters, so its raw float32")
-print(f"weights are {build().count_params() * 4:,} bytes - the rest is optimizer")
-print("state and container metadata")
+    saver = ModelCheckpoint(save_best_only=___)   # replace ___ with best_only
+    model = Model(lr=0.3)
+    model.fit(x_train, y_train, epochs=8, batch_size=20, val=(x_test, y_test), callbacks=[saver])
+    total = sum(W.nbytes + b.nbytes for W, b in saver.saved)
+    sizes[label] = (len(saver.saved), total)
+    print(label, ":", len(saver.saved), "snapshot(s),", format(total, ","), "bytes")
+params = D * K + K
+print("the model has", params, "parameters, so one snapshot of raw float64 weights is", format(params * 8, ","), "bytes")
+print("saving every epoch keeps 8 snapshots:", sizes["save every epoch"][0] == 8)
+print("best-only keeps fewer:", sizes["save_best_only"][0] < 8)`}
+  solution={`import numpy as np
 
-# -- Expected Output -------------------------------------------
-# save every epoch   8 file(s)  26,060,320 bytes
-# save_best_only     1 file(s)  3,257,540 bytes
-# the model has 269,322 parameters, so its raw float32
-# weights are 1,077,288 bytes - the rest is optimizer
-# state and container metadata
-# --------------------------------------------------------------`}
+rng = np.random.RandomState(0)
+D, K = 40, 3
+
+
+def make_data(n):
+    y = rng.randint(0, K, n)
+    centres = np.zeros((K, D))
+    centres[0, :4], centres[1, 4:8], centres[2, 8:12] = 0.8, 0.8, 0.8
+    return centres[y] + rng.randn(n, D), y
+
+
+class Callback:
+    def on_train_batch_end(self, batch, logs):
+        pass
+
+    def on_epoch_end(self, epoch, logs):
+        pass
+
+
+class Model:
+    """A softmax classifier with a Keras-like fit() and callbacks."""
+    def __init__(self, lr=0.1):
+        self.W = np.zeros((D, K))
+        self.b = np.zeros(K)
+        self.learning_rate = lr
+        self.stop_training = False
+
+    def probs(self, x):
+        z = x @ self.W + self.b
+        p = np.exp(z - z.max(axis=1, keepdims=True))
+        return p / p.sum(axis=1, keepdims=True)
+
+    def loss(self, x, y):
+        return float(-np.log(self.probs(x)[np.arange(len(y)), y] + 1e-12).mean())
+
+    def accuracy(self, x, y):
+        return float((self.probs(x).argmax(axis=1) == y).mean())
+
+    def fit(self, x, y, epochs, batch_size, val=None, callbacks=()):
+        history = {}
+        for cb in callbacks:
+            cb.model = self
+        for epoch in range(epochs):
+            seen, total = 0, 0.0
+            for batch, start in enumerate(range(0, len(x), batch_size)):
+                xb, yb = x[start:start + batch_size], y[start:start + batch_size]
+                p = self.probs(xb)
+                total += self.loss(xb, yb) * len(yb)
+                seen += len(yb)
+                grad = p.copy()
+                grad[np.arange(len(yb)), yb] -= 1
+                self.W -= self.learning_rate * xb.T @ grad / len(yb)
+                self.b -= self.learning_rate * grad.mean(axis=0)
+                logs = {"loss": total / seen}
+                for cb in callbacks:
+                    cb.on_train_batch_end(batch, logs)
+            logs = {"loss": total / seen, "accuracy": self.accuracy(x, y)}
+            if val is not None:
+                logs["val_loss"] = self.loss(*val)
+                logs["val_accuracy"] = self.accuracy(*val)
+            for cb in callbacks:
+                cb.on_epoch_end(epoch, logs)
+            for key, value in logs.items():
+                history.setdefault(key, []).append(value)
+            if self.stop_training:
+                break
+        return history
+
+
+class EarlyStopping(Callback):
+    def __init__(self, patience, restore_best_weights=True):
+        self.patience, self.restore = patience, restore_best_weights
+        self.best, self.wait, self.weights = float("inf"), 0, None
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+            self.weights = (self.model.W.copy(), self.model.b.copy())
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.stop_training = True
+                if self.restore:
+                    self.model.W, self.model.b = self.weights
+
+
+class ModelCheckpoint(Callback):
+    def __init__(self, save_best_only):
+        self.save_best_only, self.best, self.saved = save_best_only, float("inf"), []
+
+    def on_epoch_end(self, epoch, logs):
+        if not self.save_best_only or logs["val_loss"] < self.best:
+            self.best = min(self.best, logs["val_loss"])
+            self.saved.append((self.model.W.copy(), self.model.b.copy()))
+
+
+class ReduceLROnPlateau(Callback):
+    def __init__(self, factor, patience, min_lr):
+        self.factor, self.patience, self.min_lr = factor, patience, min_lr
+        self.best, self.wait = float("inf"), 0
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.learning_rate = max(self.model.learning_rate * self.factor, self.min_lr)
+                self.wait = 0
+
+x_train, y_train = make_data(60)
+x_test, y_test = make_data(300)
+
+sizes = {}
+for label, best_only in (("save every epoch", False), ("save_best_only", True)):
+    saver = ModelCheckpoint(save_best_only=best_only)
+    model = Model(lr=0.3)
+    model.fit(x_train, y_train, epochs=8, batch_size=20, val=(x_test, y_test), callbacks=[saver])
+    total = sum(W.nbytes + b.nbytes for W, b in saver.saved)
+    sizes[label] = (len(saver.saved), total)
+    print(label, ":", len(saver.saved), "snapshot(s),", format(total, ","), "bytes")
+params = D * K + K
+print("the model has", params, "parameters, so one snapshot of raw float64 weights is", format(params * 8, ","), "bytes")
+print("saving every epoch keeps 8 snapshots:", sizes["save every epoch"][0] == 8)
+print("best-only keeps fewer:", sizes["save_best_only"][0] < 8)`}
+  sct={`test_output_contains("saving every epoch keeps 8 snapshots: True", pattern=False)
+test_output_contains("best-only keeps fewer: True", pattern=False)
+test_output_contains("the model has 123 parameters, so one snapshot of raw float64 weights is 984 bytes", pattern=False)
+success_msg("Saving every epoch stores a snapshot per epoch. Best-only stores one per improvement, which is usually far fewer.")`}
+  height={460}
 />
 
 <DataCampExercise
   lang="python"
-  hint={`CSVLogger writes a header row plus one row per epoch. Filter out blank lines before counting, because the file uses platform line endings.`}
+  hint={`CSVLogger writes a header row plus one row per epoch. Give it the place to write, then filter out blank lines before counting.`}
   code={`# Task: Exercise 5 - History and CSVLogger
-import os
-import tempfile
-from tensorflow import keras
+import numpy as np
 
-(x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()
-x_train = x_train[:6000].reshape(6000, -1).astype("float32") / 255.0
-y_train = y_train[:6000]
-x_test = x_test[:1500].reshape(1500, -1).astype("float32") / 255.0
-y_test = y_test[:1500]
-csv_path = os.path.join(tempfile.mkdtemp(), "log.csv")
+rng = np.random.RandomState(0)
+D, K = 40, 3
 
-keras.utils.set_random_seed(0)
-model = keras.Sequential([
-    keras.layers.Input((784,)),
-    keras.layers.Dense(256, activation="relu"),
-    keras.layers.Dense(256, activation="relu"),
-    keras.layers.Dense(10, activation="softmax"),
-])
-model.compile(keras.optimizers.Adam(1e-3), "sparse_categorical_crossentropy",
-              metrics=["accuracy"])
-history = model.fit(x_train, y_train, epochs=3, batch_size=128, verbose=0,
-                    validation_data=(x_test, y_test),
-                    callbacks=[keras.callbacks.CSVLogger(___)])
-# replace ___ with csv_path
 
-print(f"history keys: {sorted(history.history.keys())}")
-print(f"entries per key: {len(history.history['loss'])}")
-lines = [line for line in open(csv_path).read().splitlines() if line.strip()]
-print(f"CSVLogger wrote {len(lines)} non-empty lines: 1 header + "
-      f"{len(lines) - 1} epochs")
-print(f"header: {lines[0]}")
-print(f"epoch 1: {lines[1]}")
-print("note the epoch column is 0-indexed")
+def make_data(n):
+    y = rng.randint(0, K, n)
+    centres = np.zeros((K, D))
+    centres[0, :4], centres[1, 4:8], centres[2, 8:12] = 0.8, 0.8, 0.8
+    return centres[y] + rng.randn(n, D), y
 
-# -- Expected Output -------------------------------------------
-# history keys: ['accuracy', 'loss', 'val_accuracy', 'val_loss']
-# entries per key: 3
-# CSVLogger wrote 4 non-empty lines: 1 header + 3 epochs
-# header: epoch,accuracy,loss,val_accuracy,val_loss
-# epoch 1: 0,0.6831666827201843,0.9038705229759216,0.7639999985694885,0.6423217058181763
-# note the epoch column is 0-indexed
-# --------------------------------------------------------------`}
+
+class Callback:
+    def on_train_batch_end(self, batch, logs):
+        pass
+
+    def on_epoch_end(self, epoch, logs):
+        pass
+
+
+class Model:
+    """A softmax classifier with a Keras-like fit() and callbacks."""
+    def __init__(self, lr=0.1):
+        self.W = np.zeros((D, K))
+        self.b = np.zeros(K)
+        self.learning_rate = lr
+        self.stop_training = False
+
+    def probs(self, x):
+        z = x @ self.W + self.b
+        p = np.exp(z - z.max(axis=1, keepdims=True))
+        return p / p.sum(axis=1, keepdims=True)
+
+    def loss(self, x, y):
+        return float(-np.log(self.probs(x)[np.arange(len(y)), y] + 1e-12).mean())
+
+    def accuracy(self, x, y):
+        return float((self.probs(x).argmax(axis=1) == y).mean())
+
+    def fit(self, x, y, epochs, batch_size, val=None, callbacks=()):
+        history = {}
+        for cb in callbacks:
+            cb.model = self
+        for epoch in range(epochs):
+            seen, total = 0, 0.0
+            for batch, start in enumerate(range(0, len(x), batch_size)):
+                xb, yb = x[start:start + batch_size], y[start:start + batch_size]
+                p = self.probs(xb)
+                total += self.loss(xb, yb) * len(yb)
+                seen += len(yb)
+                grad = p.copy()
+                grad[np.arange(len(yb)), yb] -= 1
+                self.W -= self.learning_rate * xb.T @ grad / len(yb)
+                self.b -= self.learning_rate * grad.mean(axis=0)
+                logs = {"loss": total / seen}
+                for cb in callbacks:
+                    cb.on_train_batch_end(batch, logs)
+            logs = {"loss": total / seen, "accuracy": self.accuracy(x, y)}
+            if val is not None:
+                logs["val_loss"] = self.loss(*val)
+                logs["val_accuracy"] = self.accuracy(*val)
+            for cb in callbacks:
+                cb.on_epoch_end(epoch, logs)
+            for key, value in logs.items():
+                history.setdefault(key, []).append(value)
+            if self.stop_training:
+                break
+        return history
+
+
+class EarlyStopping(Callback):
+    def __init__(self, patience, restore_best_weights=True):
+        self.patience, self.restore = patience, restore_best_weights
+        self.best, self.wait, self.weights = float("inf"), 0, None
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+            self.weights = (self.model.W.copy(), self.model.b.copy())
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.stop_training = True
+                if self.restore:
+                    self.model.W, self.model.b = self.weights
+
+
+class ModelCheckpoint(Callback):
+    def __init__(self, save_best_only):
+        self.save_best_only, self.best, self.saved = save_best_only, float("inf"), []
+
+    def on_epoch_end(self, epoch, logs):
+        if not self.save_best_only or logs["val_loss"] < self.best:
+            self.best = min(self.best, logs["val_loss"])
+            self.saved.append((self.model.W.copy(), self.model.b.copy()))
+
+
+class ReduceLROnPlateau(Callback):
+    def __init__(self, factor, patience, min_lr):
+        self.factor, self.patience, self.min_lr = factor, patience, min_lr
+        self.best, self.wait = float("inf"), 0
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.learning_rate = max(self.model.learning_rate * self.factor, self.min_lr)
+                self.wait = 0
+import io
+
+
+class CSVLogger(Callback):
+    def __init__(self, stream):
+        self.stream = stream
+        self.header_written = False
+
+    def on_epoch_end(self, epoch, logs):
+        keys = sorted(logs)
+        if not self.header_written:
+            self.stream.write("epoch," + ",".join(keys) + "\\n")
+            self.header_written = True
+        self.stream.write(str(epoch) + "," + ",".join(format(logs[k], ".4f") for k in keys) + "\\n")
+
+
+x_train, y_train = make_data(300)
+x_test, y_test = make_data(300)
+csv_path = io.StringIO()
+
+model = Model(lr=0.05)
+history = model.fit(x_train, y_train, epochs=3, batch_size=50, val=(x_test, y_test),
+                    callbacks=[CSVLogger(___)])   # replace ___ with csv_path
+
+print("history keys:", sorted(history.keys()))
+print("entries per key:", len(history["loss"]))
+lines = [line for line in csv_path.getvalue().splitlines() if line.strip()]
+print("CSVLogger wrote", len(lines), "non-empty lines: 1 header +", len(lines) - 1, "epochs")
+print("header:", lines[0])
+print("the first data row starts at epoch 0:", lines[1].split(",")[0] == "0")
+print("note the epoch column is 0-indexed")`}
+  solution={`import numpy as np
+
+rng = np.random.RandomState(0)
+D, K = 40, 3
+
+
+def make_data(n):
+    y = rng.randint(0, K, n)
+    centres = np.zeros((K, D))
+    centres[0, :4], centres[1, 4:8], centres[2, 8:12] = 0.8, 0.8, 0.8
+    return centres[y] + rng.randn(n, D), y
+
+
+class Callback:
+    def on_train_batch_end(self, batch, logs):
+        pass
+
+    def on_epoch_end(self, epoch, logs):
+        pass
+
+
+class Model:
+    """A softmax classifier with a Keras-like fit() and callbacks."""
+    def __init__(self, lr=0.1):
+        self.W = np.zeros((D, K))
+        self.b = np.zeros(K)
+        self.learning_rate = lr
+        self.stop_training = False
+
+    def probs(self, x):
+        z = x @ self.W + self.b
+        p = np.exp(z - z.max(axis=1, keepdims=True))
+        return p / p.sum(axis=1, keepdims=True)
+
+    def loss(self, x, y):
+        return float(-np.log(self.probs(x)[np.arange(len(y)), y] + 1e-12).mean())
+
+    def accuracy(self, x, y):
+        return float((self.probs(x).argmax(axis=1) == y).mean())
+
+    def fit(self, x, y, epochs, batch_size, val=None, callbacks=()):
+        history = {}
+        for cb in callbacks:
+            cb.model = self
+        for epoch in range(epochs):
+            seen, total = 0, 0.0
+            for batch, start in enumerate(range(0, len(x), batch_size)):
+                xb, yb = x[start:start + batch_size], y[start:start + batch_size]
+                p = self.probs(xb)
+                total += self.loss(xb, yb) * len(yb)
+                seen += len(yb)
+                grad = p.copy()
+                grad[np.arange(len(yb)), yb] -= 1
+                self.W -= self.learning_rate * xb.T @ grad / len(yb)
+                self.b -= self.learning_rate * grad.mean(axis=0)
+                logs = {"loss": total / seen}
+                for cb in callbacks:
+                    cb.on_train_batch_end(batch, logs)
+            logs = {"loss": total / seen, "accuracy": self.accuracy(x, y)}
+            if val is not None:
+                logs["val_loss"] = self.loss(*val)
+                logs["val_accuracy"] = self.accuracy(*val)
+            for cb in callbacks:
+                cb.on_epoch_end(epoch, logs)
+            for key, value in logs.items():
+                history.setdefault(key, []).append(value)
+            if self.stop_training:
+                break
+        return history
+
+
+class EarlyStopping(Callback):
+    def __init__(self, patience, restore_best_weights=True):
+        self.patience, self.restore = patience, restore_best_weights
+        self.best, self.wait, self.weights = float("inf"), 0, None
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+            self.weights = (self.model.W.copy(), self.model.b.copy())
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.stop_training = True
+                if self.restore:
+                    self.model.W, self.model.b = self.weights
+
+
+class ModelCheckpoint(Callback):
+    def __init__(self, save_best_only):
+        self.save_best_only, self.best, self.saved = save_best_only, float("inf"), []
+
+    def on_epoch_end(self, epoch, logs):
+        if not self.save_best_only or logs["val_loss"] < self.best:
+            self.best = min(self.best, logs["val_loss"])
+            self.saved.append((self.model.W.copy(), self.model.b.copy()))
+
+
+class ReduceLROnPlateau(Callback):
+    def __init__(self, factor, patience, min_lr):
+        self.factor, self.patience, self.min_lr = factor, patience, min_lr
+        self.best, self.wait = float("inf"), 0
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.learning_rate = max(self.model.learning_rate * self.factor, self.min_lr)
+                self.wait = 0
+import io
+
+
+class CSVLogger(Callback):
+    def __init__(self, stream):
+        self.stream = stream
+        self.header_written = False
+
+    def on_epoch_end(self, epoch, logs):
+        keys = sorted(logs)
+        if not self.header_written:
+            self.stream.write("epoch," + ",".join(keys) + "\\n")
+            self.header_written = True
+        self.stream.write(str(epoch) + "," + ",".join(format(logs[k], ".4f") for k in keys) + "\\n")
+
+
+x_train, y_train = make_data(300)
+x_test, y_test = make_data(300)
+csv_path = io.StringIO()
+
+model = Model(lr=0.05)
+history = model.fit(x_train, y_train, epochs=3, batch_size=50, val=(x_test, y_test),
+                    callbacks=[CSVLogger(csv_path)])
+
+print("history keys:", sorted(history.keys()))
+print("entries per key:", len(history["loss"]))
+lines = [line for line in csv_path.getvalue().splitlines() if line.strip()]
+print("CSVLogger wrote", len(lines), "non-empty lines: 1 header +", len(lines) - 1, "epochs")
+print("header:", lines[0])
+print("the first data row starts at epoch 0:", lines[1].split(",")[0] == "0")
+print("note the epoch column is 0-indexed")`}
+  sct={`test_output_contains("history keys: ['accuracy', 'loss', 'val_accuracy', 'val_loss']", pattern=False)
+test_output_contains("CSVLogger wrote 4 non-empty lines: 1 header + 3 epochs", pattern=False)
+test_output_contains("header: epoch,accuracy,loss,val_accuracy,val_loss", pattern=False)
+test_output_contains("the first data row starts at epoch 0: True", pattern=False)
+success_msg("History keeps the metrics in memory, CSVLogger writes the same values out one row per epoch, and the epoch column starts at 0.")`}
+  height={460}
 />
 
 <DataCampExercise
   lang="python"
-  hint={`Log the learning rate yourself in on_epoch_end — Keras does not put it in logs. Reading self.model.optimizer.learning_rate gives the current value.`}
+  hint={`Log the learning rate yourself in on_epoch_end - the loop does not put it in logs. Reading the model's learning_rate gives the current value.`}
   code={`# Task: Exercise 6 - Log something Keras does not
 import numpy as np
-from tensorflow import keras
 
-(x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()
-x_train = x_train[:6000].reshape(6000, -1).astype("float32") / 255.0
-y_train = y_train[:6000]
-x_test = x_test[:1500].reshape(1500, -1).astype("float32") / 255.0
-y_test = y_test[:1500]
+rng = np.random.RandomState(0)
+D, K = 40, 3
 
 
-class LogRate(keras.callbacks.Callback):
-    def on_epoch_end(self, epoch, logs=None):
-        logs["learning_rate"] = float(self.model.optimizer.___)
-        # replace ___ with learning_rate
+def make_data(n):
+    y = rng.randint(0, K, n)
+    centres = np.zeros((K, D))
+    centres[0, :4], centres[1, 4:8], centres[2, 8:12] = 0.8, 0.8, 0.8
+    return centres[y] + rng.randn(n, D), y
 
 
-keras.utils.set_random_seed(0)
-model = keras.Sequential([
-    keras.layers.Input((784,)),
-    keras.layers.Dense(256, activation="relu"),
-    keras.layers.Dense(10, activation="softmax"),
-])
-model.compile(keras.optimizers.SGD(0.2), "sparse_categorical_crossentropy",
-              metrics=["accuracy"])
-history = model.fit(
-    x_train, y_train, epochs=20, batch_size=128, verbose=0,
-    validation_data=(x_test, y_test),
-    callbacks=[LogRate(), keras.callbacks.ReduceLROnPlateau(
-        monitor="val_loss", factor=0.5, patience=2, min_lr=1e-4)])
+class Callback:
+    def on_train_batch_end(self, batch, logs):
+        pass
 
-print(f"history now includes: {sorted(history.history.keys())}")
-rates = history.history["learning_rate"]
-print(f"{'epoch':>6} {'learning_rate':>14} {'val_loss':>10}")
-previous = None
-for epoch, (rate, loss) in enumerate(zip(rates,
-                                         history.history["val_loss"]), start=1):
-    if previous is None or abs(rate - previous) > 1e-12:
-        print(f"{epoch:6d} {rate:14.6f} {loss:10.4f}")
-    previous = rate
-print(f"final rate {rates[-1]:.6f} after "
-      f"{sum(1 for a, b in zip(rates, rates[1:]) if abs(a - b) > 1e-12)} "
-      f"reductions")
+    def on_epoch_end(self, epoch, logs):
+        pass
+
+
+class Model:
+    """A softmax classifier with a Keras-like fit() and callbacks."""
+    def __init__(self, lr=0.1):
+        self.W = np.zeros((D, K))
+        self.b = np.zeros(K)
+        self.learning_rate = lr
+        self.stop_training = False
+
+    def probs(self, x):
+        z = x @ self.W + self.b
+        p = np.exp(z - z.max(axis=1, keepdims=True))
+        return p / p.sum(axis=1, keepdims=True)
+
+    def loss(self, x, y):
+        return float(-np.log(self.probs(x)[np.arange(len(y)), y] + 1e-12).mean())
+
+    def accuracy(self, x, y):
+        return float((self.probs(x).argmax(axis=1) == y).mean())
+
+    def fit(self, x, y, epochs, batch_size, val=None, callbacks=()):
+        history = {}
+        for cb in callbacks:
+            cb.model = self
+        for epoch in range(epochs):
+            seen, total = 0, 0.0
+            for batch, start in enumerate(range(0, len(x), batch_size)):
+                xb, yb = x[start:start + batch_size], y[start:start + batch_size]
+                p = self.probs(xb)
+                total += self.loss(xb, yb) * len(yb)
+                seen += len(yb)
+                grad = p.copy()
+                grad[np.arange(len(yb)), yb] -= 1
+                self.W -= self.learning_rate * xb.T @ grad / len(yb)
+                self.b -= self.learning_rate * grad.mean(axis=0)
+                logs = {"loss": total / seen}
+                for cb in callbacks:
+                    cb.on_train_batch_end(batch, logs)
+            logs = {"loss": total / seen, "accuracy": self.accuracy(x, y)}
+            if val is not None:
+                logs["val_loss"] = self.loss(*val)
+                logs["val_accuracy"] = self.accuracy(*val)
+            for cb in callbacks:
+                cb.on_epoch_end(epoch, logs)
+            for key, value in logs.items():
+                history.setdefault(key, []).append(value)
+            if self.stop_training:
+                break
+        return history
+
+
+class EarlyStopping(Callback):
+    def __init__(self, patience, restore_best_weights=True):
+        self.patience, self.restore = patience, restore_best_weights
+        self.best, self.wait, self.weights = float("inf"), 0, None
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+            self.weights = (self.model.W.copy(), self.model.b.copy())
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.stop_training = True
+                if self.restore:
+                    self.model.W, self.model.b = self.weights
+
+
+class ModelCheckpoint(Callback):
+    def __init__(self, save_best_only):
+        self.save_best_only, self.best, self.saved = save_best_only, float("inf"), []
+
+    def on_epoch_end(self, epoch, logs):
+        if not self.save_best_only or logs["val_loss"] < self.best:
+            self.best = min(self.best, logs["val_loss"])
+            self.saved.append((self.model.W.copy(), self.model.b.copy()))
+
+
+class ReduceLROnPlateau(Callback):
+    def __init__(self, factor, patience, min_lr):
+        self.factor, self.patience, self.min_lr = factor, patience, min_lr
+        self.best, self.wait = float("inf"), 0
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.learning_rate = max(self.model.learning_rate * self.factor, self.min_lr)
+                self.wait = 0
+
+x_train, y_train = make_data(60)
+x_test, y_test = make_data(300)
+
+
+class LogRate(Callback):
+    def on_epoch_end(self, epoch, logs):
+        logs["learning_rate"] = float(self.model.___)   # replace ___ with learning_rate
+
+
+model = Model(lr=0.3)
+history = model.fit(x_train, y_train, epochs=30, batch_size=20, val=(x_test, y_test),
+                    callbacks=[LogRate(), ReduceLROnPlateau(factor=0.5, patience=2, min_lr=1e-3)])
+
+print("history now includes:", sorted(history.keys()))
+rates = history["learning_rate"]
+reductions = sum(1 for a, b in zip(rates, rates[1:]) if abs(a - b) > 1e-12)
+print("the first logged rate is the starting rate:", rates[0] == 0.3)
+print("the rate was reduced at least once:", reductions >= 1)
+print("the final rate is below the starting rate:", rates[-1] < rates[0])
 print("anything you put into logs becomes part of history - and is picked up")
-print("by CSVLogger and TensorBoard too")
+print("by CSVLogger and TensorBoard too")`}
+  solution={`import numpy as np
 
-# -- Expected Output -------------------------------------------
-# history now includes: ['accuracy', 'learning_rate', 'loss', 'val_accuracy', 'val_loss']
-#  epoch  learning_rate   val_loss
-#      1       0.200000     0.7763
-#     17       0.100000     0.4289
-# final rate 0.100000 after 1 reductions
-# anything you put into logs becomes part of history - and is picked up
-# by CSVLogger and TensorBoard too
-# --------------------------------------------------------------`}
+rng = np.random.RandomState(0)
+D, K = 40, 3
+
+
+def make_data(n):
+    y = rng.randint(0, K, n)
+    centres = np.zeros((K, D))
+    centres[0, :4], centres[1, 4:8], centres[2, 8:12] = 0.8, 0.8, 0.8
+    return centres[y] + rng.randn(n, D), y
+
+
+class Callback:
+    def on_train_batch_end(self, batch, logs):
+        pass
+
+    def on_epoch_end(self, epoch, logs):
+        pass
+
+
+class Model:
+    """A softmax classifier with a Keras-like fit() and callbacks."""
+    def __init__(self, lr=0.1):
+        self.W = np.zeros((D, K))
+        self.b = np.zeros(K)
+        self.learning_rate = lr
+        self.stop_training = False
+
+    def probs(self, x):
+        z = x @ self.W + self.b
+        p = np.exp(z - z.max(axis=1, keepdims=True))
+        return p / p.sum(axis=1, keepdims=True)
+
+    def loss(self, x, y):
+        return float(-np.log(self.probs(x)[np.arange(len(y)), y] + 1e-12).mean())
+
+    def accuracy(self, x, y):
+        return float((self.probs(x).argmax(axis=1) == y).mean())
+
+    def fit(self, x, y, epochs, batch_size, val=None, callbacks=()):
+        history = {}
+        for cb in callbacks:
+            cb.model = self
+        for epoch in range(epochs):
+            seen, total = 0, 0.0
+            for batch, start in enumerate(range(0, len(x), batch_size)):
+                xb, yb = x[start:start + batch_size], y[start:start + batch_size]
+                p = self.probs(xb)
+                total += self.loss(xb, yb) * len(yb)
+                seen += len(yb)
+                grad = p.copy()
+                grad[np.arange(len(yb)), yb] -= 1
+                self.W -= self.learning_rate * xb.T @ grad / len(yb)
+                self.b -= self.learning_rate * grad.mean(axis=0)
+                logs = {"loss": total / seen}
+                for cb in callbacks:
+                    cb.on_train_batch_end(batch, logs)
+            logs = {"loss": total / seen, "accuracy": self.accuracy(x, y)}
+            if val is not None:
+                logs["val_loss"] = self.loss(*val)
+                logs["val_accuracy"] = self.accuracy(*val)
+            for cb in callbacks:
+                cb.on_epoch_end(epoch, logs)
+            for key, value in logs.items():
+                history.setdefault(key, []).append(value)
+            if self.stop_training:
+                break
+        return history
+
+
+class EarlyStopping(Callback):
+    def __init__(self, patience, restore_best_weights=True):
+        self.patience, self.restore = patience, restore_best_weights
+        self.best, self.wait, self.weights = float("inf"), 0, None
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+            self.weights = (self.model.W.copy(), self.model.b.copy())
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.stop_training = True
+                if self.restore:
+                    self.model.W, self.model.b = self.weights
+
+
+class ModelCheckpoint(Callback):
+    def __init__(self, save_best_only):
+        self.save_best_only, self.best, self.saved = save_best_only, float("inf"), []
+
+    def on_epoch_end(self, epoch, logs):
+        if not self.save_best_only or logs["val_loss"] < self.best:
+            self.best = min(self.best, logs["val_loss"])
+            self.saved.append((self.model.W.copy(), self.model.b.copy()))
+
+
+class ReduceLROnPlateau(Callback):
+    def __init__(self, factor, patience, min_lr):
+        self.factor, self.patience, self.min_lr = factor, patience, min_lr
+        self.best, self.wait = float("inf"), 0
+
+    def on_epoch_end(self, epoch, logs):
+        if logs["val_loss"] < self.best:
+            self.best, self.wait = logs["val_loss"], 0
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.model.learning_rate = max(self.model.learning_rate * self.factor, self.min_lr)
+                self.wait = 0
+
+x_train, y_train = make_data(60)
+x_test, y_test = make_data(300)
+
+
+class LogRate(Callback):
+    def on_epoch_end(self, epoch, logs):
+        logs["learning_rate"] = float(self.model.learning_rate)
+
+
+model = Model(lr=0.3)
+history = model.fit(x_train, y_train, epochs=30, batch_size=20, val=(x_test, y_test),
+                    callbacks=[LogRate(), ReduceLROnPlateau(factor=0.5, patience=2, min_lr=1e-3)])
+
+print("history now includes:", sorted(history.keys()))
+rates = history["learning_rate"]
+reductions = sum(1 for a, b in zip(rates, rates[1:]) if abs(a - b) > 1e-12)
+print("the first logged rate is the starting rate:", rates[0] == 0.3)
+print("the rate was reduced at least once:", reductions >= 1)
+print("the final rate is below the starting rate:", rates[-1] < rates[0])
+print("anything you put into logs becomes part of history - and is picked up")
+print("by CSVLogger and TensorBoard too")`}
+  sct={`test_output_contains("history now includes: ['accuracy', 'learning_rate', 'loss', 'val_accuracy', 'val_loss']", pattern=False)
+test_output_contains("the rate was reduced at least once: True", pattern=False)
+test_output_contains("the final rate is below the starting rate: True", pattern=False)
+success_msg("Anything a callback adds to logs lands in history, so the learning rate schedule becomes a column you can plot next to the loss.")`}
+  height={460}
 />

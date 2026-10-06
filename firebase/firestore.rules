@@ -35,12 +35,49 @@ service cloud.firestore {
                'providers', 'createdAt', 'updatedAt', 'settings'
              ])
              && d.uid == uid
-             && (!('email' in d) || d.email is string)
+             // The address must be the account's own (or empty, for a GitHub
+             // login that shares none). Server code no longer mails this
+             // field, but nothing should be able to plant someone else's.
+             && (!('email' in d) || (d.email is string
+                   && (d.email == '' || d.email == request.auth.token.email)))
              && (!('displayName' in d) || (d.displayName is string && d.displayName.size() <= 80))
              && (!('photoURL' in d) || (d.photoURL is string && d.photoURL.size() <= 2048))
              && (!('locale' in d) || (d.locale is string && d.locale.size() <= 10))
-             && (!('providers' in d) || d.providers is list)
-             && (!('settings' in d) || d.settings is map);
+             && (!('providers' in d) || (d.providers is list && d.providers.size() <= 10))
+             && (!('createdAt' in d) || d.createdAt is timestamp)
+             && (!('updatedAt' in d) || d.updatedAt is timestamp)
+             && (!('settings' in d) || (d.settings is map
+                   && d.settings.keys().hasOnly(['leaderboard', 'digest'])
+                   && (!('leaderboard' in d.settings) || d.settings.leaderboard is bool)
+                   && (!('digest' in d.settings) || d.settings.digest is bool)));
+    }
+
+    // Shapes of users/{uid}/stats/{name}, as src/lib/progress/sync.ts writes
+    // them. Rules cannot measure a document's bytes, so the caps are on key
+    // and list counts; Firestore's own 1 MiB document limit bounds the rest.
+    // Writes are merges, so these check the document as it will be after the
+    // write, not just the fields in it.
+    function validStats(name) {
+      let d = request.resource.data;
+      return (name == 'bookmarks'
+                && d.size() <= 8
+                && (!('pages' in d) || (d.pages is list && d.pages.size() <= 2000)))
+          || (name == 'summary'
+                // A field cap rather than hasOnly: documents written by older
+                // versions of the site may carry fields this one no longer
+                // writes, and a merge keeps them, so hasOnly would lock those
+                // learners out of syncing.
+                && d.size() <= 16
+                && (!('streak' in d) || d.streak is int)
+                && (!('longest' in d) || d.longest is int)
+                && (!('totalCompleted' in d) || d.totalCompleted is int)
+                && (!('lastActive' in d) || (d.lastActive is string && d.lastActive.size() <= 10))
+                && (!('enrolled' in d) || (d.enrolled is list && d.enrolled.size() <= 50)))
+          // Maps keyed by an encoded page id (plus `#n` for quizzes and
+          // exercises). One entry per page or per question block at most.
+          || (name == 'quizzes' && d.size() <= 5000)
+          || (name == 'exercises' && d.size() <= 10000)
+          || (name == 'notes' && d.size() <= 2000);
     }
 
     // Contact + feedback form submissions.
@@ -49,23 +86,20 @@ service cloud.firestore {
     // change or delete one. Submissions are never readable back, so a
     // sender's address is not exposed to the next visitor.
     //
-    // These rules match what the site actually does. The earlier example
-    // rules denied client writes entirely on the assumption that submissions
-    // went through the `submitForm` Cloud Function in
-    // functions/index.example.js -- but that function was never deployed, and
-    // Contact.astro / Feedback.astro write here directly. Denying writes
-    // would simply have broken both forms.
-    //
-    // The reCAPTCHA token is stored but NOT verified: verifying it needs a
-    // server. Until `submitForm` is deployed these caps are the only spam
-    // control, so keep them tight.
+    // The forms now go through app/api/submit-form, which verifies the
+    // reCAPTCHA token before storing anything. These direct-create rules are
+    // only the fallback for while that endpoint is unconfigured (see
+    // src/lib/forms.ts). Once RECAPTCHA_SECRET and FIREBASE_SERVICE_ACCOUNT
+    // are set on the deployment, change both `allow create` lines below to
+    // `if false` and redeploy the rules -- that closes the spam hole.
     function validSubmission(fields) {
       let d = request.resource.data;
       return d.keys().hasOnly(fields)
              && d.keys().hasAll(['createdAt'])
              && d.createdAt is string
              && (!('email' in d) || (d.email is string && d.email.size() <= 254))
-             && (!('recaptchaToken' in d) || d.recaptchaToken is string);
+             && (!('recaptchaToken' in d) || d.recaptchaToken is string)
+             && (!('page' in d) || (d.page is string && d.page.size() <= 512));
     }
 
     match /contact/{doc} {
@@ -81,7 +115,7 @@ service cloud.firestore {
     match /feedback/{doc} {
       allow read, update, delete: if false;
       allow create: if validSubmission(
-                         ['feedback', 'email', 'comment', 'recaptchaToken', 'createdAt'])
+                         ['feedback', 'email', 'comment', 'page', 'recaptchaToken', 'createdAt'])
                        && request.resource.data.feedback is string
                        && request.resource.data.feedback.size() <= 40
                        && (!('comment' in request.resource.data)
@@ -94,13 +128,28 @@ service cloud.firestore {
       allow create, update: if isOwner(uid) && validProfile(uid);
       allow delete: if isOwner(uid);
 
-      // Per-user subcollections (progress, quiz results, bookmarks, notes).
-      // Self-reported learning state, so the owner may write it freely. The
-      // things that must NOT be self-reported -- exam answer keys, graded
-      // attempts, issued certificates -- live in top-level collections that
-      // only the Admin SDK can touch.
-      match /{sub=**} {
-        allow read, write: if isOwner(uid);
+      // Per-course completion. Self-reported, so the owner writes it -- and
+      // every server count of it keeps only ids that are real lessons of the
+      // course (lib/server/admin.ts), so padding it buys nothing.
+      match /progress/{course} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+                              && request.resource.data.keys().hasOnly(['completed', 'updatedAt'])
+                              && request.resource.data.completed is list
+                              && request.resource.data.completed.size() <= 1000;
+      }
+
+      // Bookmarks, quiz results, notes and the summary: the owner's own.
+      // `certificates` is the index of issued certificates and is written
+      // only by the issuing endpoint -- it used to be owner-writable, so a
+      // learner could list certificates they never earned.
+      match /stats/{name} {
+        allow read: if isOwner(uid);
+        allow delete: if isOwner(uid)
+                      && name in ['bookmarks', 'quizzes', 'notes', 'summary', 'exercises'];
+        allow create, update: if isOwner(uid)
+                              && name in ['bookmarks', 'quizzes', 'notes', 'summary', 'exercises']
+                              && validStats(name);
       }
     }
 
@@ -127,7 +176,7 @@ service cloud.firestore {
     }
 
     // Graded attempts. The owner may see their own record; only the
-    // `gradeExam` function can create one.
+    // grading endpoint (app/api/grade-exam) can write one.
     match /attempts/{id} {
       allow get: if isAccount() && resource.data.uid == request.auth.uid;
       allow list, write: if false;
@@ -137,9 +186,9 @@ service cloud.firestore {
     //
     // `get` is public so anyone handed a certificate id can check it -- that
     // is what makes the certificate worth anything. `list` is denied so the
-    // collection cannot be enumerated for holders' names and addresses; a
-    // learner's own certificates are indexed under
-    // users/{uid}/stats/certificates instead.
+    // collection cannot be enumerated for holders' names. The document holds
+    // no email address (it used to); a learner's own certificates are indexed
+    // under users/{uid}/stats/certificates, which only the server writes.
     match /certificates/{certId} {
       allow get: if true;
       allow list, write: if false;
@@ -148,7 +197,7 @@ service cloud.firestore {
     // Public leaderboard.
     //
     // Readable and listable by anyone -- a board nobody can see is not a
-    // board. Written only by the `publishLeaderboard` function, which
+    // board. Written only by app/api/publish-leaderboard, which
     // recomputes the numbers from server-side records: a self-reported
     // ranking would be worthless, since being wrong is the whole problem on
     // this particular surface. Opting out deletes the row rather than hiding

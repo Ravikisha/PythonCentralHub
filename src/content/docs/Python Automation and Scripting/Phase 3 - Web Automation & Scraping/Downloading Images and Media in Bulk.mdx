@@ -30,3 +30,115 @@ download("https://httpbin.org/image/png", Path("downloads/image.png"))
 - validate content-type
 - handle name collisions
 - avoid downloading too fast
+
+## Why stream
+
+`requests.get(url)` without `stream=True` loads the whole response into memory before you see it. That is fine for a small icon and a problem for a 500 MB video. With `stream=True`, the body is fetched as you iterate. `iter_content(chunk_size=...)` yields pieces (here 64 KB), and you write each to disk and discard it. Memory use stays flat whatever the file size.
+
+The `with` block matters too. It releases the connection when you finish, even if writing fails. `raise_for_status()` turns a 404 or 500 into an exception, so you do not save an HTML error page under the name `image.png`.
+
+## A bulk downloader
+
+Downloading many files adds three problems: choosing file names, not overwriting, and failures partway. This version handles them.
+
+```python title="download_many.py" showLineNumbers{1}
+import time
+from pathlib import Path
+from urllib.parse import urlparse
+
+import requests
+
+HEADERS = {"User-Agent": "Python Central HubBot/1.0 (learning project)"}
+
+
+def filename_for(url: str, out_dir: Path) -> Path:
+    name = Path(urlparse(url).path).name or "file"
+    target = out_dir / name
+    counter = 1
+    while target.exists():                       # avoid name collisions
+        target = out_dir / f"{Path(name).stem}_{counter}{Path(name).suffix}"
+        counter += 1
+    return target
+
+
+def download(url: str, out_dir: Path, session: requests.Session) -> Path:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    target = filename_for(url, out_dir)
+    part = target.with_suffix(target.suffix + ".part")
+
+    with session.get(url, stream=True, timeout=20) as r:
+        r.raise_for_status()
+        kind = r.headers.get("Content-Type", "")
+        if not kind.startswith(("image/", "video/", "audio/")):
+            raise ValueError(f"unexpected content type: {kind}")
+        with part.open("wb") as f:
+            for chunk in r.iter_content(chunk_size=64 * 1024):
+                f.write(chunk)
+    part.rename(target)                          # only a finished file gets its real name
+    return target
+
+
+urls = ["https://httpbin.org/image/png", "https://httpbin.org/image/jpeg"]
+with requests.Session() as session:
+    session.headers.update(HEADERS)
+    for url in urls:
+        try:
+            print("saved", download(url, Path("downloads"), session))
+        except (requests.RequestException, ValueError) as err:
+            print("failed", url, err)
+        time.sleep(1)                            # be polite
+```
+
+Writing to a `.part` file and renaming at the end means a crash never leaves a half-file that looks complete. The `Content-Type` check catches the case where a URL that should be an image returns an HTML page. The `try` around each download means one bad URL does not stop the batch.
+
+## Getting the list of URLs
+
+For a page of images, parse the HTML with BeautifulSoup, collect every `img["src"]`, and turn relative paths into absolute ones with `urllib.parse.urljoin(page_url, src)`. Check `robots.txt` and the terms first, because downloading media in bulk is heavier on the site than reading pages, and images often have copyright.
+
+## Common mistakes
+
+- **Downloading too fast.** Add a delay and keep concurrency low.
+- **Trusting the file name in the URL.** Query strings and duplicates give bad or repeated names. Sanitise them.
+- **No timeout.** One stalled server hangs the script.
+- **Ignoring rights.** Being able to download a file does not mean you may reuse it.
+- **Skipping the content-type check.**
+
+## Check your understanding
+
+<Quiz
+  questions={[
+    {
+      q: "What does stream=True with iter_content achieve?",
+      options: [
+        "It makes the server send the file faster",
+        "It writes the file in pieces so memory use stays small, whatever the size",
+        "It compresses the file",
+        "It skips the status code check",
+      ],
+      answer: 1,
+      explain: "The body is read chunk by chunk instead of all at once, so a large file never has to fit in memory.",
+    },
+    {
+      q: "Why write to a .part file and rename it when finished?",
+      options: [
+        "So an interrupted download never looks like a complete file",
+        "Because Windows requires the .part extension",
+        "To make the download faster",
+        "To avoid using a timeout",
+      ],
+      answer: 0,
+      explain: "A crash mid-download leaves a .part file that you can recognise and delete. A file with its final name is always complete.",
+    },
+    {
+      q: "A URL you expected to return a PNG returns an HTML page with status 200. How do you catch this?",
+      options: [
+        "You cannot",
+        "Check the Content-Type header before saving",
+        "Check the file size only",
+        "Retry until it works",
+      ],
+      answer: 1,
+      explain: "Sites sometimes return a login or error page with a 200 status. The Content-Type header tells you it is text/html, not image/png.",
+    },
+  ]}
+/>

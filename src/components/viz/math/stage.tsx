@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * stage.tsx — the SVG primitives the maths stages share.
  *

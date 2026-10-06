@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * TreeWalker — step-through visualization for binary-tree algorithms.
  *

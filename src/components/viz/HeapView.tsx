@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * HeapView — step-through visualization of a binary heap, in both of its faces.
  *
